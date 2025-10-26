@@ -1,0 +1,63 @@
+ <!DOCTYPE html>
+ <html>
+ <head>
+    <title>Teacher Dashboard</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        #finalizeModal { display:none; position: fixed; left:0; top:0; right:0; bottom:0; background:rgba(0,0,0,0.5); align-items: center; justify-content: center; }
+        #finalizeContent { background: #fff; padding: 1rem; max-width: 600px; width: 90%; border-radius: 6px; max-height: 80vh; overflow: auto;}
+        .student-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #eee; }
+    </style>
+ </head>
+ <body>
+    <h1>Teacher Dashboard</h1>
+
+    <!-- Login section-->
+    <div id="login-section">
+        <input type="text" id="username" placeholder="Username">
+        <input type="password" id="password" placeholder="Password">
+        <button id="loginBtn">Login</button>
+        <p id="login-msg"></p>
+    </div>
+
+    <!-- Session section (hidden initially)-->
+    <div id="session-section" style="display:none;">
+        <select id="courseId">
+            <option value="">-- Select Course --</option>
+            <option value="ESE">ESE</option>
+            <option value="Maths-III">Maths-III</option>
+            <option value="Cyber Securiy">Cyber Securiy</option>
+            <option value="Data Structure">Data Structure</option>
+        </select>
+
+        <button id="startSessionBtn" type="button">Start Session</button>
+        <button id="endSessionBtn" type="button" disabled>End Session</button>
+
+        <p>Session Token:</p>
+        <textarea id="sessionToken" readonly rows="1" cols="10"></textarea>
+        <div id="qrCode"></div>
+        <div id="timer"></div>
+        
+        <div>
+            <h3>Live Attendance</h3>
+            <p id="studentCount">Present: 0</p>
+            <ul id="studentList"></ul>
+        </div>
+    </div>
+
+    <div id="finalizeModal">
+        <div id="finalizeContent">
+            <h3>Review & Finalize Attendance</h3>
+            <div id="finalizeList"></div>
+            <div style="margin-top: 12px;">
+                <button id="finalizeSubmitBtn">Submit Final Attendance</button>
+                <button id="finalizeCancelBtn">Cancel</button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+    <script src="http://192.168.1.9:4000/socket.io/socket.io.js"></script>
+    <script src="js/teacher.js"></script>
+ </body>
+ </html>

@@ -1,0 +1,17 @@
+# Node dependencies
+node_modules/
+
+# Logs
+*.log
+
+# Environment variables
+.env
+
+# Database (keep local only)
+backend/attendance.db
+
+# Build & temp files
+dist/
+.vscode/
+.DS_Store
+Thumbs.db

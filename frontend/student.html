@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Student Attendance</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <h1>Student Attendance</h1>
+
+    <div id="student-section">
+        <input type="text" id="studentId" placeholder="Enter your Student ID">
+        <button id="startScanBtn" type="button">Start scan</button>
+    </div>
+
+    <div id="scanner-section" style="display: none;">
+        <video id="video" width="300" height="200" style="border:1px solid #ccc; border-radius: 8px;"></video>
+        <p id="scan-result"></p>
+    </div>
+
+    <script src="http://192.168.1.9:8080/target/target-script-min.js#anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.min.js"></script>
+    <script src="js/student.js"></script>
+</body>
+</html>
