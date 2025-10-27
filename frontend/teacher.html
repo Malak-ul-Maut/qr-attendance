@@ -21,7 +21,7 @@
     </div>
 
     <!-- Session section (hidden initially)-->
-    <div id="session-section" style="display:block;">
+    <div id="session-section" style="display:none;">
         <select id="courseId">
             <option value="">-- Select Course --</option>
             <option value="ESE">ESE</option>
@@ -31,7 +31,7 @@
         </select>
 
         <button id="startSessionBtn" type="button">Start Session</button>
-        <button id="endSessionBtn" type="button" >End Session</button>
+        <button id="endSessionBtn" type="button" disabled>End Session</button>
 
         <p>Session Token:</p>
         <textarea id="sessionToken" readonly rows="1" cols="10"></textarea>
