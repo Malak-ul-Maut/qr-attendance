@@ -1,3 +1,4 @@
+url = "https://malak-ul-maut.github.io/qr-attendance/frontend/";
 const loginBtn = document.getElementById('loginBtn');
 const startBtn = document.getElementById('startSessionBtn');
 const endBtn = document.getElementById('endSessionBtn');
@@ -25,7 +26,7 @@ loginBtn.addEventListener('click', async () => {
     const msg = document.getElementById('login-msg');
 
     try {
-        const res = await fetch('http://192.168.1.9:4000/api/login', {
+        const res = await fetch(`${url}api/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username, password })
@@ -57,7 +58,7 @@ startBtn.addEventListener('click', async (e) => {
     if (!courseId) return alert('Select Course ID');
 
     try {
-        const res = await fetch('http://192.168.1.9:4000/api/session/start', {
+        const res = await fetch(`${url}api/session/start`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ courseId, teacherId: 'T1' })
@@ -81,7 +82,7 @@ startBtn.addEventListener('click', async (e) => {
         if (refreshTimer) clearInterval(refreshTimer);
         refreshTimer = setInterval(async () => {
             try{
-                const r = await fetch('http://192.168.1.9:4000/api/session/token', {
+                const r = await fetch(`${url}api/session/token`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ sessionId: currentSessionId })
@@ -117,7 +118,7 @@ startBtn.addEventListener('click', async (e) => {
 endBtn.addEventListener('click', async () => {
     if(!currentSessionId) return alert('No active session');
     try {
-        const res = await fetch('http://192.168.1.9:4000/api/session/end', {
+        const res = await fetch(`${url}api/session/end`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sessionId: currentSessionId })
@@ -164,7 +165,7 @@ finalizeSubmitBtn.addEventListener('click', async ()=> {
     cbs.forEach(cb => { if (cb.checked) keep.push(cb.dataset.studentId); });
 
     try {
-        const res = await fetch('http://192.168.1.9:4000/api/session/finalize', {
+        const res = await fetch(`${url}api/session/finalize`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sessionId: currentSessionId, keepStudentIds: keep }) 
@@ -195,7 +196,7 @@ finalizeSubmitBtn.addEventListener('click', async ()=> {
 
  // --------------- Socket initialization -------------
  function initSocket() {
-    socket = io('http://192.168.1.9:4000');
+    socket = io(`${url}`);
     socket.emit('register_teacher');
 
     socket.on('attendance_update', data => {
