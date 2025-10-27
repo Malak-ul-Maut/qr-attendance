@@ -276,7 +276,7 @@ app.post('/api/session/finalize', (req, res) => {
 
 
 // -------------- Serve frontend & start server ----------------
-const FRONTEND_DIR = 'C:/Users/jiya computer/Desktop/qr-attendance/frontend';
+const FRONTEND_DIR = 'qr-attendance/frontend';
 app.use(express.static((FRONTEND_DIR)));
 
 // If someone hits a route that's not an API(fallback)
