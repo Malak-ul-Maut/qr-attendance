@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-url = "https://malak-ul-maut.github.io/qr-attendance/frontend/";
-=======
 url = 'https://192.168.1.15:4000';
->>>>>>> bd41e07 (Initial working version with student and faculty login)
 const loginBtn = document.getElementById('loginBtn');
 const startBtn = document.getElementById('startSessionBtn');
 const endBtn = document.getElementById('endSessionBtn');
@@ -21,38 +17,6 @@ let currentSessionId = null;
 let socket = null;
 
 
-<<<<<<< HEAD
-// ------------------- Login -------------------
-loginBtn.addEventListener('click', async () => {
-    const username = document.getElementById('username').value;
-    const password = document.getElementById('password').value;
-    const msg = document.getElementById('login-msg');
-
-    try {
-        const res = await fetch(`${url}api/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password })
-        });
-
-        const data = await res.json();
-        if (data.ok) {
-            teacherLoggedIn = true;
-            msg.textContent = '';
-            document.getElementById('login-section').style.display = 'none';
-            document.getElementById('session-section').style.display = 'block';
-            initSocket(); // connect after Login
-        } else {
-            msg.textContent = 'Login failed';
-        }
-    } catch (err) {
-        console.error('Login error:', err);
-        msg.textContent = 'Error contacting server';
-    }
-});
-
-=======
->>>>>>> bd41e07 (Initial working version with student and faculty login)
 
 // ------------- Start session ----------------
 startBtn.addEventListener('click', async (e) => {
@@ -62,11 +26,7 @@ startBtn.addEventListener('click', async (e) => {
     if (!courseId) return alert('Select Course ID');
 
     try {
-<<<<<<< HEAD
-        const res = await fetch(`${url}api/session/start`, {
-=======
         const res = await fetch(`${url}/api/session/start`, {
->>>>>>> bd41e07 (Initial working version with student and faculty login)
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ courseId, teacherId: 'T1' })
@@ -97,11 +57,7 @@ startBtn.addEventListener('click', async (e) => {
         if (refreshTimer) clearInterval(refreshTimer);
         refreshTimer = setInterval(async () => {
             try{
-<<<<<<< HEAD
-                const r = await fetch(`${url}api/session/token`, {
-=======
                 const r = await fetch(`${url}/api/session/token`, {
->>>>>>> bd41e07 (Initial working version with student and faculty login)
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ sessionId: currentSessionId })
@@ -141,11 +97,7 @@ startBtn.addEventListener('click', async (e) => {
 endBtn.addEventListener('click', async () => {
     if(!currentSessionId) return alert('No active session');
     try {
-<<<<<<< HEAD
-        const res = await fetch(`${url}api/session/end`, {
-=======
         const res = await fetch(`${url}/api/session/end`, {
->>>>>>> bd41e07 (Initial working version with student and faculty login)
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sessionId: currentSessionId })
@@ -192,11 +144,7 @@ finalizeSubmitBtn.addEventListener('click', async ()=> {
     cbs.forEach(cb => { if (cb.checked) keep.push(cb.dataset.studentId); });
 
     try {
-<<<<<<< HEAD
-        const res = await fetch(`${url}api/session/finalize`, {
-=======
         const res = await fetch(`${url}/api/session/finalize`, {
->>>>>>> bd41e07 (Initial working version with student and faculty login)
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sessionId: currentSessionId, keepStudentIds: keep }) 
@@ -226,11 +174,7 @@ finalizeSubmitBtn.addEventListener('click', async ()=> {
 
  // --------------- Socket initialization -------------
  function initSocket() {
-<<<<<<< HEAD
-    socket = io(`${url}`);
-=======
     socket = io(url);
->>>>>>> bd41e07 (Initial working version with student and faculty login)
     socket.emit('register_teacher');
 
     socket.on('attendance_update', data => {

@@ -1,4 +1,4 @@
-url = 'https://10.138.132.200:4000';
+url = 'https://192.168.1.15:4000';
 const startScanBtn = document.getElementById('startScanBtn');
 const video = document.getElementById('video');
 const scanResult = document.getElementById('scan-result');

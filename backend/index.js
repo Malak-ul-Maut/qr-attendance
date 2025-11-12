@@ -284,7 +284,7 @@ app.post('/api/session/finalize', (req, res) => {
 
 
 // -------------- Serve frontend & start server ----------------
-const FRONTEND_DIR = 'qr-attendance/frontend';
+const FRONTEND_DIR = 'C:/Users/jiya computer/Desktop/qr-attendance/frontend';
 app.use(express.static((FRONTEND_DIR)));
 
 // If someone hits a route that's not an API(fallback)
@@ -293,10 +293,5 @@ app.get(/^\/(?!api).*/, (req, res) => {
 });
 
 server.listen(PORT, () =>
-<<<<<<< HEAD
-    console.log(`🚀 Server running at http://192.168.1.9:${PORT}`)
+    console.log(`🚀 Server running at https://192.168.1.15:${PORT}`)
 );
-=======
-    console.log(`🚀 Server running at https://10.138.132.200:${PORT}`)
-);
->>>>>>> bd41e07 (Initial working version with student and faculty login)
