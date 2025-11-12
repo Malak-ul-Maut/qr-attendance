@@ -1,10 +1,10 @@
+url = 'https://10.138.132.200:4000';
 const startScanBtn = document.getElementById('startScanBtn');
 const video = document.getElementById('video');
 const scanResult = document.getElementById('scan-result');
+
 let scanning = false;
 let scanInProgress = false;
-
-
 //---------- Functions --------------
 
 // Hash function (SHA-256)
@@ -56,23 +56,12 @@ startScanBtn.addEventListener('click', async () => {
         const settings = stream.getVideoTracks()[0].getSettings();
 
         if (capabilities.zoom) {
-            const zoomControl = document.createElement("input");
-            zoomControl.type = "range";
+            const zoomControl = document.getElementById('zoom-slider');
+            zoomControl.style.display = 'block';
             zoomControl.min = capabilities.zoom.min;
             zoomControl.max = capabilities.zoom.max;
             zoomControl.step = capabilities.zoom.step || 0.1;
             zoomControl.value = settings.zoom || capabilities.zoom.min;
-            
-            Object.assign(zoomControl.style, {
-                display: "flex",
-                marginTop: "10px",
-                marginLeft: "auto",
-                marginRight: "auto",
-                zIndex: "999",
-                accentColor: "#00bfff",
-                height: "25px",
-            });
-            video.insertAdjacentElement("afterend", zoomControl);
 
             zoomControl.addEventListener('input', async () => {
                 const zoom = parseFloat(zoomControl.value);
@@ -122,7 +111,7 @@ async function scanQRCode(studentId, video, stream, hashedCameraId) {
 // Send Attendance
 async function sendAttendance(studentId, token, hashedCameraId) {
     try {
-        const res = await fetch('http://192.168.1.9:4000/api/session/verify', {
+        const res = await fetch(`${url}/api/session/verify`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ studentId, token, cameraFingerprint: hashedCameraId })

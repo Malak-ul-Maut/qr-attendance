@@ -1,17 +1,16 @@
- <!DOCTYPE html>
- <html>
- <head>
-    <title>Teacher Dashboard</title>
-    <link rel="stylesheet" href="css/style.css">
-    <style>
-        #finalizeModal { display:none; position: fixed; left:0; top:0; right:0; bottom:0; background:rgba(0,0,0,0.5); align-items: center; justify-content: center; }
-        #finalizeContent { background: #fff; padding: 1rem; max-width: 600px; width: 90%; border-radius: 6px; max-height: 80vh; overflow: auto;}
-        .student-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #eee; }
-    </style>
- </head>
- <body>
-    <p class="signInMsg">Sign in to QRoll</p>
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Teacher Dashboard</title>
+  <link rel="stylesheet" href="css/general.css">
+  <link rel="stylesheet" href="css/login-section.css">
+  <link rel="stylesheet" href="css/session-section.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+</head>
 
+<<<<<<< HEAD
     <!-- Login section-->
     <div id="login-section">
         <input type="text" id="username" placeholder="Username">
@@ -32,32 +31,99 @@
 
         <button id="startSessionBtn" type="button">Start Session</button>
         <button id="endSessionBtn" type="button" disabled>End Session</button>
+=======
+<body>
+  <!-- Session section -->
+  <div id="session-section">
+    
+    <header class="header">
+      <div class="left-section">
+        <img style="cursor:pointer;" src="icons/hamburger-menu.svg" alt="Menu">
+      </div>
+      <div class="middle-section">Teacher Dashboard</div>
+      <div class="right-section">
+        <span class="teacher-name">Welcome, <b>Teacher</b></span>
+      </div>
+    </header>
 
-        <p>Session Token:</p>
-        <textarea id="sessionToken" readonly rows="1" cols="10"></textarea>
-        <div id="qrCode"></div>
-        <div id="timer"></div>
+    <nav class="sidebar">
+      <div class="sidebar-content">
+        <img src="icons/generate-qr.png" alt="Generate QR">
+        <div>Generate QR</div>
+      </div>
+      <div class="sidebar-content">
+        <img src="icons/history.svg" alt="History">
+        <div>History</div>
+      </div>
+      <div class="sidebar-content">
+        <img src="icons/feedback.svg" alt="Feedback">
+        <div>Feedback</div>
+      </div>
+      <div class="sidebar-content">
+        <img src="icons/logout.svg" alt="Logout">
+        <div>Log out</div>
+      </div>
+    </nav>
+>>>>>>> bd41e07 (Initial working version with student and faculty login)
+
+    <div class="content">
+      
+      <div id="beforeStart">
+        <div class="sub-details">
+          Mathematics (III-Sem)
+        </div>
+        <div class="select-section">
+          <label for="courseId">Select section:</label>
+          <select id="courseId">
+            <option value="">-- Select section --</option>
+            <option value="A">A</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+            <option value="D">D</option>
+          </select>
+          <div>
+            <button id="startSessionBtn" type="button">Start Session</button>
+          </div>
+        </div>
+      </div>
+      
+      <div id="afterStart" style="display:none;">
+        <div class="a">
+          <div id="qrCode"></div>
+        </div>
         
-        <div>
+        <div class="b">
+          <div>
+            <p>Session started:</p>
+            <button id="endSessionBtn" type="button" disabled>End Session</button>
+          </div>
+          <div class="live-section">
             <h3>Live Attendance</h3>
             <p id="studentCount">Present: 0</p>
             <ul id="studentList"></ul>
+          </div>
         </div>
+      </div>
     </div>
 
     <div id="finalizeModal">
-        <div id="finalizeContent">
-            <h3>Review & Finalize Attendance</h3>
-            <div id="finalizeList"></div>
-            <div style="margin-top: 12px;">
-                <button id="finalizeSubmitBtn">Submit Final Attendance</button>
-                <button id="finalizeCancelBtn">Cancel</button>
-            </div>
+      <div id="finalizeContent">
+        <h3>Review & Finalize Attendance</h3>
+        <div id="finalizeList"></div>
+        <div class="finalize-buttons">
+          <button id="finalizeSubmitBtn">Submit Final Attendance</button>
+          <button id="finalizeCancelBtn">Cancel</button>
         </div>
+      </div>
     </div>
     
     <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<<<<<<< HEAD
     <script src="https://malak-ul-maut.github.io/qr-attendance/frontend/socket.io/socket.io.js"></script>
+=======
+    <script src="https://192.168.1.15:4000/socket.io/socket.io.js"></script>
+>>>>>>> bd41e07 (Initial working version with student and faculty login)
     <script src="js/teacher.js"></script>
- </body>
- </html>
+  </div>
+</body>
+</html>

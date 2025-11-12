@@ -1,9 +1,12 @@
+<<<<<<< HEAD
 url = "https://malak-ul-maut.github.io/qr-attendance/frontend/";
+=======
+url = 'https://192.168.1.15:4000';
+>>>>>>> bd41e07 (Initial working version with student and faculty login)
 const loginBtn = document.getElementById('loginBtn');
 const startBtn = document.getElementById('startSessionBtn');
 const endBtn = document.getElementById('endSessionBtn');
-const tokenField = document.getElementById('sessionToken');
-const qrContainer = document.getElementById('qrCode');
+
 const timerDisplay = document.getElementById('timer');
 const studentList = document.getElementById('studentList');
 const studentCount = document.getElementById('studentCount');
@@ -13,12 +16,12 @@ const finalizeList= document.getElementById('finalizeList');
 const finalizeSubmitBtn = document.getElementById('finalizeSubmitBtn');
 const finalizeCancelBtn = document.getElementById('finalizeCancelBtn');
 
-let teacherLoggedIn = false;
 let refreshTimer = null;
 let currentSessionId = null;
 let socket = null;
 
 
+<<<<<<< HEAD
 // ------------------- Login -------------------
 loginBtn.addEventListener('click', async () => {
     const username = document.getElementById('username').value;
@@ -48,17 +51,22 @@ loginBtn.addEventListener('click', async () => {
     }
 });
 
+=======
+>>>>>>> bd41e07 (Initial working version with student and faculty login)
 
 // ------------- Start session ----------------
 startBtn.addEventListener('click', async (e) => {
     e.preventDefault();
-    if (!teacherLoggedIn) return alert('Login first');
 
     const courseId = document.getElementById('courseId').value;
     if (!courseId) return alert('Select Course ID');
 
     try {
+<<<<<<< HEAD
         const res = await fetch(`${url}api/session/start`, {
+=======
+        const res = await fetch(`${url}/api/session/start`, {
+>>>>>>> bd41e07 (Initial working version with student and faculty login)
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ courseId, teacherId: 'T1' })
@@ -67,13 +75,20 @@ startBtn.addEventListener('click', async (e) => {
         if (!data.ok) throw new Error(data.error || 'start_failed');
         
         currentSessionId = data.sessionId;
-        tokenField.value = data.token;
         endBtn.disabled = false;
+        startBtn.disabled = true;
+        document.getElementById('beforeStart').style.display = 'none';
+        document.getElementById('afterStart').style.display = 'flex';
+
+        const qrContainer = document.getElementById('qrCode');
+        const parentQr = qrContainer.parentElement;
+        const desiredWidth = parentQr.offsetWidth * 1;
+        console.log(desiredWidth);
 
         // Render initial QR
         qrContainer.innerHTML = '';
         const canvas = document.createElement('canvas');
-        QRCode.toCanvas(canvas, data.token, { width: 200 }, err => {
+        QRCode.toCanvas(canvas, data.token, { width: desiredWidth, height: desiredWidth }, err => {
             if (err) return console.error(err);
             qrContainer.appendChild(canvas);
         });
@@ -82,7 +97,11 @@ startBtn.addEventListener('click', async (e) => {
         if (refreshTimer) clearInterval(refreshTimer);
         refreshTimer = setInterval(async () => {
             try{
+<<<<<<< HEAD
                 const r = await fetch(`${url}api/session/token`, {
+=======
+                const r = await fetch(`${url}/api/session/token`, {
+>>>>>>> bd41e07 (Initial working version with student and faculty login)
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ sessionId: currentSessionId })
@@ -92,12 +111,16 @@ startBtn.addEventListener('click', async (e) => {
                     console.warn('Token refresh failed:', tokenData);
                     return;
                 }
-                tokenField.value = tokenData.token;
                 // redraw QR with new token
+                const qrContainer = document.getElementById('qrCode');
+                const parentQr = qrContainer.parentElement;
+                const desiredWidth = parentQr.offsetWidth * 1;
+                console.log(desiredWidth);
+
                 qrContainer.innerHTML = '';
                 const c2 = document.createElement('canvas');
                 console.log('Token refresh response:', tokenData);
-                QRCode.toCanvas(c2, tokenData.token, { width: 200 }, err => {
+                QRCode.toCanvas(c2, tokenData.token, { width: desiredWidth, height: desiredWidth }, err => {
                     if (err) return console.error(err);
                     qrContainer.appendChild(c2);
                 });   
@@ -118,7 +141,11 @@ startBtn.addEventListener('click', async (e) => {
 endBtn.addEventListener('click', async () => {
     if(!currentSessionId) return alert('No active session');
     try {
+<<<<<<< HEAD
         const res = await fetch(`${url}api/session/end`, {
+=======
+        const res = await fetch(`${url}/api/session/end`, {
+>>>>>>> bd41e07 (Initial working version with student and faculty login)
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sessionId: currentSessionId })
@@ -165,7 +192,11 @@ finalizeSubmitBtn.addEventListener('click', async ()=> {
     cbs.forEach(cb => { if (cb.checked) keep.push(cb.dataset.studentId); });
 
     try {
+<<<<<<< HEAD
         const res = await fetch(`${url}api/session/finalize`, {
+=======
+        const res = await fetch(`${url}/api/session/finalize`, {
+>>>>>>> bd41e07 (Initial working version with student and faculty login)
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sessionId: currentSessionId, keepStudentIds: keep }) 
@@ -181,7 +212,6 @@ finalizeSubmitBtn.addEventListener('click', async ()=> {
         // clear local UI
         studentList.innerHTML = '';
         studentCount.textContent = 'Present: 0';
-        tokenField.value = '';
         qrContainer.innerHTML = '';
         timerDisplay.textContent = '';
         endBtn.disabled = true;
@@ -196,7 +226,11 @@ finalizeSubmitBtn.addEventListener('click', async ()=> {
 
  // --------------- Socket initialization -------------
  function initSocket() {
+<<<<<<< HEAD
     socket = io(`${url}`);
+=======
+    socket = io(url);
+>>>>>>> bd41e07 (Initial working version with student and faculty login)
     socket.emit('register_teacher');
 
     socket.on('attendance_update', data => {
@@ -220,3 +254,7 @@ finalizeSubmitBtn.addEventListener('click', async ()=> {
         if(payload.sessionId === currentSessionId) alert('Session finalized by teacher.');
     });
 }
+
+window.addEventListener('DOMContentLoaded', () => {
+  initSocket();
+});

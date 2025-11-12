@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login page</title>
+  <link rel="stylesheet" href="/css/general.css">
+  <link rel="stylesheet" href="/css/login-section.css">
+  <link rel="stylesheet" href="/css/session-section.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@100..900&display=swap" rel="stylesheet">
+</head>
+
+<body>
+  <!-- Login section-->
+	<div id="login-section" style="display:block;">
+		<div class="qr-img">
+			<img class="qr_img" src="icons/qr_img.jpg">
+		</div>
+
+		<p class="signInMsg" style="display:block;">
+		Sign in to QR Portal
+		</p>
+
+		<div class="enterUsername">
+			<p class="EnterUsername">Username</p>
+		</div>
+			
+		<div class="username">
+			<input type="text" id="username">
+		</div>
+			
+		<div class="enterPassword">
+			<div class="Enterpassword">
+				<p>Password</p>
+			</div>
+			<div class="forgotPassword">
+				<p>Forgot password?</p>
+			</div>
+		</div>
+			
+		<div class="password">
+			<input type="password" id="password">
+		</div>
+
+		<div class="loginBtn">
+			<button id="loginBtn">Sign in</button>
+		</div>
+
+		<p id="login-msg"></p>
+	</div>
+
+  <script src="js/login-page.js"></script>
+</body>
+</html>

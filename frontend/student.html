@@ -1,25 +1,35 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Student Attendance</title>
-    <link rel="stylesheet" href="css/style.css">
+	<meta charset="UTF-8">
+	<title>Student Attendance</title>
+	<link rel="stylesheet" href="css/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@100..900&display=swap" rel="stylesheet">
 </head>
 <body>
-    <h1>Student Attendance</h1>
+	
+	<!-- Student section-->
+  <main>
+		<div class="heading">
+			<p>📷 Mark Your Attendance</p>
+		</div>
+		
+		<div id="student-section" class="card">
+			<input type="text" id="studentId" placeholder="Enter your Student ID" style="display: block;">
+			<button id="startScanBtn" type="button">Start scan</button>
+		</div>
 
-    <div id="student-section">
-        <input type="text" id="studentId" placeholder="Enter your Student ID">
-        <button id="startScanBtn" type="button">Start scan</button>
-    </div>
+		<div id="scanner-section" class="card" style="display: none;">
+			<video id="video"></video>
+			<input id="zoom-slider" type="range" min="1" max="3" step="0.1" value="1" style="display: none;">
+			<p id="scan-result"></p>
+		</div>	
+	</main>
+    
 
-    <div id="scanner-section" style="display: none;">
-        <video id="video" width="300" height="200" style="border:1px solid #ccc; border-radius: 8px;"></video>
-        <p id="scan-result"></p>
-    </div>
-
-    <script src="http://192.168.1.9:8080/target/target-script-min.js#anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.min.js"></script>
-    <script src="js/student.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.min.js"></script>
+	<script src="js/student.js"></script>
 </body>
 </html>

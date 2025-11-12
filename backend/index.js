@@ -3,12 +3,20 @@ const path = require('path');
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
-const http = require('http');
+const https = require('https');
 const { Server } = require('socket.io');
 const db = require('./db');
+const fs = require('fs');
 
 const app = express();
-const server = http.createServer(app);
+
+// HTTPS server
+const options = {
+  key: fs.readFileSync(path.join(__dirname, 'key.pem')),
+  cert: fs.readFileSync(path.join(__dirname, 'cert.pem'))
+};
+const server = https.createServer(options, app);
+
 const io = new Server(server, {
     cors: { origin: '*', methods: ['GET', 'POST'] }
 });
@@ -52,26 +60,26 @@ function verifySessionToken(token) {
 let teacherSockets = [];
 
 io.on('connection', socket => {
-    socket.on('register_teacher', () => {
-        teacherSockets.push(socket);
-        console.log('Teacher registered:', socket.id);
-    });
-
+    console.log('Client connected:', socket.id);
+    socket.on('register_teacher', () => teacherSockets.push(socket));
     socket.on('disconnect', () => {
         teacherSockets = teacherSockets.filter(s => s.id !== socket.id);
-        console.log('Client disconnected:', socket.id);
     });
 });
 
 
 // --------------- API Routes ----------------
 
-// Teacher login
+// Person login
 app.post('/api/login', (req,res) => {
     const { username, password } = req.body;
+
     if (username === 'teacher' && password === 'pass' ) {
-        return res.json({ ok: true, teacherId: 'T1' });
-    } return res.status(401).json({ ok: false, error: 'invalid_credentials' });
+        return res.json({ ok: true, loginId: 'T1' });
+    } else if (username === 'student' && password === 'pass' ) {
+        return res.json({ ok:true, loginId: 'S1' });
+    }
+    return res.status(401).json({ ok: false, error: 'invalid_credentials' });
 });
 
 
@@ -281,9 +289,14 @@ app.use(express.static((FRONTEND_DIR)));
 
 // If someone hits a route that's not an API(fallback)
 app.get(/^\/(?!api).*/, (req, res) => {
-    res.sendFile(path.join(FRONTEND_DIR, 'student.html'));
+    res.sendFile(path.join(FRONTEND_DIR, 'login-page.html'));
 });
 
 server.listen(PORT, () =>
+<<<<<<< HEAD
     console.log(`🚀 Server running at http://192.168.1.9:${PORT}`)
 );
+=======
+    console.log(`🚀 Server running at https://10.138.132.200:${PORT}`)
+);
+>>>>>>> bd41e07 (Initial working version with student and faculty login)

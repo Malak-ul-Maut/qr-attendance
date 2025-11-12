@@ -1,112 +1,111 @@
-.qroll {
-    font-family: sans-serif;
+body {
+  font-family: "Roboto", sans-serif;
+  background: linear-gradient(135deg, #f2f7ff, #dce9ff);
+  margin: 0;
+  padding: 0;
 }
 
-
-button {
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
+main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 100vh;
+  padding: 60px 20px;
 }
 
-#loginBtn {
-    color: white;
-    background-color:rgb(31, 136, 61);
-    padding-top: 5px;
-    padding-bottom: 5px;
-    padding-left: 16px;
-    padding-right: 16px;
-    border-style: solid;
-    border-radius: 7px;
-    border-color: rgba(31, 35, 40, 0.15);
-    border-width: 0.8px;
-    margin-left: 10px;
-    opacity: 0.8;
-    transition: opacity 0.15s, box-shadow 0.15s, padding 0.3s;
-}
-#loginBtn:hover {
-    opacity: 1;
-    padding-top: 10px;
-    padding-bottom: 10px;
-    padding-left: 32px;
-    padding-right: 32px;
-}
-#loginBtn:active {
-    opacity: 0.5;
+/* Header text */
+.heading p {
+  font-size: 56px;
+  font-weight: 600;
+  color: #144c99;
+  text-align: center;
+  margin-bottom: 40px;
 }
 
-#startSessionBtn {
-    color: white;
-    background-color:rgb(33, 107, 202);
-    border-style: none;
-    padding-top: 7px;
-    padding-bottom: 7px;
-    padding-left: 20px;
-    padding-right: 20px;
-    border-radius: 10px;
-    margin-left: 10px;
-    margin-right: 10px;
-    transition: background-color 0.15s, padding 0.15s;
-}
-#startSessionBtn:hover {
-    background-color:rgb(4, 56, 119);
-    box-shadow: 0px 3px 5px rgba(0, 0, 0, 0.15);
-    padding-left: 30px;
-    padding-right: 30px;
-}
-#startSessionBtn:active {
-    opacity: 0.7;
-    
+/* Card container (for both student input and scanner) */
+.card {
+  background-color: #fff;
+  border-radius: 24px;
+  box-shadow: 0px 6px 16px rgba(0, 0, 0, 0.08);
+  padding: 40px;
+  width: 90%;
+  max-width: 600px;
+  text-align: center;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
-#endSessionBtn {
-    color: rgb(37, 41, 46);
-    background-color:rgb(246, 248, 250);
-    border-style: solid;
-    border-color: rgb(209, 217, 224);
-    border-radius: 10px;
-    padding-top: 9px;
-    padding-bottom: 9px;
-    padding-left: 20px;
-    padding-right: 20px;
-    margin-left: 10px;
-    margin-right: 10px;
-    transition: background-color 0.15s, opacity 0.15s;
-
-}
-#endSessionBtn:hover {
-    background-color:rgb(205, 212, 218);
-}
-#endSessionBtn:active {
-    opacity: 0.8;
+.card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0px 8px 20px rgba(0, 0, 0, 0.12);
 }
 
+/* Input styling */
+#studentId {
+  width: 80%;
+  font-size: 24px;
+  font-weight: 500;
+  border-radius: 12px;
+  padding: 14px 18px;
+  border: 2px solid #d0d7e2;
+  outline: none;
+  margin-bottom: 24px;
+  transition: border-color 0.2s;
+}
+
+#studentId:focus {
+  border-color: #1f6feb;
+}
+
+/* Button styling */
 #startScanBtn {
-    color: white;
-    font-weight: 550;
-    background-color:rgb(33, 107, 202);
-    border-style: none;
-    height: 33px;
-    width: 120px;
-    border-radius: 10px;
-    transition: background-color 0.15s;
-    margin-left: 10px;
-    margin-right: 10px;
+  color: white;
+  font-size: 22px;
+  font-weight: 600;
+  background-color: #216bca;
+  border: none;
+  height: 56px;
+  width: 200px;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+  cursor: pointer;
 }
 
 #startScanBtn:hover {
-    background-color:rgb(4, 56, 119);
-    box-shadow: 0px 3px 5px rgba(0, 0, 0, 0.15);
+  background-color: #0e56a3;
+  box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.15);
 }
 
 #startScanBtn:active {
-    opacity: 0.7;
+  opacity: 0.75;
 }
 
-.signInMsg {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    color: rgb(31, 35, 40);
-    font-size: 20px;
-    line-height: 30px;
-    text-align: center;
+/* Scanner section */
+#scanner-section {
+  margin-top: 40px;
+}
+
+#video {
+  width: 100%;
+  border: 2px solid #d0d7e2;
+  border-radius: 12px;
+  margin-top: 10px;
+}
+
+/* Zoom slider */
+#zoom-slider {
+  display: block;
+  margin: 20px auto;
+  accent-color: #1f6feb;
+  width: 60%;
+  height: 6px;
+  border-radius: 4px;
+}
+
+/* Scan result text */
+#scan-result {
+  font-size: 20px;
+  font-weight: 500;
+  margin-top: 20px;
+  color: #144c99;
 }
