@@ -12,94 +12,114 @@
     }
 }
 
-.qr_img {
-    display: inline-block;
-    width: 76px;
+body {
+    background: linear-gradient(45deg, #ffe43777 0%, #537fe77a 100%);
+    height: 100vh;
 }
 
-.qr-img {
+.user-icon {
     text-align: center;
-    margin-top: 30px;
-    margin-bottom: 0px;
+    margin-bottom: 10px;
+}
+
+.user-icon img {
+    width: 4rem;
+    height: auto;
 }
 
 .signInMsg {
-    font-weight: 500;
+    font-weight: 600;
     font-size: 20px;
     font-style: normal;
     text-align: center;
     margin-top: 0px;
-    margin-bottom: 25px;
+    margin-bottom: 2.5rem;
     opacity: 0.8;
 }
 
+main {
+    display: flex;
+    flex-direction: column;
+    justify-self: center;
+    align-items: center;
+    border: none;
+    border-radius: 1.2rem;
+    background-color: var(--bg);
+    margin-top: 20vh;
+    padding: 20px 30px;
+    width: max-content;
+    box-shadow: 0px 4px 4px #00000030, 0px 12px 12px #00000015;
+}
 
-.enterUsername, .enterPassword {
-    font-weight: 500;
+
+section {
+    display: flex;
+    flex-direction: column;
+    row-gap: 16px;
+    width: 100%;
+}
+
+.input-container {
+    display: flex;
+    width: 100%;
+    justify-content: center;
+
+    position: relative;
+}
+.input-container img {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 20px;
+    height: auto;
+    opacity: 0.6;
+    cursor: pointer;
+}
+
+input {
     font-size: 14px;
-    margin-bottom: -6px;
-    text-align: left;
-    opacity: 0.85;
+    font-weight: 500;
+    opacity: 0.9;
+    align-self: center;
+    justify-self: center;
+    width: 100%;
+    border-style: none;
+    border-radius: 0.6rem;
+    background-color: hsl(203, 23%, 89%);
+    padding: 14px 20px;
 }
 
-.enterPassword {
-    display: grid;
-    grid-template-columns: 1fr max-content;
+section p {
+    align-self: self-end;
+    color: royalblue;
+    margin: 0;
 }
-
-.forgotPassword {
-    color: rgb(9, 105, 218);
-    font-weight: 400;
-    text-align: end;
-}
-.forgotPassword:hover {
+section p:hover {
     cursor: pointer;
     text-decoration: underline;
 }
 
-.username, .password {
-    margin-bottom: 10px;
-    width: 100%;
-}
-
-.password {
-    margin-bottom: 15px;
-}
-
-#username , #password {
-    font-size: 14px;
-    border-style: solid;
-    border-width: 0.8px;
-    border-color: rgb(209, 217, 224);
-    border-radius: 3px;
-    height: 16px;
-    width: 100%;
-    padding: 12px 5px;
-    box-shadow: 0 -0.3px 0.5px rgb(218, 217, 217);
-}
-
-
 #loginBtn {
     color: white;
-    background-color:rgb(24, 124, 53);
-    font-size: 14px;
-    font-weight: 550;
-    cursor: pointer;
+    background-color:hsl(220, 20%, 6%);
     width: 100%;
-    height: 40px;
-    padding: 5px 16px;
     margin-top: 8px;
-    border-radius: 5px;
     border: 0.8px solid rgba(31, 35, 40, 0.15);
-    opacity: 0.9;
-    transition: opacity 0.15s;
+    border-radius: 0.8rem;
 }
-#loginBtn:hover {
-    opacity: 1;
-}
-#loginBtn:active {
-    opacity: 0.5;
-}
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 #finalizeModal { display:none; position: fixed; left:0; top:0; right:0; bottom:0; background:rgba(0,0,0,0.5); align-items: center; justify-content: center; }

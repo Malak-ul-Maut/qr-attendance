@@ -1,4 +1,7 @@
-url = 'https://192.168.1.15:4000';
+if (!window.__API_BASE) {
+    window.__API_BASE = (location.protocol && location.protocol.startsWith('http') ? location.origin : 'https://192.168.1.16:4000');
+}
+const url = window.__API_BASE;
 const loginBtn = document.getElementById('loginBtn');
 const startBtn = document.getElementById('startSessionBtn');
 const endBtn = document.getElementById('endSessionBtn');
@@ -11,14 +14,51 @@ const finalizeModal= document.getElementById('finalizeModal');
 const finalizeList= document.getElementById('finalizeList');
 const finalizeSubmitBtn = document.getElementById('finalizeSubmitBtn');
 const finalizeCancelBtn = document.getElementById('finalizeCancelBtn');
+const qrContainer = document.getElementById('qrCode');
+const subjectName = document.getElementById('sub-name');
 
 let refreshTimer = null;
 let currentSessionId = null;
 let socket = null;
 
+// Display user name
+document.querySelector('.user-name b').textContent = getCurrentUser().name || 'Teacher';
+subjectName.textContent = getCurrentUser().subName;
 
 
-// ------------- Start session ----------------
+ // --------------- Socket initialization -------------
+ function initSocket() {
+    socket = io(url);
+    socket.emit('register_teacher');
+
+    socket.on('attendance_update', data => {
+        if (currentSessionId && data.sessionId !== currentSessionId) {
+            console.log('Ignoring attendance for another session:', data.sessionId);
+            return;
+        }
+        const li = document.createElement('li');
+        li.textContent = `${data.studentId} (${data.time})`;
+        studentList.appendChild(li);
+        li.scrollIntoView();
+        studentCount.textContent = `Present: ${studentList.children.length}`;
+
+        console.log(data);
+    });
+
+    socket.on('session_finalized', (payload) => {
+        if(payload.sessionId === currentSessionId) alert('Session finalized by teacher.');
+    });
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  initSocket();
+});
+
+
+
+// ------------- Event handlers ---------------
+
+// Start session
 startBtn.addEventListener('click', async (e) => {
     e.preventDefault();
 
@@ -26,32 +66,29 @@ startBtn.addEventListener('click', async (e) => {
     if (!courseId) return alert('Select Course ID');
 
     try {
+        // Attach the logged-in teacher's username as teacherId when available
+        let teacherIdToSend = 'T1';
+        try {
+            const user = (typeof getCurrentUser === 'function') ? getCurrentUser() : null;
+            if (user && user.role === 'faculty') {
+                teacherIdToSend = user.username || user.loginId || teacherIdToSend;
+            }
+        } catch (e) {
+            // fallback to T1 if anything goes wrong
+        }
+
         const res = await fetch(`${url}/api/session/start`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ courseId, teacherId: 'T1' })
+            body: JSON.stringify({ courseId, teacherId: teacherIdToSend })
         });
         const data = await res.json();
         if (!data.ok) throw new Error(data.error || 'start_failed');
-        
         currentSessionId = data.sessionId;
-        endBtn.disabled = false;
-        startBtn.disabled = true;
         document.getElementById('beforeStart').style.display = 'none';
         document.getElementById('afterStart').style.display = 'flex';
 
-        const qrContainer = document.getElementById('qrCode');
-        const parentQr = qrContainer.parentElement;
-        const desiredWidth = parentQr.offsetWidth * 1;
-        console.log(desiredWidth);
-
-        // Render initial QR
-        qrContainer.innerHTML = '';
-        const canvas = document.createElement('canvas');
-        QRCode.toCanvas(canvas, data.token, { width: desiredWidth, height: desiredWidth }, err => {
-            if (err) return console.error(err);
-            qrContainer.appendChild(canvas);
-        });
+        renderQR(data);
 
         // Schedule token refresh
         if (refreshTimer) clearInterval(refreshTimer);
@@ -67,19 +104,8 @@ startBtn.addEventListener('click', async (e) => {
                     console.warn('Token refresh failed:', tokenData);
                     return;
                 }
-                // redraw QR with new token
-                const qrContainer = document.getElementById('qrCode');
-                const parentQr = qrContainer.parentElement;
-                const desiredWidth = parentQr.offsetWidth * 1;
-                console.log(desiredWidth);
 
-                qrContainer.innerHTML = '';
-                const c2 = document.createElement('canvas');
-                console.log('Token refresh response:', tokenData);
-                QRCode.toCanvas(c2, tokenData.token, { width: desiredWidth, height: desiredWidth }, err => {
-                    if (err) return console.error(err);
-                    qrContainer.appendChild(c2);
-                });   
+                renderQR(tokenData); 
             } catch (e) {
                 console.error('Token refresh error:', e);
             }
@@ -114,28 +140,6 @@ endBtn.addEventListener('click', async () => {
         }
 });
 
-function openFinalizeModal(records) {
-    finalizeList.innerHTML = '';
-    if (!records || records.length ===0) {
-        finalizeList.innerHTML = '<p>No attendance records for this session</p';
-    } else {
-        records.forEach(r => {
-            const div = document.createElement('div');
-            div.className = 'student-row';
-            const cb = document.createElement('input');
-            cb.type = 'checkbox';
-            cb.checked = true;
-            cb.dataset.studentId = r.studentId;
-            cb.dataset.rowid = r.id;
-            const txt = document.createElement('span');
-            txt.textContent = ` ${r.studentId} (${r.timestamp})`;
-            div.appendChild(cb);
-            div.appendChild(txt);
-            finalizeList.appendChild(div);
-        });
-    }
-    finalizeModal.style.display= 'flex';
-}
 finalizeCancelBtn.addEventListener('click', ()=> finalizeModal.style.display = 'none');
 
 finalizeSubmitBtn.addEventListener('click', async ()=> {
@@ -158,11 +162,12 @@ finalizeSubmitBtn.addEventListener('click', async ()=> {
         finalizeModal.style.display = 'none';
         
         // clear local UI
-        studentList.innerHTML = '';
-        studentCount.textContent = 'Present: 0';
-        qrContainer.innerHTML = '';
-        timerDisplay.textContent = '';
-        endBtn.disabled = true;
+        studentCount.textContent = "Present: 0";
+        studentList.textContent = '';
+        const afterStart = document.getElementById('afterStart');
+        const beforeStart = document.getElementById('beforeStart');
+        afterStart.style.display = 'none';
+        beforeStart.style.display = 'flex';
         currentSessionId = null;
         if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
     } catch (err) {
@@ -172,33 +177,41 @@ finalizeSubmitBtn.addEventListener('click', async ()=> {
 });
 
 
- // --------------- Socket initialization -------------
- function initSocket() {
-    socket = io(url);
-    socket.emit('register_teacher');
 
-    socket.on('attendance_update', data => {
-        if (currentSessionId && data.sessionId !== currentSessionId) {
-            console.log('Ignoring attendance for another session:', data.sessionId);
-            return;
-        }
-        const li = document.createElement('li');
-        li.textContent = `${data.studentId} - ${data.courseId} (${data.time})`;
-        studentList.appendChild(li);
-        studentCount.textContent = `Present: ${studentList.children.length}`;
-    });
+// ------------- Functions ---------------
 
-    socket.on('session_ended', payload => {
-        if (payload.sessionId === currentSessionId) {
-            endBtn.disabled = true;
-        }
-    });
+function renderQR(data) {
+    const parentQr = qrContainer.parentElement;
+    const desiredWidth = parentQr.offsetWidth * 0.9;
 
-    socket.on('session_finalized', (payload) => {
-        if(payload.sessionId === currentSessionId) alert('Session finalized by teacher.');
+    qrContainer.innerHTML = '';
+    const canvas = document.createElement('canvas');
+    QRCode.toCanvas(canvas, data.token, { width: desiredWidth, height: desiredWidth }, err => {
+        if (err) return console.error(err);
+        qrContainer.appendChild(canvas);
     });
 }
 
-window.addEventListener('DOMContentLoaded', () => {
-  initSocket();
-});
+function openFinalizeModal(records) {
+    finalizeList.innerHTML = '';
+    if (!records || records.length ===0) {
+        finalizeList.innerHTML = '<p>No attendance records for this session</p';
+    } else {
+        records.forEach(r => {
+            const div = document.createElement('div');
+            div.className = 'student-row';
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = true;
+            cb.dataset.studentId = r.studentId;
+            cb.dataset.rowid = r.id;
+            const txt = document.createElement('span');
+            txt.textContent = ` ${r.studentId} (${r.timestamp})`;
+            txt.scrollIntoView();
+            div.appendChild(cb);
+            div.appendChild(txt);
+            finalizeList.appendChild(div);
+        });
+    }
+    finalizeModal.style.display= 'flex';
+}

@@ -3,30 +3,66 @@
 <head>
 	<meta charset="UTF-8">
 	<title>Student Attendance</title>
-	<link rel="stylesheet" href="css/style.css">
+	<link rel="icon" href="icons/qr-code.png"/>
+	<link rel="stylesheet" href="css/student.css">
+	<link rel="stylesheet" href="css/general.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@100..900&display=swap" rel="stylesheet">
+	<script src="js/auth-guard.js"></script>
+	<script>checkAuthAndRedirect();</script>
+
+
 </head>
 <body>
-	
-	<!-- Student section-->
-  <main>
-		<div class="heading">
-			<p>📷 Mark Your Attendance</p>
-		</div>
-		
-		<div id="student-section" class="card">
-			<input type="text" id="studentId" placeholder="Enter your Student ID" style="display: block;">
-			<button id="startScanBtn" type="button">Start scan</button>
+
+	<header>
+		<div class="left">
+			<img src="icons/hamburger-menu.svg" alt="Menu">
 		</div>
 
-		<div id="scanner-section" class="card" style="display: none;">
+		<div class="middle">
+			<span class="user-name"> <b></b></span>
+		</div>
+
+		<div class="logout-section" onclick="logout();">
+			<img src="icons/logout.svg" alt="Logout">
+			<div>Log out</div>
+		</div>
+	</header>
+
+  <main>		
+		<div id="scanner-section" style="display: none;">
+			<button id="closeScanBtn" type="button">✕</button>
+			
 			<video id="video"></video>
-			<input id="zoom-slider" type="range" min="1" max="3" step="0.1" value="1" style="display: none;">
+			
+			<div class="slider-row">
+			  <img src="icons/zoom-out.svg" class="slider-icon left" alt="zoom out">
+			  <input id="zoom-slider" type="range" min="1" max="3" step="0.1" value="1">
+			  <img src="icons/zoom-in.svg" class="slider-icon right" alt="zoom in">
+			</div>
+
 			<p id="scan-result"></p>
 		</div>	
+
+		<div id="markAttendanceCard" class="card">
+			<img src="icons/generate-qr.svg">
+			<p>Mark attendance</p>
+		</div>
+
+		<div class="card">
+			<img src="icons/courses.svg">
+			<p>Subjects</p>
+		</div>
+
+		<div class="card">
+			<img src="icons/history.svg">
+			<p>History</p>
+		</div>
 	</main>
+
+
     
 
 	<script src="https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.min.js"></script>

@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Homepage</title>
+  <link rel="icon" href="icons/qr-code.png"/>
+  <link rel="stylesheet" href="css/general.css">
+  <style>
+
+    @media (max-width: 540px) {
+      main {
+        flex-direction: column;
+        row-gap: 16px;
+        width: 100%;
+      }
+
+      header div{
+        height: 50px;
+      }
+
+      .mit-logo img {
+        width: 50px;
+        height: auto;
+        border-radius: 4px;
+      }
+      .mit-welcomes {
+        font-size: 16px;
+        font-weight: 600;
+        opacity: 0.8;
+        color: white;
+        text-transform: uppercase;
+      }
+      .heading{
+        font-size: 24px;
+        font-weight: 800;
+        opacity: 0.9;
+      }
+      .sub-heading {
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+    }
+
+    @media (min-width: 541px) {
+      
+      header img {
+        width: 80px;
+        height: auto;
+        border-radius: 4px;
+        align-self: center;
+      }
+      .mit-welcomes {
+        font-size: 24px;
+        font-weight: 600;
+        color: white;
+        opacity: 0.8;
+        text-transform: uppercase;
+      }
+      .heading{
+        font-size: 40px;
+        font-weight: 800;
+      }
+      .sub-heading {
+        font-size: 18px;
+        font-weight: 700;
+      }
+      
+    }
+
+
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      height: 100vh;
+      background: linear-gradient(45deg, #ffe43777 0%, #537fe77a 100%);
+    }
+
+    header {
+      width: 100%;
+    }
+
+    header div:first-of-type {
+      display: flex;
+      align-items: center;
+      column-gap: 30px;
+      justify-content: center;
+      background-image: linear-gradient(to right, hsl(223, 46%, 23%), hsla(223, 66%, 33%, 0.815));
+    }
+
+    .heading{
+      color: var(--text);
+      justify-self: center;
+      margin-top: 24px;
+      margin-bottom: 0px;
+      opacity: 0.9;
+    }
+
+    .sub-heading {
+      color: var(--text-muted);
+      justify-self: center;
+      margin-bottom: 48px;
+    }
+
+    main {
+      display: flex;
+      column-gap: 50px;
+      max-width: max-content;
+      justify-content: space-evenly;
+    }
+
+
+    .role-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 16rem;
+      border: none;
+      border-radius: 1.2rem;
+      background-image: linear-gradient(to bottom, var(--highlight), var(--bg) );
+      padding: 32px 16px;
+      box-shadow: 0px 4px 4px #00000030, 0px 12px 12px #00000015;
+      transition: all 0.3s;
+    }
+    .role-card:hover {
+      scale: 1.02;
+      cursor: pointer;
+    }
+    .role-card:active {
+      opacity: 0.8;
+      scale: 0.98;
+    }
+
+
+
+    .role-card p:nth-of-type(1) {
+      font-size: 32px;
+      font-weight: 800;
+      color: var(--text);
+      opacity: 0.8;
+      margin: 0;
+      padding-bottom: 32px;
+    }
+    .role-card p:nth-of-type(2){
+      font-size: 16px;
+      font-weight: 600;
+      text-align: center;
+      margin: 0;
+      color: var(--text-muted);
+      opacity: 0.9;
+    }
+    
+  </style>
+
+</head>
+
+<body>
+  <header>
+    <div class="logo-welcome">
+      <div class="mit-logo">
+        <img src="icons/mit-logo.png">
+      </div>
+      <div>
+        <p class="mit-welcomes">welcomes you to</p>
+      </div>
+    </div>
+    <p class="heading">The QR-Based Attendance System</p>
+    <p class="sub-heading">Explore and manage Attendance related activities seamlessly.</p>
+  </header>
+  
+  <main class="cards">
+    <div class="role-card" data-role="student">
+      <p>Student</p>
+      <p>Access your courses, attendance, and academic resources</p>
+    </div>
+
+    <div class="role-card" data-role="faculty">
+      <p>Faculty</p>
+      <p>Manage student attendance, courses, and resources efficiently</p>
+    </div>
+
+    <div class="role-card" data-role="admin">
+      <p>Admin</p>
+      <p>Oversee departmental activities, user accounts, and course allocations</p>
+    </div>
+  </main>
+
+  <script>
+    document.querySelectorAll(".role-card").forEach(card => {
+      card.addEventListener("click", () => {
+        let role = card.getAttribute("data-role");
+        window.location.href = `login-page.html?role=${role}`;
+      });
+    });
+  </script>
+  
+</body>
+</html>

@@ -1,59 +1,40 @@
-url = 'https://192.168.1.15:4000';
-const startScanBtn = document.getElementById('startScanBtn');
+if (!window.__API_BASE) {
+    window.__API_BASE = (location.protocol && location.protocol.startsWith('http') ? location.origin : 'https://192.168.1.15:4000');
+}
+const url = window.__API_BASE;
+const markAttendanceCard = document.getElementById('markAttendanceCard');
+const closeScanBtn = document.getElementById('closeScanBtn');
 const video = document.getElementById('video');
 const scanResult = document.getElementById('scan-result');
+const scannerSection = document.getElementById('scanner-section');
 
 let scanning = false;
 let scanInProgress = false;
-//---------- Functions --------------
+let currentStream = null;
 
-// Hash function (SHA-256)
-async function hashString(str) {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(str);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    return Array.from(new Uint8Array(hashBuffer))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('');
-}
-
-// Get stable camera device ID (hashed)
-async function getHashedCameraId() {
-   try {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const videoInputs = devices.filter(d => d.kind === 'videoinput');
-    if (videoInputs.length === 0) return null;
-
-    const preferred = videoInputs.find(d => d.label.toLowerCase().includes('back')) || videoInputs[0];
-    const camerId = preferred.deviceId;
-
-    return await hashString(camerId);
-   } catch (err) {
-    console.error("Error enumerating media devices:", err);
-    return null;
-   }
-}
+document.querySelector('.user-name b').textContent = studentId = getCurrentUser().name;
 
 
-startScanBtn.addEventListener('click', async () => {
-    const studentId = document.getElementById('studentId').value;
-    if (!studentId) return alert('Please enter your Student ID.');
 
-    document.getElementById('student-section').style.display = 'none';
-    document.getElementById('scanner-section').style.display = 'block';
+// ------------ Event handlers ---------------
+
+markAttendanceCard.addEventListener('click', async () => {
+    scannerSection.style.display = 'block';
+    closeScanBtn.style.display = 'block';
+    console.log(window.navigator.mediaDevices);
     
     // Access camera
     try{
-        let stream = await navigator.mediaDevices.getUserMedia({ 
+        currentStream = await navigator.mediaDevices.getUserMedia({ 
             video: { facingMode: 'environment' } 
         });
-        video.srcObject = stream;
+        video.srcObject = currentStream;
         await video.play();
 
         // Try to enable zoom if supported
-        const [track] = stream.getVideoTracks();
+        const [track] = currentStream.getVideoTracks();
         const capabilities = track.getCapabilities();
-        const settings = stream.getVideoTracks()[0].getSettings();
+        const settings = currentStream.getVideoTracks()[0].getSettings();
 
         if (capabilities.zoom) {
             const zoomControl = document.getElementById('zoom-slider');
@@ -63,25 +44,106 @@ startScanBtn.addEventListener('click', async () => {
             zoomControl.step = capabilities.zoom.step || 0.1;
             zoomControl.value = settings.zoom || capabilities.zoom.min;
 
-            zoomControl.addEventListener('input', async () => {
-                const zoom = parseFloat(zoomControl.value);
-                const track = stream.getVideoTracks()[0];
-                await track.applyConstraints({ advanced: [{ zoom }] });
+            setZoomSliderBackground(zoomControl);
+            zoomControl.addEventListener('input', async (ev) => {
+                const el = ev.target;
+                setZoomSliderBackground(el);
+                const zoom = parseFloat(el.value);
+                const track = currentStream.getVideoTracks()[0];
+                try {
+                    await track.applyConstraints({ advanced: [{ zoom }] });
+                } catch (e) {
+                    console.warn('Failed to apply zoom constraint:', e);
+                }
             });
         } else {
             console.warn("Zoom not supported by this device/camera");
         }
 
         scanning = true;
-        const hashedCameraId = await getHashedCameraId();
-        scanQRCode(studentId, video, stream, hashedCameraId);
+        const CameraId = await getCameraId();
+        scanQRCode(studentId, video, currentStream, CameraId);
+
     } catch (err) {
         console.error("Camera error:", err);
         alert("Unable to access camera. Make sure you allow permission.");
     }
 });
 
-async function scanQRCode(studentId, video, stream, hashedCameraId) {
+
+closeScanBtn.addEventListener('click', () => {
+    scanning = false;
+    if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+        currentStream = null;
+    }
+    scannerSection.style.display = 'none';
+    closeScanBtn.style.display = 'none';
+    scanResult.textContent = '';
+});
+
+
+// Slider icon click handlers (step slider and dispatch input event)
+try {
+    const zoomMinus = document.querySelector('.slider-icon.left');
+    const zoomPlus = document.querySelector('.slider-icon.right');
+    const zoomControlGlobal = document.getElementById('zoom-slider');
+
+    if (zoomMinus && zoomPlus && zoomControlGlobal) {
+        const step = parseFloat(zoomControlGlobal.step)*10 || 1;
+        zoomMinus.addEventListener('click', () => {
+            const min = parseFloat(zoomControlGlobal.min) || 0;
+            let v = parseFloat(zoomControlGlobal.value) - step;
+            if (v < min) v = min;
+            zoomControlGlobal.value = v;
+            zoomControlGlobal.dispatchEvent(new Event('input'));
+        });
+
+        zoomPlus.addEventListener('click', () => {
+            const max = parseFloat(zoomControlGlobal.max) || (parseFloat(zoomControlGlobal.value) + step);
+            let v = parseFloat(zoomControlGlobal.value) + step;
+            if (v > max) v = max;
+            zoomControlGlobal.value = v;
+            zoomControlGlobal.dispatchEvent(new Event('input'));
+        });
+    }
+} catch (e) {
+    console.warn('Slider icon handlers could not be attached:', e);
+}
+
+
+
+//---------- Functions --------------
+
+async function getCameraId() {
+   try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoInputs = devices.filter(d => d.kind === 'videoinput');
+    if (videoInputs.length === 0) return null;
+
+    const preferred = videoInputs.find(d => d.label.toLowerCase().includes('back')) || videoInputs[0];
+    const camerId = preferred.deviceId;
+    console.log(preferred.label);
+
+    return camerId;
+   } catch (err) {
+    console.error("Error enumerating media devices:", err);
+    return null;
+   }
+}
+
+
+// Update slider track color and apply zoom on input
+function setZoomSliderBackground(el) {
+    const min = parseFloat(el.min) || 0;
+    const max = parseFloat(el.max) || 1;
+    const val = parseFloat(el.value);
+    const pct = ((val - min) / (max - min)) * 100;
+    el.style.background = `linear-gradient(to right, #0b4db3 0%, #0b4db3 ${pct}%, #d0d7e2 ${pct}%, #d0d7e2 100%)`;
+}
+
+
+async function scanQRCode(studentId, video, stream, CameraId) {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: 'true'});
 
@@ -99,22 +161,21 @@ async function scanQRCode(studentId, video, stream, hashedCameraId) {
         if(code && !scanInProgress) {
             scanning = false;
             scanInProgress = true;
-            stream.getTracks().forEach(track => track.stop());
+            currentStream.getTracks().forEach(track => track.stop());
             scanResult.textContent = "QR detected. Submitting attendance...";
             clearInterval(interval);
-            sendAttendance(studentId, code.data, hashedCameraId);
+            sendAttendance(studentId, code.data, CameraId);
         }
     }, 300);
 }
 
 
-// Send Attendance
-async function sendAttendance(studentId, token, hashedCameraId) {
+async function sendAttendance(studentId, token, CameraId) {
     try {
         const res = await fetch(`${url}/api/session/verify`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ studentId, token, cameraFingerprint: hashedCameraId })
+            body: JSON.stringify({studentId, token, cameraFingerprint: CameraId })
         });
 
         const text = await res.text();
@@ -129,9 +190,11 @@ async function sendAttendance(studentId, token, hashedCameraId) {
         }
 
         if (data.ok) {
-            scanResult.textContent = "Attendance marked successfully!";
+            scanResult.textContent = "✔ Attendance marked successfully!";
+            scanResult.style.color = '#2e9c17ff'
         } else {
-            scanResult.textContent = `Verification failed: ${data.error || 'unknown'}`;
+            scanResult.textContent = `⚠︎ Verification failed !!! (${data.error || 'unknown'})`;
+            scanResult.style.color = '#b81616';
             console.log("Verification failed: ", data.error );
         }
     } catch (err) {

@@ -7,8 +7,8 @@ const https = require('https');
 const { Server } = require('socket.io');
 const db = require('./db');
 const fs = require('fs');
-
 const app = express();
+
 
 // HTTPS server
 const options = {
@@ -22,16 +22,15 @@ const io = new Server(server, {
 });
 
 const PORT = process.env.PORT || 4000;
-const JWT_SECRET = process.env.JWT_SECRET || "dev_secret_change_me";
+const JWT_SECRET = process.env.JWT_SECRET || "amolSirZindabad";
 
 app.use(express.json());
 app.use(cors({ origin: '*', methods: ['GET', 'POST'], allowedHeaders: ['Content-Type', 'Authorization'] }));
 
-// In-memory sessions map: sessionId -> { courseId, teacherId, startedAt, active }
-const sessions = {};
 
 
 // --------------- Functions ----------------
+const sessions = {};
 const activeTokens = {};
 
 function generateShortCode(length = 8) {
@@ -45,14 +44,6 @@ function createSessionToken(sessionId, courseId, expiresInSeconds) {
     activeTokens[shortCode] = { sessionId, courseId, expiresAt };
     setTimeout(() => delete activeTokens[shortCode], expiresInSeconds * 1000);
     return shortCode;
-}
-
-function verifySessionToken(token) {
-    try { 
-        return jwt.verify(token, JWT_SECRET); 
-    } catch (e) {
-         return null; 
-    }
 }
 
 
@@ -70,16 +61,39 @@ io.on('connection', socket => {
 
 // --------------- API Routes ----------------
 
-// Person login
-app.post('/api/login', (req,res) => {
-    const { username, password } = req.body;
 
-    if (username === 'teacher' && password === 'pass' ) {
-        return res.json({ ok: true, loginId: 'T1' });
-    } else if (username === 'student' && password === 'pass' ) {
-        return res.json({ ok:true, loginId: 'S1' });
+// User login
+app.post('/api/login', (req,res) => {
+    const { username, password, role } = req.body;
+    const table = 
+        role === "student" ? "students" :
+        role === "faculty" ? "faculty" :
+        role === "admin" ? "admins" :
+        null;
+
+    if (!table) {
+        return res.json({ ok:false, msg: "Invalid role" });
     }
-    return res.status(401).json({ ok: false, error: 'invalid_credentials' });
+
+    const query = `SELECT * FROM ${table} WHERE username = ? AND password = ?`;
+    db.get(query, [username, password], (err, row) => {
+        if (err) {
+            console.error("DB login error:", err);
+            return res.status(500).json({ ok:false, error: "db_error" });
+        }
+        
+        if(!row) {
+            return res.status(401).json({ ok:false, error: "invallid_credentials" });
+        }
+
+        return res.json({
+            ok: true,
+            role,
+            loginId: row.id,
+            name: row.name,
+            subName: row.subjectName
+        });
+    });
 });
 
 
@@ -105,6 +119,7 @@ app.post('/api/session/start', (req, res) => {
     return res.json({ ok: true, sessionId, token, expiresIn: 3});
 });
 
+
 // Issue a fresh token for an existing sessionId
 app.post('/api/session/token', (req, res) => {
     const { sessionId } = req.body;
@@ -114,6 +129,7 @@ app.post('/api/session/token', (req, res) => {
     let token = createSessionToken(sessionId, courseId, 3);
     return res.json({ ok:true, token, expiresIn: 3 });
 });
+
 
 // Verify attendance (student scan)
 app.post('/api/session/verify', (req, res) => {
@@ -135,86 +151,53 @@ app.post('/api/session/verify', (req, res) => {
         return res.status(400).json({ ok:false, error:'session_inactive' });
     }
 
-    if (cameraFingerprint) {
-        db.get(
-            `SELECT * FROM attendance WHERE sessionId = ? AND cameraFingerprint = ?`,
-            [sessionId, cameraFingerprint],
-            (err, row) => {
-                if (err) {
-                    console.error("DB Error (camera check):", err);
-                    return res.status(500).json({ ok: false, error: 'db_error'});
+    if (!cameraFingerprint) return res.status(400).json({ ok:false, error:'no_camera_device_detected' });
+
+    db.get(
+        `SELECT * FROM attendance WHERE (studentId = ? OR cameraFingerprint = ?) AND sessionId = ?`, 
+        [studentId, cameraFingerprint, sessionId],
+        (err, row) => {
+            if (err) {
+                console.error("DB Error (duplicate check):", err);
+                return res.status(500).json({ ok: false, error: 'db_error'});
+            }
+            if (row) {
+                if (row.studentId === studentId) {
+                    return res.status(400).json({ ok: false, error: 'already_marked'});
                 }
-                if (row) {
+                if (row.cameraFingerprint === cameraFingerprint) {
                     return res.status(400).json({ ok: false, error: 'duplicate_device_entry'});
                 }
+            }
 
-                db.get(
-                    `SELECT * FROM attendance WHERE sessionId = ? AND studentId = ?`,
-                    [sessionId, studentId],
-                    (err, row2) => {
-                        if (err) {
-                            console.error("DB Error (student check):", err);
-                            return res.status(500).json({ ok: false, error: 'db_error' });
-                        }
-                        if (row2) {
-                            return res.status(400).json({ ok: false, error: 'already_marked' });
-                        }
-
-                        db.run(
-                            `INSERT INTO attendance (studentid, courseId, sessionId, cameraFingerprint, verified) VALUES (?, ?, ?, ?, ?)`,
-                            [studentId, courseId, sessionId, cameraFingerprint, 1],
-                            function (err) {
-                                if (err) {
-                                    console.error('DB Error (insert):', err);
-                                    return res.status(500).json({ ok: false, error: 'db_error' });
-                                }
-                                console.log(`✔ Attendance recorded: ${studentId} in ${courseId} (session ${sessionId}) via cameraId ${cameraFingerprint}`);
-
-                                teacherSockets.forEach(sock => sock.emit('attendance_update', {
-                                    studentId,
-                                    courseId,
-                                    sessionId,
-                                    time: new Date().toLocaleTimeString(),
-                                }));
-                                res.json({ ok:true, message: 'Attendance recorded', sessionId });
-
-                            }
-                        )
+            db.run(
+                `INSERT INTO attendance (studentid, courseId, sessionId, cameraFingerprint, verified) VALUES (?, ?, ?, ?, ?)`,
+                [studentId, courseId, sessionId, cameraFingerprint, 1],
+                (err) => {
+                    if (err) {
+                        console.error('DB Error (insert):', err);
+                        return res.status(500).json({ ok: false, error: 'db_error' });
                     }
-                )
-            }
-        )
-    } else {
-        db.run(
-            `INSERT INTO attendance (studentId, courseId, sessionId, verified) VALUES (?, ?, ?, ?)`,
-            [studentId, courseId, sessionId, 1],
-            function (err) {
-                if (err) {
-                    console.error('DB Error:', err);
-                    return res.status(500).json({ ok: false, error: 'db_error'});  
+                    console.log(`✔ Attendance recorded: ${studentId} in ${courseId} (session ${sessionId}) via cameraId ${cameraFingerprint}`);
+
+                    teacherSockets.forEach(sock => sock.emit('attendance_update', {
+                        studentId,
+                        courseId,
+                        sessionId,
+                        time: new Date().toLocaleTimeString(),
+                    }));
+                    res.json({ ok:true, message: 'Attendance recorded', sessionId });
                 }
-
-                console.log(`✓ Attendance recorded: ${studentId} in ${courseId} (session ${sessionId})`);
-                
-                teacherSockets.forEach(sock => sock.emit('attendance_update', {
-                    studentId,
-                    courseId,
-                    sessionId,
-                    time: new Date().toLocaleTimeString(),
-                }));
-
-                res.json({ ok:true, message: 'Attendance recorded', sessionId });
-            }
-        );
-    }
+            );
+        }
+    );
 });
+
 
 // End session
 app.post('/api/session/end', (req, res) => {
     const { sessionId } = req.body;
     if (!sessionId || !sessions[sessionId]) return res.status(400).json({ ok: false, error: 'invalid_session' });
-
-    sessions[sessionId].active = false;
 
     db.run(
         `UPDATE sessions SET endTime = datetime('now'), status = 'ended' WHERE sessionId = ?`,
@@ -233,8 +216,6 @@ app.post('/api/session/end', (req, res) => {
                 console.error('DB Error (fetching attendance on end):', err);
                 return res.status(500).json({ ok:false, error:'db_error' });
             }
-            // Notify teachers that session ended
-            teacherSockets.forEach(sock => sock.emit('session_ended', { sessionId }));
             
             return res.json({ ok:true, sessionId, records: rows });
         }
@@ -246,6 +227,8 @@ app.post('/api/session/finalize', (req, res) => {
     try{
         const { sessionId, keepStudentIds } = req.body;
         if(!sessionId || !Array.isArray(keepStudentIds)) return res.status(400).json({ ok:false, error:'missing_fields' });
+
+        sessions[sessionId].active = false;
         
         // 1) mark all removed by default
         db.run(
@@ -293,5 +276,5 @@ app.get(/^\/(?!api).*/, (req, res) => {
 });
 
 server.listen(PORT, () =>
-    console.log(`🚀 Server running at https://192.168.1.15:${PORT}`)
+    console.log(`🚀 Server running at https://<IPv4 Address>:${PORT}`)
 );

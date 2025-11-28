@@ -2,16 +2,17 @@
 <html>
 <head>
   <title>Teacher Dashboard</title>
+  <link rel="icon" href="icons/qr-code.png"/>
   <link rel="stylesheet" href="css/general.css">
-  <link rel="stylesheet" href="css/login-section.css">
   <link rel="stylesheet" href="css/session-section.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+	<script src="js/auth-guard.js"></script>
+	<script>checkAuthAndRedirect();</script>
 </head>
 
 <body>
-  <!-- Session section -->
   <div id="session-section">
     
     <header class="header">
@@ -20,13 +21,13 @@
       </div>
       <div class="middle-section">Teacher Dashboard</div>
       <div class="right-section">
-        <span class="teacher-name">Welcome, <b>Teacher</b></span>
+        <span class="user-name">Welcome, <b></b></span>
       </div>
     </header>
 
     <nav class="sidebar">
-      <div class="sidebar-content">
-        <img src="icons/generate-qr.png" alt="Generate QR">
+      <div class="sidebar-content-1">
+        <img src="icons/generate-qr.svg" alt="Generate QR">
         <div>Generate QR</div>
       </div>
       <div class="sidebar-content">
@@ -37,16 +38,16 @@
         <img src="icons/feedback.svg" alt="Feedback">
         <div>Feedback</div>
       </div>
-      <div class="sidebar-content">
-        <img src="icons/logout.svg" alt="Logout">
+      <div class="sidebar-content" onclick="logout();">
+        <img src="icons/logout-black.svg" alt="Logout">
         <div>Log out</div>
       </div>
     </nav>
 
-    <div class="content">
+    <main class="content">
       
-      <div id="beforeStart">
-        <div class="sub-details">
+      <section id="beforeStart">
+        <div id="sub-name" class="sub-details">
           Mathematics (III-Sem)
         </div>
         <div class="select-section">
@@ -58,45 +59,42 @@
             <option value="C">C</option>
             <option value="D">D</option>
           </select>
-          <div>
-            <button id="startSessionBtn" type="button">Start Session</button>
-          </div>
         </div>
-      </div>
+        <div>
+          <button id="startSessionBtn" type="button">Start session</button>
+        </div>
+      </section>
       
-      <div id="afterStart" style="display:none;">
+      <section id="afterStart" style="display:none;">
         <div class="a">
           <div id="qrCode"></div>
         </div>
         
         <div class="b">
-          <div>
-            <p>Session started:</p>
-            <button id="endSessionBtn" type="button" disabled>End Session</button>
-          </div>
           <div class="live-section">
-            <h3>Live Attendance</h3>
+            <p>Live Attendance</p>
             <p id="studentCount">Present: 0</p>
-            <ul id="studentList"></ul>
+            <button id="endSessionBtn" type="button">End Session</button>
+            <ol id="studentList"></ol>
           </div>
         </div>
-      </div>
-    </div>
+      </section>
 
-    <div id="finalizeModal">
-      <div id="finalizeContent">
-        <h3>Review & Finalize Attendance</h3>
-        <div id="finalizeList"></div>
-        <div class="finalize-buttons">
-          <button id="finalizeSubmitBtn">Submit Final Attendance</button>
-          <button id="finalizeCancelBtn">Cancel</button>
+      <section id="finalizeModal">
+        <div id="finalizeContent">
+          <p>Review & Finalize Attendance</p>
+          <div id="finalizeList"></div>
+          <div class="finalize-buttons">
+            <button id="finalizeSubmitBtn">Submit Final Attendance</button>
+            <button id="finalizeCancelBtn">Cancel</button>
+          </div>
         </div>
-      </div>
-    </div>
-    
-    <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
-    <script src="https://192.168.1.15:4000/socket.io/socket.io.js"></script>
-    <script src="js/teacher.js"></script>
+      </section>
+    </main>
   </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+  <script src="https://10.138.132.200:4000/socket.io/socket.io.js"></script>
+  <script src="js/teacher.js"></script>
 </body>
 </html>
