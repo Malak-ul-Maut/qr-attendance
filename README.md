@@ -14,52 +14,29 @@ It supports **token-based session validation**, **device fingerprinting for anti
 - 🧾 **SQLite Database** — Lightweight and portable for classroom use.
 - 🧍‍♂️ **Live Teacher Dashboard** — Teachers can view updates instantly.
 
----
-
-## 🧩 Project Structure
-
-```
-
-qr-attendance/
-│
-├── backend/
-│   ├── index.js              # Main Express server
-│   ├── db.js                 # SQLite database setup
-│   ├── package.json          # Node dependencies
-│   └── attendance.db         # (Auto-created)
-│
-└── frontend/
-├── index.html            # Main student UI
-├── student.js            # Scanner logic & API requests
-├── style.css             # (Optional) Custom styling
-
-````
 
 ---
+
 
 ## 🛠️ Setup Instructions
 
-### 1️⃣ Clone the Repository
+### 1️⃣ Install Nodejs
+Official website: https://nodejs.org/en/download/current
+Download and install the 'Windows Installer(.msi)' version listed below 
+
+### 2️⃣ Install Git
+
+```bash
+npm install git
+```
+
+### 3️⃣ Clone the Repository
 Open a terminal and run:
 ```bash
-git clone https://github.com/<your-username>/qr-attendance.git
+git clone https://github.com/Malak-ul-Maut/qr-attendance.git
 cd qr-attendance/backend
 ````
 
-### 2️⃣ Install Dependencies
-
-```bash
-npm install
-```
-
-### 3️⃣ Create a `.env` File (optional)
-
-If you want to configure a custom port or DB path:
-
-```
-PORT=4000
-DB_PATH=attendance.db
-```
 
 ### 4️⃣ Run the Server
 
@@ -70,22 +47,22 @@ node index.js
 You should see:
 
 ```
-Server running on http://localhost:4000
-Database connected
+🚀 Server running at https://<IPv4 Address>:4000
+Connected to SQLite database
 ```
 
-### 5️⃣ Open Frontend
+### 5️⃣ Open the website
 
 Now open the frontend file in a browser:
 
 ```
-qr-attendance/frontend/index.html
+https://<Your_IPv4_Address>:4000/homepage.html
 ```
 
 ✅ You should be able to:
 
-* Enter your student ID
-* Scan QR codes
+* Login via the homepage
+* Generate/Scan QR Codes
 * Get success/error messages in real-time
 
 ---
@@ -123,7 +100,7 @@ node db.js
 
 ## 🧑‍💻 Developers
 
-* **Project Lead:** Ali भाई
+* **Project Lead:** Ahad Ali 
 * **Backend:** Node.js (Express, SQLite3)
 * **Frontend:** HTML, CSS, JS, jsQR
 * **Security:** Token-based verification + device fingerprinting
@@ -132,13 +109,12 @@ node db.js
 
 ## 🌱 Future Improvements
 
-* Add login system for teachers/students
-* Store camera fingerprints in DB (for analytics)
-* Style the UI with Tailwind or Bootstrap
+* Add facial verification system 
+* Add attendance analytics
 * Deploy using Render / Railway
 
 ---
 
 ### 🧾 License
 
-MIT License © 2025 — QR Attendance System by Ali भाई 
+MIT License © 2025 — QR Attendance System by Ahad Ali
