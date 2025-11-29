@@ -31,7 +31,7 @@ npm install git
 ```
 
 ### 3️⃣ Clone the Repository
-Open a terminal and run:
+Open Command Prompt and run:
 ```bash
 git clone https://github.com/Malak-ul-Maut/qr-attendance.git
 cd qr-attendance/backend
