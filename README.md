@@ -47,16 +47,16 @@ node index.js
 You should see:
 
 ```
-🚀 Server running at https://<IPv4 Address>:4000
+🚀 Server running at https://<Your_IPv4_Address>:4000
 Connected to SQLite database
 ```
 
 ### 5️⃣ Open the website
 
-Now open the frontend file in a browser:
+Now open the frontend website in a browser:
 
 ```
-https://<Your_IPv4_Address>:4000/homepage.html
+https://<Your_IPv4_Address>:4000
 ```
 
 ✅ You should be able to:
