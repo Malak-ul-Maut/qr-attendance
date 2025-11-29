@@ -7,6 +7,7 @@ const https = require('https');
 const { Server } = require('socket.io');
 const db = require('./db');
 const fs = require('fs');
+const os = require('os');
 const app = express();
 
 
@@ -44,6 +45,20 @@ function createSessionToken(sessionId, courseId, expiresInSeconds) {
     activeTokens[shortCode] = { sessionId, courseId, expiresAt };
     setTimeout(() => delete activeTokens[shortCode], expiresInSeconds * 1000);
     return shortCode;
+}
+
+function getServerIpAddress() {
+  const networkInterfaces = os.networkInterfaces();
+  for (const interfaceName in networkInterfaces) {
+    const addresses = networkInterfaces[interfaceName];
+    for (const address of addresses) {
+      // Filter for IPv4 addresses that are not internal (loopback)
+      if (address.family === 'IPv4' && !address.internal) {
+        return address.address;
+      }
+    }
+  }
+  return null; // No suitable IP address found
 }
 
 
@@ -267,14 +282,15 @@ app.post('/api/session/finalize', (req, res) => {
 
 
 // -------------- Serve frontend & start server ----------------
-const FRONTEND_DIR = 'C:/Users/jiya computer/Desktop/qr-attendance/frontend';
+const FRONTEND_DIR = path.join(__dirname, '..', 'frontend');
 app.use(express.static((FRONTEND_DIR)));
 
 // If someone hits a route that's not an API(fallback)
 app.get(/^\/(?!api).*/, (req, res) => {
-    res.sendFile(path.join(FRONTEND_DIR, 'login-page.html'));
+    res.sendFile(path.join(FRONTEND_DIR, 'homepage.html'));
 });
 
+const serverIp = getServerIpAddress();
+
 server.listen(PORT, () =>
-    console.log(`🚀 Server running at https://<IPv4 Address>:${PORT}`)
-);
+    console.log(`🚀 Server running at https://${serverIp}:${PORT}`));

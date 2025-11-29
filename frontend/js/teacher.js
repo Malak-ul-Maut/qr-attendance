@@ -1,7 +1,3 @@
-if (!window.__API_BASE) {
-    window.__API_BASE = (location.protocol && location.protocol.startsWith('http') ? location.origin : 'https://192.168.1.16:4000');
-}
-const url = window.__API_BASE;
 const loginBtn = document.getElementById('loginBtn');
 const startBtn = document.getElementById('startSessionBtn');
 const endBtn = document.getElementById('endSessionBtn');
@@ -17,6 +13,11 @@ const finalizeCancelBtn = document.getElementById('finalizeCancelBtn');
 const qrContainer = document.getElementById('qrCode');
 const subjectName = document.getElementById('sub-name');
 
+if (!window.__API_BASE) {
+    window.__API_BASE = (location.protocol && location.protocol.startsWith('http') ? location.origin : 'https://192.168.1.16:4000');
+}
+const url = window.__API_BASE;
+
 let refreshTimer = null;
 let currentSessionId = null;
 let socket = null;
@@ -26,10 +27,14 @@ document.querySelector('.user-name b').textContent = getCurrentUser().name || 'T
 subjectName.textContent = getCurrentUser().subName;
 
 
+
  // --------------- Socket initialization -------------
  function initSocket() {
     socket = io(url);
-    socket.emit('register_teacher');
+
+    socket.on('connect', () => {
+        socket.emit('register_teacher');
+    });
 
     socket.on('attendance_update', data => {
         if (currentSessionId && data.sessionId !== currentSessionId) {
@@ -41,8 +46,6 @@ subjectName.textContent = getCurrentUser().subName;
         studentList.appendChild(li);
         li.scrollIntoView();
         studentCount.textContent = `Present: ${studentList.children.length}`;
-
-        console.log(data);
     });
 
     socket.on('session_finalized', (payload) => {
@@ -50,9 +53,7 @@ subjectName.textContent = getCurrentUser().subName;
     });
 }
 
-window.addEventListener('DOMContentLoaded', () => {
-  initSocket();
-});
+initSocket();
 
 
 
