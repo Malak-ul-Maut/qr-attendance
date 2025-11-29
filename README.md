@@ -81,18 +81,6 @@ node db.js
 
 ---
 
-## Common Issues
-
-| Problem                    | Cause                      | Fix                                       |
-| -------------------------- | -------------------------- | ----------------------------------------- |
-| `Camera not accessible`    | Browser blocked permission | Allow camera access manually              |
-| `invalid_or_expired_token` | QR expired                 | Scan the latest QR again                  |
-| `duplicate_entry`          | Same device used again     | Device fingerprint matched                |
-| `Error: db_error`          | DB locked or corrupted     | Delete `attendance.db` and restart server |
-
-
----
-
 ## Developers
 
 * **Project Lead:** Ahad Ali 
