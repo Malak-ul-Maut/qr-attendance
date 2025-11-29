@@ -26,49 +26,51 @@ Before you begin, ensure you have the following prerequisites installed:
 npm install git
 ```
 
+---
 
 ## 🛠️ Setup Instructions
 
 
-### 1️⃣ Clone the Repository
-Open Command Prompt and run:
+### 1. Clone the Repository:
+Open Command Prompt and run
 ```bash
 git clone https://github.com/Malak-ul-Maut/qr-attendance.git
 cd qr-attendance/backend
 ````
 
+### 2. Navigate to the Project Directory:
+```bash
+cd qr-attendance/backend
+````
 
-### 2️⃣ Run the Server
+### 3. Install dependencies:
+```bash
+npm install
+````
 
+### 4. Run the Server
 ```bash
 node index.js
-```
+````
 
 You should see:
-
 ```
 🚀 Server running at https://<Your_IPv4_Address>:4000
 Connected to SQLite database
 ```
 
-### 3️⃣ Open the website
 
-Now open the frontend website in a browser:
-
-```
+### 5. Access the system
+Open your web browser and go here to use the system
+```bash
 https://<Your_IPv4_Address>:4000
-```
-
+````
 
 You should be able to:
 
 * Login via the homepage
 * Generate/Scan QR Codes
 * Get success/error messages in real-time
-
-
-
-
 
 
 
@@ -97,9 +99,9 @@ node db.js
 
 ## Future Improvements
 
-* Add facial verification system 
-* Add attendance analytics
-* Deploy using Render / Railway
+* Add identity verification via face recognization
+* Add attendance history section
+* Add analytics based on user behaviour
 
 ---
 
