@@ -12,9 +12,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@ngrok/ngrok": "^1.5.2",
     "body-parser": "^2.2.0",
-    "bootstrap": "^5.3.8",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^4.17.1",
