@@ -1,5 +1,8 @@
 # 🎓 QR Attendance System
 
+  ![live-updates](https://github.com/Malak-ul-Maut/qr-attendance/blob/234a6e125c714e55fa0854209a2a9fb88b94437a/snapshots/live-updates.jpg)
+  
+
 The QR Code Attendance System is an efficient, fast and user-friendly tool for tracking attendance using QR codes. It utilizes HTML, CSS, and JavaScript to create a web-based interface for marking attendance. This system is designed to work seamlessly when devices are connected to the Same College Local Network.
 
 The faculty can display the QR Code using classroom projector so that present students can scan and mark their attendance.
@@ -86,6 +89,20 @@ If you don’t see the file, check your permissions or re-run:
 node db.js
 ```
 
+---
+## Snapshots
+  
+### 1) Homepage
+  ![homepage](https://github.com/Malak-ul-Maut/qr-attendance/blob/234a6e125c714e55fa0854209a2a9fb88b94437a/snapshots/homepage.jpg)
+
+### 2) Live scan validation
+  ![student scan](https://github.com/Malak-ul-Maut/qr-attendance/blob/234a6e125c714e55fa0854209a2a9fb88b94437a/snapshots/WhatsApp%20Image%202025-11-29%20at%2016.10.38_780f5764.jpg)
+  
+### 3) Finalize window
+  ![finalize-window](https://github.com/Malak-ul-Maut/qr-attendance/blob/234a6e125c714e55fa0854209a2a9fb88b94437a/snapshots/finaliize-window.jpg)
+  
+
+  
 ---
 
 ## Developers
