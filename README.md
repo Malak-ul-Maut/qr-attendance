@@ -74,18 +74,6 @@ You should be able to:
 
 
 ---
-
-## Database Notes
-
-The database (`attendance.db`) is **automatically created** in `/backend` the first time you run the server.
-
-If you don’t see the file, check your permissions or re-run:
-
-```bash
-node db.js
-```
-
----
 ## Snapshots
   
 ### 1) Homepage
