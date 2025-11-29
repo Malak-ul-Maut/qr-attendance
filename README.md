@@ -9,11 +9,10 @@ The faculty can display the QR Code using classroom projector so that present st
 ## Features
 
 - **Automatic IP Fetching** — It fetch your IPv4 address automatically and Generate a QR code based on that IP to enable connections within the classroom.
-- **Faculty Panel** — It has a Faculty View Panel that enables the teacher to remove duplicate or proxy attendances based on count.
+- **Live Faculty Dashboard** — Enables faculty to view live attendance updates and remove proxy attendances based on count.
 - **Device Fingerprinting** — Prevents multiple entries from the same camera/device.
 - **Auto QR Refresh** — Tokens refresh every few seconds for high security.
 - **SQLite Database** — Lightweight and portable for classroom use.
-- **Live Teacher Dashboard** — Teachers can view updates instantly.
 
 
 ---
@@ -66,6 +65,12 @@ You should be able to:
 * Login via the homepage
 * Generate/Scan QR Codes
 * Get success/error messages in real-time
+
+
+
+
+
+
 
 ---
 
