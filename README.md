@@ -24,10 +24,7 @@ The faculty can display the QR Code using classroom projector so that present st
 Before you begin, ensure you have the following prerequisites installed:
 
 - **Nodejs**: Install the Windows installer(.msi) version from their [official website](https://nodejs.org/en/download/current). 
-- **Git**: It can be installed by running the following command in the Command Prompt (after you've installd Nodejs)
-```bash
-npm install git
-```
+- **Git**: Install from their [official website](https://git-scm.com/install/windows)
 
 ---
 
