@@ -109,7 +109,7 @@ select {
 }
 
 #studentList {
-  max-height: 70vh;   /* or adjust as needed */
+  max-height: 50vh; 
   overflow-y: auto;
   padding-right: 10px;
 }
