@@ -79,7 +79,7 @@ You should be able to:
 ### 1) Homepage
   ![homepage](https://github.com/Malak-ul-Maut/qr-attendance/blob/234a6e125c714e55fa0854209a2a9fb88b94437a/snapshots/homepage.jpg)
 
-### 2) Live scan validation
+### 2) Instant scan validation
   ![student scan](https://github.com/Malak-ul-Maut/qr-attendance/blob/234a6e125c714e55fa0854209a2a9fb88b94437a/snapshots/WhatsApp%20Image%202025-11-29%20at%2016.10.38_780f5764.jpg)
   
 ### 3) Finalize window
