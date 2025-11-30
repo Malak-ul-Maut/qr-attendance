@@ -207,7 +207,9 @@ function openFinalizeModal(records) {
             cb.dataset.studentId = r.studentId;
             cb.dataset.rowid = r.id;
             const txt = document.createElement('span');
-            txt.textContent = ` ${r.studentId} (${r.timestamp})`;
+
+            const localTime = new Date(r.timestamp + 'Z').toLocaleTimeString();
+            txt.textContent = ` ${r.studentId} (${localTime})`;
             txt.scrollIntoView();
             div.appendChild(cb);
             div.appendChild(txt);
