@@ -23,7 +23,6 @@ const io = new Server(server, {
 });
 
 const PORT = process.env.PORT || 4000;
-const JWT_SECRET = process.env.JWT_SECRET || "amolSirZindabad";
 
 app.use(express.json());
 app.use(cors({ origin: '*', methods: ['GET', 'POST'], allowedHeaders: ['Content-Type', 'Authorization'] }));
@@ -35,8 +34,10 @@ const sessions = {};
 const activeTokens = {};
 
 function generateShortCode(length = 8) {
-    const chars = 'ABCDEGHIJKLMNOPQRSTUVWXYZ123456789';
-    return Array.from({ length}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    const chars = 'ABCDEFHIJKLMNOPQRSTUVWXYZ123456789';
+    return Array.from({ length }, () => 
+        chars[Math.floor(Math.random() * chars.length)]
+    ).join('');
 }
 
 function createSessionToken(sessionId, courseId, expiresInSeconds) {
@@ -58,7 +59,7 @@ function getServerIpAddress() {
       }
     }
   }
-  return null; // No suitable IP address found
+  return null;
 }
 
 
@@ -66,7 +67,6 @@ function getServerIpAddress() {
 let teacherSockets = [];
 
 io.on('connection', socket => {
-    console.log('Client connected:', socket.id);
     socket.on('register_teacher', () => teacherSockets.push(socket));
     socket.on('disconnect', () => {
         teacherSockets = teacherSockets.filter(s => s.id !== socket.id);
