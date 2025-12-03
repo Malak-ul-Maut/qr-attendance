@@ -196,7 +196,7 @@ function renderQR(data) {
 function openFinalizeModal(records) {
     finalizeList.innerHTML = '';
     if (!records || records.length ===0) {
-        finalizeList.innerHTML = '<p>No attendance records for this session</p';
+        finalizeList.innerHTML = '<p>No attendance records for this session</p>';
     } else {
         records.forEach(r => {
             const div = document.createElement('div');
