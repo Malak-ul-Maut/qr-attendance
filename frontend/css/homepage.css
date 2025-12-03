@@ -1,132 +1,51 @@
- @media (max-width: 540px) {
-  main {
-    flex-direction: column;
-    row-gap: 16px;
-    width: 100%;
-  }
-
-  header div{
-    height: 50px;
-  }
-
-  .mit-logo img {
-    width: 50px;
-    height: auto;
-    border-radius: 4px;
-  }
-  .mit-welcomes {
-    font-size: 16px;
-    font-weight: 600;
-    opacity: 0.8;
-    color: white;
-    text-transform: uppercase;
-  }
-  .heading{
-    font-size: 24px;
-    font-weight: 800;
-    opacity: 0.9;
-  }
-  .sub-heading {
-    font-size: 12px;
-    font-weight: 700;
-  }
-
-}
-
-@media (min-width: 541px) {
-  
-  header img {
-    width: 80px;
-    height: auto;
-    border-radius: 4px;
-    align-self: center;
-  }
-  .mit-welcomes {
-    font-size: 24px;
-    font-weight: 600;
-    color: white;
-    opacity: 0.8;
-    text-transform: uppercase;
-  }
-  .heading{
-    font-size: 40px;
-    font-weight: 800;
-  }
-  .sub-heading {
-    font-size: 18px;
-    font-weight: 700;
-  }
-  
-}
-
-
 body {
-  display: flex;
-  flex-direction: column;
   align-items: center;
-  height: 100vh;
-  background: linear-gradient(45deg, #ffe43777 0%, #537fe77a 100%);
 }
 
+
+/*------------ Header -------------*/
 header {
   width: 100%;
-}
-
-header div:first-of-type {
   display: flex;
-  align-items: center;
   column-gap: 30px;
   justify-content: center;
   background-image: linear-gradient(to right, hsl(223, 46%, 23%), hsla(223, 66%, 33%, 0.815));
 }
+header img {
+  width: 80px;
+  height: auto;
+  border-radius: 4px;
+  align-self: center;
+}
+header p {
+  font-size: 24px;
+  font-weight: 600;
+  color: white;
+  opacity: 0.8;
+}
 
+
+/*-------------- Heading & sub-heading --------------*/
 .heading{
+  font-size: 40px;
+  font-weight: 800;
   color: var(--text);
   justify-self: center;
   margin-top: 24px;
   margin-bottom: 0px;
   opacity: 0.9;
 }
-
 .sub-heading {
+  font-size: 18px;
+  font-weight: 700;
   color: var(--text-muted);
   justify-self: center;
   margin-bottom: 48px;
 }
 
-main {
-  display: flex;
-  column-gap: 50px;
-  max-width: max-content;
-  justify-content: space-evenly;
-}
 
-
-.role-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  width: 16rem;
-  border: none;
-  border-radius: 1.2rem;
-  background-image: linear-gradient(to bottom, var(--highlight), var(--bg) );
-  padding: 32px 16px;
-  box-shadow: 0px 4px 4px #00000030, 0px 12px 12px #00000015;
-  transition: all 0.3s;
-}
-.role-card:hover {
-  scale: 1.02;
-  cursor: pointer;
-}
-.role-card:active {
-  opacity: 0.8;
-  scale: 0.98;
-}
-
-
-
-.role-card p:nth-of-type(1) {
+/*-------------- Cards  ----------------*/
+.user {
   font-size: 32px;
   font-weight: 800;
   color: var(--text);
@@ -134,11 +53,79 @@ main {
   margin: 0;
   padding-bottom: 32px;
 }
-.role-card p:nth-of-type(2){
+.sub-user{
   font-size: 16px;
   font-weight: 600;
   text-align: center;
   margin: 0;
   color: var(--text-muted);
   opacity: 0.9;
+}
+
+main {
+  display: flex;
+  column-gap: 50px;
+  max-width: max-content;
+  justify-content: space-evenly;
+  justify-self: center;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 16rem;
+  border: none;
+  border-radius: 1.2rem;
+  background-image: linear-gradient(to bottom, var(--highlight), var(--bg) );
+  padding: 32px 16px;
+  cursor: pointer;
+  box-shadow: 0px 4px 4px #00000030, 0px 12px 12px #00000015;
+  transition: all 0.3s;
+}
+.card:hover {
+  scale: 1.02;
+}
+.card:active {
+  opacity: 0.8;
+  scale: 0.98;
+}
+
+
+ @media (max-width: 540px) {
+  body {
+    height: 120vh;
+  }
+
+  header{
+    height: 50px;
+  }
+  header img {
+    width: 50px;
+    height: auto;
+    border-radius: 4px;
+  }
+  header p {
+    font-size: 16px;
+    font-weight: 700;
+    opacity: 0.8;
+    color: white;
+  }
+
+  .heading{
+    font-size: 20px;
+    font-weight: 800;
+    opacity: 0.9;
+  }
+  .sub-heading {
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  main {
+    flex-direction: column;
+    justify-self: center;
+    row-gap: 16px;
+    width: 100%;
+  }
 }
