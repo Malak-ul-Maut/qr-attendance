@@ -1,6 +1,4 @@
-require('dotenv').config();
 const path = require('path');
-const express = require('express');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const https = require('https');
@@ -8,6 +6,7 @@ const { Server } = require('socket.io');
 const db = require('./db');
 const fs = require('fs');
 const os = require('os');
+const express = require('express');
 const app = express();
 
 
@@ -21,8 +20,6 @@ const server = https.createServer(options, app);
 const io = new Server(server, {
     cors: { origin: '*', methods: ['GET', 'POST'] }
 });
-
-const PORT = process.env.PORT || 4000;
 
 app.use(express.json());
 app.use(cors({ origin: '*', methods: ['GET', 'POST'], allowedHeaders: ['Content-Type', 'Authorization'] }));
@@ -291,6 +288,7 @@ app.get(/^\/(?!api).*/, (req, res) => {
 });
 
 const serverIp = getServerIpAddress();
+const PORT = 4000;
 
 server.listen(PORT, () =>
     console.log(`🚀 Server running at https://${serverIp}:${PORT}`));

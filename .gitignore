@@ -4,15 +4,9 @@ node_modules/
 # Logs
 *.log
 
-# Environment variables
-.env
-
 # Database (keep local only)
 # backend/attendance.db
 
 # Build & temp files
-dist/
 .vscode/
 .github/
-.DS_Store
-Thumbs.db
