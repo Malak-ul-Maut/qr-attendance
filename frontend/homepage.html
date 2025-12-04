@@ -8,7 +8,6 @@
   <link rel="icon" href="icons/qr-code.png">
   <link rel="stylesheet" href="css/general.css">
   <link rel="stylesheet" href="css/homepage.css">
-
 </head>
 
 
@@ -22,29 +21,20 @@
   <p class="sub-heading">Explore and manage Attendance related activities seamlessly.</p>
   
   <main>
-    <div class="card" data-role="student">
+    <a href="login-page.html?role=student" class="link-card">
       <p class="user">Student</p>
       <p class="sub-user">Access your courses, attendance, and academic resources</p>
-    </div>
+    </a>
 
-    <div class="card" data-role="faculty">
+    <a href="login-page.html?role=faculty" class="link-card">
       <p class="user">Faculty</p>
       <p class="sub-user">Manage student attendance, courses, and resources efficiently</p>
-    </div>
+    </a>
 
-    <div class="card" data-role="admin">
+    <a href="login-page.html?role=admin" class="link-card">
       <p class="user">Admin</p>
       <p class="sub-user">Oversee departmental activities, user accounts, and course allocations</p>
-    </div>
+    </a>
   </main>
-  
-  <script>
-    document.querySelectorAll(".card").forEach(card => {
-      card.addEventListener("click", () => {
-        let role = card.getAttribute("data-role");
-        window.location.href = `login-page.html?role=${role}`;
-      });
-    });
-  </script>
 </body>
 </html>
