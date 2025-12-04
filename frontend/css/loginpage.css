@@ -1,42 +1,4 @@
-@media (max-width: 440px) {
-    #login-section {
-        max-width: 100%;
-        margin: 15px;
-    }
-}
-
-@media (min-width: 441px) {
-    #login-section {
-        width: 352px;
-        justify-self: center;
-    }
-}
-
-body {
-    background: linear-gradient(45deg, #ffe43777 0%, #537fe77a 100%);
-    height: 100vh;
-}
-
-.user-icon {
-    text-align: center;
-    margin-bottom: 10px;
-}
-
-.user-icon img {
-    width: 4rem;
-    height: auto;
-}
-
-.signInMsg {
-    font-weight: 600;
-    font-size: 20px;
-    font-style: normal;
-    text-align: center;
-    margin-top: 0px;
-    margin-bottom: 2.5rem;
-    opacity: 0.8;
-}
-
+/*----------- login-page card ------------*/
 main {
     display: flex;
     flex-direction: column;
@@ -45,60 +7,77 @@ main {
     border: none;
     border-radius: 1.2rem;
     background-color: var(--bg);
-    margin-top: 20vh;
-    padding: 20px 30px;
+    margin-top: 16vh;
+    padding: 1.5rem 2rem;
     width: max-content;
     box-shadow: 0px 4px 4px #00000030, 0px 12px 12px #00000015;
 }
 
 
+
+/*----------- header ------------*/
+header {
+    text-align: center;
+}
+header img {
+    width: 4rem;
+    height: auto;
+}
+.signInMsg {
+    font-weight: 600;
+    font-size: 1.5rem;
+    text-align: center;
+    margin-bottom: 2.5rem;
+    opacity: 0.8;
+}
+
+
+
+/*----------- Input section ------------*/
 section {
     display: flex;
     flex-direction: column;
-    row-gap: 16px;
-    width: 100%;
+    row-gap: 1.2rem;
+    width: 26vw;
 }
+
 
 .input-container {
     display: flex;
-    width: 100%;
-    justify-content: center;
-
     position: relative;
 }
-.input-container img {
+.view-password-icon {
     position: absolute;
-    right: 12px;
+    right: 1rem;
     top: 50%;
     transform: translateY(-50%);
-    width: 20px;
+    width: 1.4rem;
     height: auto;
     opacity: 0.6;
     cursor: pointer;
 }
-
 input {
-    font-size: 14px;
+    font-size: 0.9rem;
     font-weight: 500;
     opacity: 0.9;
-    align-self: center;
-    justify-self: center;
     width: 100%;
     border-style: none;
     border-radius: 0.6rem;
     background-color: hsl(203, 23%, 89%);
-    padding: 14px 20px;
+    padding: 0.8rem 1.2rem;
 }
 
-section p {
+
+.forgot-password-link {
     align-self: self-end;
     color: royalblue;
     margin: 0;
 }
-section p:hover {
+.forgot-password-link:hover {
     cursor: pointer;
     text-decoration: underline;
 }
+
 
 #loginBtn {
     color: white;
@@ -108,20 +87,19 @@ section p:hover {
     border: 0.8px solid rgba(31, 35, 40, 0.15);
     border-radius: 0.8rem;
 }
+#login-msg {
+    font-size: 1rem;
+    font-weight: 500;
+    opacity: 0.8;
+    text-align: center;
+    margin: 0;
+}
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-#finalizeModal { display:none; position: fixed; left:0; top:0; right:0; bottom:0; background:rgba(0,0,0,0.5); align-items: center; justify-content: center; }
-#finalizeContent { background: #fff; padding: 1rem; max-width: 600px; width: 90%; border-radius: 6px; max-height: 80vh; overflow: auto;}
-.student-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #eee; }
+/*----------- Stylings for mobile view ------------*/
+@media (max-width: 480px) {
+    section {
+        width: 70vw;
+    }
+}
