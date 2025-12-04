@@ -1,0 +1,22 @@
+button {
+  font-size: 14px;
+  font-weight: 550;
+  cursor: pointer;
+  width: max-content;
+  height: 40px;
+  padding: 5px 20px;
+  margin-top: 8px;
+  border-radius: 0.8rem;
+  border: none;
+  background-color: hsla(223, 66%, 33%, 0.815);
+  opacity: 0.9;
+  transition: opacity 0.15s, transform 0.1s, background-color 0.1s;
+}
+button:hover {
+  box-shadow: 0 2px 4px gray;
+  background-color: hsl(223, 46%, 23%);
+}
+button:active {
+  opacity: 0.6;
+  transform: scale(0.98);
+}

@@ -1,10 +1,17 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Teacher Dashboard</title>
+
   <link rel="icon" href="icons/qr-code.png"/>
   <link rel="stylesheet" href="css/general.css">
+  <link rel="stylesheet" href="css/header.css">
+  <link rel="stylesheet" href="css/sidebar.css">
+  <link rel="stylesheet" href="css/button.css">
   <link rel="stylesheet" href="css/teacher.css">
+  
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
@@ -15,7 +22,7 @@
 <body>
   <div id="session-section">
     
-    <header class="header">
+    <header>
       <div class="left-section">
         <img style="cursor:pointer;" src="icons/hamburger-menu.svg" alt="Menu">
       </div>
@@ -26,7 +33,7 @@
     </header>
 
     <nav class="sidebar">
-      <div class="sidebar-content-1">
+      <div class="sidebar-content">
         <img src="icons/generate-qr.svg" alt="Generate QR">
         <div>Generate QR</div>
       </div>
@@ -114,6 +121,5 @@
     socketScript.onerror = () => console.error("Failed to load SOcket.IO from " + socketScript.src);
     document.body.appendChild(socketScript);
   </script>
-
 </body>
 </html>

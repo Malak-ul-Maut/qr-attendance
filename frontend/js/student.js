@@ -7,6 +7,7 @@ const closeScanBtn = document.getElementById('closeScanBtn');
 const video = document.getElementById('video');
 const scanResult = document.getElementById('scan-result');
 const scannerSection = document.getElementById('scanner-section');
+const mainSection = document.querySelector('main');
 
 let scanning = false;
 let scanInProgress = false;
@@ -21,6 +22,7 @@ document.querySelector('.user-name b').textContent = studentId = getCurrentUser(
 markAttendanceCard.addEventListener('click', async () => {
     scannerSection.style.display = 'block';
     closeScanBtn.style.display = 'block';
+    mainSection.style.display = 'none';
     console.log(window.navigator.mediaDevices);
     
     // Access camera
@@ -80,6 +82,7 @@ closeScanBtn.addEventListener('click', () => {
     scannerSection.style.display = 'none';
     closeScanBtn.style.display = 'none';
     scanResult.textContent = '';
+    mainSection.style.display = 'flex';
 });
 
 

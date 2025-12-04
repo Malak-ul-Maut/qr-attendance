@@ -48,6 +48,12 @@ main {
   margin-bottom: 10px;
 }
 
+ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
 .activities ul {
   margin-top: 20px;
 }
