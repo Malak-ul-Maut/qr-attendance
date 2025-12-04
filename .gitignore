@@ -13,5 +13,6 @@ node_modules/
 # Build & temp files
 dist/
 .vscode/
+.github/
 .DS_Store
 Thumbs.db
