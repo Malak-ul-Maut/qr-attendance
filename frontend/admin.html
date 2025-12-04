@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="css/general.css">
   <link rel="stylesheet" href="css/header.css">
   <link rel="stylesheet" href="css/sidebar.css">
+  <link rel="stylesheet" href="css/card.css">
   <link rel="stylesheet" href="css/admin.css">
 	<script src="js/auth-guard.js"></script>
 	<script>checkAuthAndRedirect();</script>
@@ -48,17 +49,24 @@
     
   <main>
     <section class="home-cards">
-      <div>
-        <p>Students<br>1240</p>
+      <div class="link-card">
+        <p class="sub-title">Students</p>
+        <p class="title">1240</p>
       </div>
-      <div>
-        <p>Faculty<br>75</p>
+
+      <div class="link-card">
+        <p class="sub-title">Faculty</p>
+        <p class="title">75</p>
       </div>
-      <div>
-        <p>Courses<br>58</p>
+
+      <div class="link-card">
+        <p class="sub-title">Courses</p>
+        <p class="title">58</p>
       </div>
-      <div>
-        <p>Live sessions<br>12</p>
+
+      <div class="link-card">
+        <p class="sub-title">Live sessions</p>
+        <p class="title">12</p>
       </div>
     </section>
 
@@ -78,6 +86,5 @@
   <script>
     document.querySelector('.user-name b').textContent = getCurrentUser().name || 'Admin';
   </script>
-
 </body>
 </html>
