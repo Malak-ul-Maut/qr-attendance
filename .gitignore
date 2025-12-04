@@ -1,12 +1,10 @@
 # Node dependencies
 node_modules/
 
-# Logs
-*.log
-
-# Database (keep local only)
+# Database
 # backend/attendance.db
 
 # Build & temp files
-.vscode/
 .github/
+.vscode/
+
