@@ -4,7 +4,7 @@ if (!window.__API_BASE) {
 const url = window.__API_BASE;
 const params = new URLSearchParams(window.location.search);
 const role = params.get("role") || "student";
-const viewPasswordBtn = document.querySelector('.input-container img');
+const viewPasswordBtn = document.querySelector('.view-password-icon');
 const passwordBox = document.querySelector('#password');
 
 document.getElementById('login-title').textContent = 

@@ -1,72 +1,51 @@
-/*----------- login-page card ------------*/
 main {
-    display: flex;
-    flex-direction: column;
-    justify-self: center;
-    align-items: center;
+    width: 26vw;
     border: none;
     border-radius: 1.2rem;
     background-color: var(--bg);
     margin-top: 16vh;
     padding: 1.5rem 2rem;
-    width: max-content;
+    
+    display: flex;
+    flex-direction: column;
+    row-gap: 1rem;
+    justify-self: center;
+    align-items: center;
+
+    position: relative;
     box-shadow: 0px 4px 4px #00000030, 0px 12px 12px #00000015;
 }
 
 
-
-/*----------- header ------------*/
-header {
-    text-align: center;
-}
-header img {
+.qr-logo {
     width: 4rem;
-    height: auto;
 }
 .signInMsg {
     font-weight: 600;
     font-size: 1.5rem;
-    text-align: center;
-    margin-bottom: 2.5rem;
     opacity: 0.8;
 }
 
-
-
-/*----------- Input section ------------*/
-section {
-    display: flex;
-    flex-direction: column;
-    row-gap: 1.2rem;
-    width: 26vw;
-}
-
-
-.input-container {
-    display: flex;
-    position: relative;
-}
-.view-password-icon {
-    position: absolute;
-    right: 1rem;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 1.4rem;
-    height: auto;
-    opacity: 0.6;
-    cursor: pointer;
-}
 input {
     font-size: 0.9rem;
     font-weight: 500;
     opacity: 0.9;
-    width: 100%;
+    width: 90%;
     border-style: none;
     border-radius: 0.6rem;
     background-color: hsl(203, 23%, 89%);
     padding: 0.8rem 1.2rem;
 }
 
+.view-password-icon {
+    position: absolute;
+    right: 3rem;
+    top: 61%;
+   
+    width: 1.4rem;
+    opacity: 0.6;
+    cursor: pointer;
+}
 
 .forgot-password-link {
     align-self: self-end;
@@ -77,7 +56,6 @@ input {
     cursor: pointer;
     text-decoration: underline;
 }
-
 
 #loginBtn {
     color: white;
@@ -96,10 +74,9 @@ input {
 }
 
 
-
 /*----------- Stylings for mobile view ------------*/
 @media (max-width: 480px) {
-    section {
+    main {
         width: 70vw;
     }
 }
