@@ -60,7 +60,7 @@ db.serialize(() => {
     db.run(`
         CREATE TABLE IF NOT EXISTS users (
             name TEXT,
-            username TEXT PRIMARY KEY,
+            username TEXT,
             password TEXT,
             subjectName TEXT DEFAULT NULL
         );
