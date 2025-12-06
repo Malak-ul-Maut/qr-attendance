@@ -101,7 +101,7 @@ app.post('/api/login', (req,res) => {
         return res.json({
             ok: true,
             role,
-            loginId: row.id,
+            username: row.username,
             name: row.name,
             subName: row.subjectName
         });

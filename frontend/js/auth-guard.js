@@ -1,46 +1,26 @@
-// Auth Guard: Protects pages from unauthorized access
-// Usage: Added this script to the <head> of protected pages (student.html, teacher.html, admin.html)
+checkAuthAndRedirect();
 
 function checkAuthAndRedirect() {
-    const authData = sessionStorage.getItem('auth');
+    const userData = localStorage.getItem('user');
+    const user = JSON.parse(userData);
     
-    if (!authData) {
-        // No auth data - redirect to homepage
+    if (!userData) {
         window.location.href = '/homepage.html';
         return;
     }
-
-    try {
-        const user = JSON.parse(authData);
-        
-        // Verify user has required properties
-        if (!user.role || !user.loginId) {
-            sessionStorage.removeItem('auth');
-            window.location.href = '/homepage.html';
-            return;
-        }
-
-        return user;
-    } catch (e) {
-        // Corrupted auth data
-        sessionStorage.removeItem('auth');
-        window.location.href = '/homepage.html';
-    }
 }
 
-// Get current logged-in user (returns null if not logged in)
 function getCurrentUser() {
     try {
-        const authData = sessionStorage.getItem('auth');
-        return authData ? JSON.parse(authData) : null;
+        const userData = localStorage.getItem('user');
+        return userData ? JSON.parse(userData) : null;
     } catch (e) {
         return null;
     }
 }
 
-// Logout user
 function logout() {
-    sessionStorage.removeItem('auth');
+    localStorage.removeItem('user');
     window.location.href = '/homepage.html';
 }
 

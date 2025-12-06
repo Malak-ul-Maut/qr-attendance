@@ -24,6 +24,7 @@ main {
     font-weight: 600;
     font-size: 1.5rem;
     opacity: 0.8;
+    display: block;
 }
 
 input {

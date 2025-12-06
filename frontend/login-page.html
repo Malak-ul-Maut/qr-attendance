@@ -9,12 +9,19 @@
   <link rel="stylesheet" href="css/general.css">
 	<link rel="stylesheet" href="css/button.css">
   <link rel="stylesheet" href="css/loginpage.css">
+	
+	<script>
+		const user = JSON.parse(localStorage.getItem('user'));
+		if (user) {
+    	window.location.replace(`/${user.role}.html`);
+		}
+	</script>
 </head>
 
 <body>
 	<main>
 		<img class="qr-logo" src="icons/generate-qr.svg">
-		<p class="signInMsg" style="display:block;" id="login-title"></p>
+		<p class="signInMsg"></p>
 
 		<input type="text" id="username" placeholder="✉ Username">
 		<input type="password" id="password" placeholder="🔒 Password">
