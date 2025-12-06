@@ -2,7 +2,6 @@ checkAuthAndRedirect();
 
 function checkAuthAndRedirect() {
     const userData = localStorage.getItem('user');
-    const user = JSON.parse(userData);
     
     if (!userData) {
         window.location.href = '/homepage.html';

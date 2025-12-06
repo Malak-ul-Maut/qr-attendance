@@ -13,7 +13,7 @@
 	<script>
 		const user = JSON.parse(localStorage.getItem('user'));
 		if (user) {
-    	window.location.replace(`/${user.role}.html`);
+    	window.location.href = `/${user.role}.html`;
 		}
 	</script>
 </head>

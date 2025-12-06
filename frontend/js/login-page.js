@@ -49,7 +49,7 @@ function redirectUser(data) {
   if (data.role === 'student') {
     window.location.href = `student.html`;
   } else if (data.role === 'faculty') {
-    window.location.href = `teacher.html`;
+    window.location.href = `faculty.html`;
   } else {
     window.location.href = `admin.html`;
   }
