@@ -57,6 +57,15 @@ db.serialize(() => {
         );
     `);
 
+    db.run(`
+        CREATE TABLE IF NOT EXISTS users (
+            name TEXT,
+            username TEXT PRIMARY KEY,
+            password TEXT,
+            subjectName TEXT DEFAULT NULL
+        );
+    `);
+
 });
 
 module.exports = db;
