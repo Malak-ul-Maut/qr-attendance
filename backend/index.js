@@ -77,18 +77,14 @@ io.on('connection', socket => {
 // User login
 app.post('/api/login', (req,res) => {
     const { username, password, role } = req.body;
-    const table = 
-        role === "student" ? "students" :
-        role === "faculty" ? "faculty" :
-        role === "admin" ? "admins" :
-        null;
-
-    if (!table) {
-        return res.json({ ok:false, msg: "Invalid role" });
+    
+    const allowedRoles = ['admin', 'student', 'faculty'];
+    if (!allowedRoles.includes(role)) {
+        return res.status(400).json({ ok: false, msg: 'Invalid role' });
     }
 
-    const query = `SELECT * FROM ${table} WHERE username = ? AND password = ?`;
-    db.get(query, [username, password], (err, row) => {
+    const query = `SELECT * FROM users WHERE username = ? AND password = ? AND role = ?`;
+    db.get(query, [username, password, role], (err, row) => {
         if (err) {
             console.error("DB login error:", err);
             return res.status(500).json({ ok:false, error: "db_error" });
@@ -101,8 +97,8 @@ app.post('/api/login', (req,res) => {
         return res.json({
             ok: true,
             role,
-            username: row.username,
             name: row.name,
+            username: row.username,
             subName: row.subjectName
         });
     });
@@ -183,8 +179,8 @@ app.post('/api/session/verify', (req, res) => {
             }
 
             db.run(
-                `INSERT INTO attendance (studentid, courseId, sessionId, cameraFingerprint, verified) VALUES (?, ?, ?, ?, ?)`,
-                [studentId, courseId, sessionId, cameraFingerprint, 1],
+                `INSERT INTO attendance (studentid, courseId, sessionId, cameraFingerprint) VALUES (?, ?, ?, ?)`,
+                [studentId, courseId, sessionId, cameraFingerprint],
                 (err) => {
                     if (err) {
                         console.error('DB Error (insert):', err);
@@ -221,7 +217,7 @@ app.post('/api/session/end', (req, res) => {
 
     // Fetch attendance rows for that session (for teacher review)
     db.all(
-        `SELECT id, studentId, courseId, timestamp, verified, finalized, removed FROM attendance WHERE sessionId = ?`, 
+        `SELECT id, studentId, courseId, timestamp, removed FROM attendance WHERE sessionId = ?`, 
         [sessionId],
         (err, rows) => {
             if (err) {
@@ -244,7 +240,7 @@ app.post('/api/session/finalize', (req, res) => {
         
         // 1) mark all removed by default
         db.run(
-            `UPDATE attendance SET removed = 1, finalized = 0 WHERE sessionId = ?`,
+            `UPDATE attendance SET removed = 1 WHERE sessionId = ?`,
             [sessionId],
             (err) => {
                 if (err) {
@@ -259,7 +255,7 @@ app.post('/api/session/finalize', (req, res) => {
 
                 // 2) For the kept ids set removed=0, finalized=1
                 const placeholders = keepStudentIds.map(()=> '?').join(',');
-                const sql = `UPDATE attendance SET removed = 0, finalized = 1 WHERE sessionId = ? AND studentId IN (${placeholders})`;
+                const sql = `UPDATE attendance SET removed = 0 WHERE sessionId = ? AND studentId IN (${placeholders})`;
                 db.run(sql, [sessionId, ...keepStudentIds], function (err2) {
                     if (err2) {
                         console.error('DB Error (while finalizing keep):', err2);

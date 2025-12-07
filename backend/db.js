@@ -9,27 +9,13 @@ const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE | sqlite3.OPEN_CR
 
 db.serialize(() => {
     db.run(`
-        CREATE TABLE IF NOT EXISTS students (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+        CREATE TABLE IF NOT EXISTS users (
             name TEXT,
-            username TEXT UNIQUE,
-            password TEXT
-        );
-    `);
-
-    db.run(`
-        CREATE TABLE IF NOT EXISTS faculty (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE,
-            password TEXT
-        );
-    `);
-
-    db.run(`
-        CREATE TABLE IF NOT EXISTS admins (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE,
-            password TEXT
+            username TEXT UNIQUE PRIMARY KEY,
+            password TEXT DEFAULT password,
+            role TEXT NOT NULL,
+            section TEXT DEFAULT NULL,
+            subjectName TEXT DEFAULT NULL
         );
     `);
 
@@ -40,8 +26,6 @@ db.serialize(() => {
             courseId TEXT NOT NULL,
             sessionId TEXT,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            verified INTEGER DEFAULT 1,
-            finalised INTEGER DEFAULT 0,
             removed INTEGER DEFAULT 0
         );
     `);
@@ -56,16 +40,6 @@ db.serialize(() => {
             status TEXT DEFAULT 'active'
         );
     `);
-
-    db.run(`
-        CREATE TABLE IF NOT EXISTS users (
-            name TEXT,
-            username TEXT PRIMARY,
-            password TEXT,
-            subjectName TEXT DEFAULT NULL
-        );
-    `);
-
 });
 
 module.exports = db;

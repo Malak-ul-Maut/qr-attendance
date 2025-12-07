@@ -165,7 +165,7 @@ async function scanQRCode(studentId, video, stream, CameraId) {
             scanning = false;
             scanInProgress = true;
             currentStream.getTracks().forEach(track => track.stop());
-            scanResult.textContent = "QR detected. Submitting attendance...";
+            scanResult.textContent = "Submitting attendance...";
             clearInterval(interval);
             sendAttendance(studentId, code.data, CameraId);
         }

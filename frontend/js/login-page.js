@@ -8,6 +8,8 @@ signInMsg.textContent = "Sign in as " + role.charAt(0).toUpperCase() + role.slic
 
 
 // ------------ Login button event handler ---------------
+const loginBtn = document.querySelector('#loginBtn');
+
 loginBtn.addEventListener('click', async () => {
   const username = document.querySelector('#username').value.trim();
   const password = document.querySelector('#password').value.trim();
@@ -33,7 +35,7 @@ loginBtn.addEventListener('click', async () => {
       return;
     }
 
-    storeUser(data); // Store user login status in localStorage
+    storeUser(data); // Save user login status in localStorage
     redirectUser(data); // redirect user to their respective web-page
 
   } catch (err) {
@@ -65,10 +67,16 @@ function storeUser(data) {
 }
 
 
-// Show-password feature
-const passwordBox = document.querySelector('#password');
+// Show password feature
 const viewPasswordIcon = document.querySelector('.view-password-icon');
-
 viewPasswordIcon.addEventListener('click', () => {
   passwordBox.type = passwordBox.type === 'password' ? 'text' : 'password';
 });
+
+// Click login button when pressing 'Enter' key
+const passwordBox = document.querySelector('#password');
+passwordBox.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    loginBtn.click();
+  }
+})
