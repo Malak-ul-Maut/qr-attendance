@@ -6,6 +6,20 @@ const signInMsg = document.querySelector('.signInMsg');
 signInMsg.textContent = "Sign in as " + role.charAt(0).toUpperCase() + role.slice(1);
 
 
+// Show password feature
+const viewPasswordIcon = document.querySelector('.view-password-icon');
+viewPasswordIcon.addEventListener('click', () => {
+  passwordBox.type = passwordBox.type === 'password' ? 'text' : 'password';
+});
+
+// Click login button when pressing 'Enter' key
+const passwordBox = document.querySelector('#password');
+passwordBox.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    loginBtn.click();
+  }
+})
+
 
 // ------------ Login button event handler ---------------
 const loginBtn = document.querySelector('#loginBtn');
@@ -65,18 +79,3 @@ function storeUser(data) {
     subName: data.subName
   }));
 }
-
-
-// Show password feature
-const viewPasswordIcon = document.querySelector('.view-password-icon');
-viewPasswordIcon.addEventListener('click', () => {
-  passwordBox.type = passwordBox.type === 'password' ? 'text' : 'password';
-});
-
-// Click login button when pressing 'Enter' key
-const passwordBox = document.querySelector('#password');
-passwordBox.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter') {
-    loginBtn.click();
-  }
-})
