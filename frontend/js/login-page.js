@@ -1,24 +1,28 @@
 // Display user role
-const params = new URLSearchParams(window.location.search);
-const role = params.get("role") || "student";
+const params = new URLSearchParams(window.location.search); 
+const role = params.get('role') || 'student';
 
 const signInMsg = document.querySelector('.signInMsg');
-signInMsg.textContent = "Sign in as " + role.charAt(0).toUpperCase() + role.slice(1);
+signInMsg.textContent = 'Sign in as ' + role[0].toUpperCase() + role.slice(1);
 
 
-// Show password feature
-const viewPasswordIcon = document.querySelector('.view-password-icon');
-viewPasswordIcon.addEventListener('click', () => {
-  passwordBox.type = passwordBox.type === 'password' ? 'text' : 'password';
-});
-
-// Click login button when pressing 'Enter' key
+// 'Enter' key triggers 'Login' button
 const passwordBox = document.querySelector('#password');
 passwordBox.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') {
     loginBtn.click();
   }
 })
+
+// Show password feature
+const viewPasswordIcon = document.querySelector('.view-password-icon');
+viewPasswordIcon.addEventListener('click', () => {
+  if (passwordBox.type === 'password') {
+    passwordBox.type = 'text'
+  } else {
+    passwordBox.type = 'password'
+  }
+});
 
 
 // ------------ Login button event handler ---------------
@@ -43,7 +47,7 @@ loginBtn.addEventListener('click', async () => {
     });
 
     const data = await res.json();
-    
+
     if (!data.ok) {
       msg.textContent = 'Login failed. Check your credentials.';
       return;
