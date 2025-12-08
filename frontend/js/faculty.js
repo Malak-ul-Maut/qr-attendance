@@ -193,7 +193,7 @@ function renderQR(data) {
     const options = {
         width: canvas.clientWidth,
         height: canvas.clientWidth,
-        margin: 0
+        margin: 2
     }
 
     QRCode.toCanvas(canvas, data.token, options, err => {

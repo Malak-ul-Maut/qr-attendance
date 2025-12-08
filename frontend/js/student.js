@@ -8,6 +8,8 @@ const video = document.getElementById('video');
 const scanResult = document.getElementById('scan-result');
 const scannerSection = document.getElementById('scanner-section');
 const mainSection = document.querySelector('main');
+let canvas = document.createElement('canvas');
+let ctx = canvas.getContext('2d', { willReadFrequently: true });
 
 let scanning = false;
 let scanInProgress = false;
@@ -63,8 +65,9 @@ markAttendanceCard.addEventListener('click', async () => {
         }
 
         scanning = true;
+        scanInProgress = false;
         const CameraId = await getCameraId();
-        scanQRCode(studentId, video, currentStream, CameraId);
+        scanQRCode(studentId, video, CameraId);
 
     } catch (err) {
         console.error("Camera error:", err);
@@ -146,30 +149,29 @@ function setZoomSliderBackground(el) {
 }
 
 
-async function scanQRCode(studentId, video, stream, CameraId) {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d', { willReadFrequently: 'true'});
+async function scanQRCode(studentId, video, CameraId) {
+    if (!scanning) return;
+    if (video.readyState !== video.HAVE_ENOUGH_DATA) {
+        return requestAnimationFrame(() => scanQRCode(studentId, video, CameraId));
+    }
+    const size = 400;
+    canvas.height = size;
+    canvas.width = size;
+    ctx.drawImage(video, 0, 0, size, size);
+    
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = jsQR(imageData.data, size, size);
 
-    const interval = setInterval(() => {
-        if (!scanning) return;
-        if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
-        
-        canvas.height = video.videoHeight;
-        canvas.width = video.videoWidth;
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(imageData.data, imageData.width, imageData.height);
+    if(code && !scanInProgress) {
+        scanning = false;
+        scanInProgress = true;
+        currentStream.getTracks().forEach(track => track.stop());
+        scanResult.textContent = "Submitting attendance...";
+        sendAttendance(studentId, code.data, CameraId);
+        return;
+    }
 
-        if(code && !scanInProgress) {
-            scanning = false;
-            scanInProgress = true;
-            currentStream.getTracks().forEach(track => track.stop());
-            scanResult.textContent = "Submitting attendance...";
-            clearInterval(interval);
-            sendAttendance(studentId, code.data, CameraId);
-        }
-    }, 300);
+    requestAnimationFrame(() => scanQRCode(studentId, video, CameraId));
 }
 
 
