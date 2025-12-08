@@ -1,6 +1,6 @@
 // Display user role
-const params = new URLSearchParams(window.location.search); 
-const role = params.get('role') || 'student';
+const searchQuery = window.location.search; // '?role=faculty' 
+const role = searchQuery.slice(6) || 'student';
 
 const signInMsg = document.querySelector('.signInMsg');
 signInMsg.textContent = 'Sign in as ' + role[0].toUpperCase() + role.slice(1);

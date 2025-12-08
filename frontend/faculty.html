@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Teacher Dashboard</title>
+  <title>Faculty Dashboard</title>
 
   <link rel="icon" href="icons/qr-code.png"/>
   <link rel="stylesheet" href="css/general.css">
@@ -11,114 +11,85 @@
   <link rel="stylesheet" href="css/sidebar.css">
   <link rel="stylesheet" href="css/button.css">
   <link rel="stylesheet" href="css/teacher.css">
-  
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+
 	<script src="js/auth-guard.js"></script>
 </head>
 
-<body>
-  <div id="session-section">
-    
-    <header>
-      <div class="left-section">
-        <img style="cursor:pointer;" src="icons/hamburger-menu.svg" alt="Menu">
-      </div>
-      <div class="middle-section">Teacher Dashboard</div>
-      <div class="right-section">
-        <span class="user-name">Welcome, <b></b></span>
-      </div>
-    </header>
+<body> 
+  <header>
+    <div class="left-section">
+      <img src="icons/hamburger-menu.svg" alt="Menu">
+    </div>
+    <div class="middle-section">Teacher Dashboard</div>
+    <div class="right-section">
+      <span class="user-name">Welcome, <b></b></span>
+    </div>
+  </header>
 
-    <nav class="sidebar">
-      <div class="sidebar-content">
-        <img src="icons/generate-qr.svg" alt="Generate QR">
-        <div>Generate QR</div>
-      </div>
-      <div class="sidebar-content">
-        <img src="icons/history.svg" alt="History">
-        <div>History</div>
-      </div>
-      <div class="sidebar-content">
-        <img src="icons/feedback.svg" alt="Feedback">
-        <div>Feedback</div>
-      </div>
-      <div class="sidebar-content" onclick="logout();">
-        <img src="icons/logout-black.svg" alt="Logout">
-        <div>Log out</div>
-      </div>
-    </nav>
+  <nav class="sidebar">
+    <div class="sidebar-content">
+      <img src="icons/generate-qr.svg">
+      <div>Generate QR</div>
+    </div>
+    <div class="sidebar-content">
+      <img src="icons/history.svg">
+      <div>History</div>
+    </div>
+    <div class="sidebar-content">
+      <img src="icons/feedback.svg">
+      <div>Feedback</div>
+    </div>
+    <div class="sidebar-content" onclick="logout();">
+      <img src="icons/logout-black.svg">
+      <div>Log out</div>
+    </div>
+  </nav>
 
-    <main class="content">
+  <section id="beforeStart">
+    <div id="sub-name">
+      Mathematics (III-Sem)
+    </div>
+    <div class="select-section">
+      <label for="courseId">Select section:</label>
+      <select id="courseId">
+        <option value="A">A</option>
+        <option value="B">B</option>
+        <option value="C">C</option>
+        <option value="D">D</option>
+      </select>
+    </div>
+    <button id="startSessionBtn" type="button">Start session</button>
+  </section>
+  
+  <section id="afterStart">
+    <canvas></canvas>
+  
+    <div class="live-section">
+      <div class="toggle-fullscreen-btn"></div>
+      <img class="toggle-fullscreen-icon" src="icons/fullscreen.svg">
+      <p class="live-section-heading">Live Attendance</p>
+      <div>
+        <p id="studentCount">Present: 0</p>
+        <button id="endSessionBtn" type="button">End Session</button>
+      </div>
       
-      <section id="beforeStart">
-        <div id="sub-name" class="sub-details">
-          Mathematics (III-Sem)
-        </div>
-        <div class="select-section">
-          <label for="courseId">Select section:</label>
-          <select id="courseId">
-            <option value="">-- Select section --</option>
-            <option value="A">A</option>
-            <option value="B">B</option>
-            <option value="C">C</option>
-            <option value="D">D</option>
-          </select>
-        </div>
-        <div>
-          <button id="startSessionBtn" type="button">Start session</button>
-        </div>
-      </section>
-      
-      <section id="afterStart" style="display:none;">
-        <div class="a">
-          <div id="qrCode"></div>
-        </div>
-        
-        <div class="b">
-          <div class="live-section">
-            <p>Live Attendance</p>
-            <p id="studentCount">Present: 0</p>
-            <button id="endSessionBtn" type="button">End Session</button>
-            <ol id="studentList"></ol>
-          </div>
-        </div>
-      </section>
+      <ol id="studentList"></ol>
+    </div>
+  </section>
 
-      <section id="finalizeModal">
-        <div id="finalizeContent">
-          <p>Review & Finalize Attendance</p>
-          <div id="finalizeList"></div>
-          <div class="finalize-buttons">
-            <button id="finalizeSubmitBtn">Submit Final Attendance</button>
-            <button id="finalizeCancelBtn">Cancel</button>
-          </div>
-        </div>
-      </section>
-    </main>
-  </div>
+  <section id="finalizeModal">
+    <div id="finalizeContent">
+      <p>Review & Finalize Attendance</p>
+      <div id="finalizeList"></div>
+      <div class="finalize-buttons">
+        <button id="finalizeSubmitBtn">Submit Final Attendance</button>
+        <button id="finalizeCancelBtn">Cancel</button>
+      </div>
+    </div>
+  </section>
 
   <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
-
-  <script>
-    if (!window.__API_BASE) {
-      window.__API_BASE = (location.protocol.startsWith('http') 
-        ? location.origin 
-        : 'https://192.168.1.16:4000');
-    }
-
-    const socketScript = document.createElement('script');
-    socketScript.src = `${window.__API_BASE}/socket.io/socket.io.js`;
-    
-    socketScript.onload = () => {
-      const teacherScript = document.createElement('script');
-      teacherScript.src = "js/teacher.js";
-      document.body.appendChild(teacherScript);
-    }
-
-    socketScript.onerror = () => console.error("Failed to load SOcket.IO from " + socketScript.src);
-    document.body.appendChild(socketScript);
-  </script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="js/faculty.js"></script>
 </body>
 </html>

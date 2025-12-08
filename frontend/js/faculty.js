@@ -27,7 +27,6 @@ document.querySelector('.user-name b').textContent = getCurrentUser().name || 'T
 subjectName.textContent = getCurrentUser().subName;
 
 
-
  // --------------- Socket initialization -------------
  function initSocket() {
     socket = io(url);
@@ -90,6 +89,14 @@ startBtn.addEventListener('click', async (e) => {
         document.getElementById('afterStart').style.display = 'flex';
 
         renderQR(data);
+
+        const afterStart = document.querySelector('#afterStart');
+        const canvas = document.querySelector('canvas');
+        const liveSection = document.querySelector('.live-section');
+        const toggleFullScreenBtn = document.querySelector('.toggle-fullscreen-btn');
+        toggleFullScreenBtn.addEventListener('click', ()=> {
+            toggleFullScreen(afterStart, canvas, liveSection);
+        });
 
         // Schedule token refresh
         if (refreshTimer) clearInterval(refreshTimer);
@@ -182,21 +189,22 @@ finalizeSubmitBtn.addEventListener('click', async ()=> {
 // ------------- Functions ---------------
 
 function renderQR(data) {
-    const parentQr = qrContainer.parentElement;
-    const desiredWidth = parentQr.offsetWidth * 0.9;
+    const canvas = document.querySelector('canvas');
+    const options = {
+        width: canvas.clientWidth,
+        height: canvas.clientWidth,
+        margin: 0
+    }
 
-    qrContainer.innerHTML = '';
-    const canvas = document.createElement('canvas');
-    QRCode.toCanvas(canvas, data.token, { width: desiredWidth, height: desiredWidth }, err => {
+    QRCode.toCanvas(canvas, data.token, options, err => {
         if (err) return console.error(err);
-        qrContainer.appendChild(canvas);
     });
 }
 
 function openFinalizeModal(records) {
     finalizeList.innerHTML = '';
     if (!records || records.length ===0) {
-        finalizeList.innerHTML = '<p>No attendance records for this session</p>';
+        finalizeList.innerHTML = '(No attendance records for this session)';
     } else {
         records.forEach(r => {
             const div = document.createElement('div');
@@ -217,4 +225,19 @@ function openFinalizeModal(records) {
         });
     }
     finalizeModal.style.display= 'flex';
+}
+
+
+function toggleFullScreen(afterStart, canvas, liveSection) {
+    if (!document.fullscreenElement) {
+        afterStart.classList.add('afterStart-fs');
+        canvas.classList.add('canvas-fs');
+        liveSection.classList.add('live-section-fs');
+        afterStart.requestFullscreen();
+    } else {
+        afterStart.classList.remove('afterStart-fs');
+        canvas.classList.remove('canvas-fs');
+        liveSection.classList.remove('live-section-fs');
+        document.exitFullscreen();
+    }
 }
