@@ -166,6 +166,7 @@ function openFinalizeModal(records) {
   finalizeList.innerHTML = '';
   if (!records || records.length ===0) {
     finalizeList.innerHTML = '(No attendance records for this session)';
+    finalizeModal.style.display= 'flex';
     return;
   } 
 
@@ -186,8 +187,9 @@ function openFinalizeModal(records) {
     div.appendChild(txt);
     finalizeList.appendChild(div);
   });
+  finalizeModal.style.display= 'flex';
 }
-finalizeModal.style.display= 'flex';
+
 
 
 function toggleFullScreen(afterStart, canvas, liveSection) {

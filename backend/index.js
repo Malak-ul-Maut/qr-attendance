@@ -108,7 +108,6 @@ app.post('/api/login', (req,res) => {
 // Start session: create sessionId, persist in-memory and DB, return a signed token
 app.post('/api/session/start', (req, res) => {
     const { courseId, teacherId } = req.body;
-    if (!courseId) return res.status(400).json({ ok:false, error:'missing_courseId' });
 
     const sessionId = 'sess_' + Math.random().toString(36).slice(2, 9);
     const startedAt = Date.now();
@@ -207,14 +206,6 @@ app.post('/api/session/end', (req, res) => {
     const { sessionId } = req.body;
     if (!sessionId || !sessions[sessionId]) return res.status(400).json({ ok: false, error: 'invalid_session' });
 
-    db.run(
-        `UPDATE sessions SET endTime = datetime('now'), status = 'ended' WHERE sessionId = ?`,
-        [sessionId],
-        (err) => {
-            if (err) console.error('Failed to update session endTime:', err);
-        }
-    );
-
     // Fetch attendance rows for that session (for teacher review)
     db.all(
         `SELECT id, studentId, courseId, timestamp, removed FROM attendance WHERE sessionId = ?`, 
@@ -267,6 +258,14 @@ app.post('/api/session/finalize', (req, res) => {
                 });
             }
         );
+
+        db.run(
+            `UPDATE sessions SET endTime = datetime('now'), status = 'ended' WHERE sessionId = ?`,
+            [sessionId],
+            (err) => {
+                if (err) console.error('Failed to update session endTime:', err);
+            }
+        );
     } catch (ex) {
         console.error('Unexpected finalize error:', ex);
         return res.status(500).json({ ok:false, error:'server_error' });
@@ -275,7 +274,7 @@ app.post('/api/session/finalize', (req, res) => {
 
 
 // -------------- Serve frontend & start server ----------------
-const FRONTEND_DIR = path.join(__dirname, '..', 'frontend');
+const FRONTEND_DIR = path.join(__dirname, '../frontend');
 app.use(express.static((FRONTEND_DIR)));
 
 // If someone hits a route that's not an API(fallback)
