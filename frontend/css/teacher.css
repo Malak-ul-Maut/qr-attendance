@@ -96,13 +96,13 @@ canvas {
   color: #555;
   display: inline-block;
 }
-#endSessionBtn {
+.white-btn {
   color: #24292f;
   background-color: #f6f8fa;
   border: 1px solid #d0d7de;
   transition: all 0.15s ease;
 }
-#endSessionBtn:hover {
+.white-btn:hover {
   background-color: #e1e4e8;
 }
 
@@ -179,8 +179,4 @@ canvas {
 #finalizeSubmitBtn {
   background-color: #238636;
   color: #fff;
-}
-#finalizeCancelBtn {
-  background-color: #f6f8fa;
-  border: 1px solid #d0d7de;
 }

@@ -7,7 +7,8 @@ const scanResult = document.getElementById('scan-result');
 const scannerSection = document.getElementById('scanner-section');
 const mainSection = document.querySelector('main');
 
-let studentId = document.querySelector('.user-name b').textContent = getCurrentUser().name;
+let studentName = document.querySelector('.user-name b').textContent = getCurrentUser().name;
+let studentId = getCurrentUser().username;
 
 
 
@@ -82,8 +83,7 @@ async function getCameraId() {
     if (videoInputs.length === 0) return null;
 
     const preferred = videoInputs.find(d => d.label.toLowerCase().includes('back')) || videoInputs[0];
-    const camerId = preferred.deviceId;
-    return camerId;
+    return preferred.deviceId;
     
    } catch (err) {
     console.error("Error enumerating media devices:", err);
@@ -122,11 +122,12 @@ async function enableZoom(currentStream) {
 
 
 async function scanQRCode(studentId, video) {
-  const cameraId = await getCameraId();
+  const cameraFingerprint = await getCameraId();
+  
   const qrScanner = new QrScanner(video, result => {
     if (navigator.vibrate) navigator.vibrate(40);
     scanResult.textContent = 'Submitting attendance...';
-    sendAttendance(studentId, result.data, cameraId);
+    sendAttendance(studentId, result.data, cameraFingerprint);
     qrScanner.stop();
   }, {
     onDecodeError: error => console.warn(error),
@@ -144,33 +145,18 @@ async function scanQRCode(studentId, video) {
 }
 
 
-async function sendAttendance(studentId, token, cameraId) {
+async function sendAttendance(studentId, token, cameraFingerprint) {
   try {
-    const res = await fetch('/api/session/verify', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({studentId, token, cameraFingerprint: cameraId })
-    });
+    const response = await postData('/api/session/verify', {studentId, studentName, token, cameraFingerprint });
 
-    const text = await res.text();
-    let data;
-    try { 
-      data = JSON.parse(text); 
-    } catch (e) {
-      console.error('Non-JSON response from server:', text);
-      scanResult.textContent = 'Server error (non-JSON). See console.';
-      scanInProgress = false;
-      return;
-    }
-
-    if (data.ok) {
+    if (response.ok) {
       scanResult.textContent = "✔ Attendance marked successfully!";
-      scanResult.style.color = '#2e9c17ff'
+      scanResult.style.color = '#2e9c17ff';
     } else {
-      scanResult.textContent = `⚠︎ Verification failed !!! (${data.error || 'unknown'})`;
+      scanResult.textContent = `⚠︎ Verification failed !!! (${response.error || 'unknown'})`;
       scanResult.style.color = '#b81616';
-      console.log("Verification failed: ", data.error );
     }
+    
   } catch (err) {
     console.error('Send attendance error:', err);
     scanResult.textContent = 'Error contacting server. Check connection.';

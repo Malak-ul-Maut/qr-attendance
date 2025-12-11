@@ -1,6 +1,9 @@
 // Display user role
 const searchQuery = window.location.search; // '?role=faculty' 
-const role = searchQuery.slice(6) || 'student';
+const role = searchQuery.slice(6);
+
+const allowedRoles = ['admin', 'student', 'faculty'];
+if (!allowedRoles.includes(role)) window.location.href = 'homepage.html';
 
 const signInMsg = document.querySelector('.signInMsg');
 signInMsg.textContent = 'Sign in as ' + role[0].toUpperCase() + role.slice(1);
@@ -34,10 +37,7 @@ loginBtn.addEventListener('click', async () => {
   const password = document.querySelector('#password').value.trim();
   const msg = document.querySelector('#login-msg');
 
-  if(!username || !password) {
-    msg.textContent = "Please enter both username and password";
-    return;
-  }
+  if(!username || !password) return msg.textContent = "Please enter both username and password";
 
   try {
     // Send credentials to backend for verification
@@ -48,13 +48,10 @@ loginBtn.addEventListener('click', async () => {
     });
     const data = await response.json();
 
-    if (!data.ok) {
-      msg.textContent = 'Login failed. Check your credentials.';
-      return;
-    }
+    if (!data.ok) return msg.textContent = 'Login failed. Check your credentials.';
 
     storeUser(data); // Save user login status in localStorage
-    window.location.href = `${data.role}.html`; // redirect user to their respective web-page
+    window.location.href = `${role}.html`; // redirect user to their respective web-page
 
   } catch (err) {
     console.error('Login error:', err);
@@ -65,7 +62,7 @@ loginBtn.addEventListener('click', async () => {
 
 function storeUser(data) {
   localStorage.setItem('user', JSON.stringify({
-    role: data.role,
+    role,
     username: data.username,
     name: data.name,
     subName: data.subName
