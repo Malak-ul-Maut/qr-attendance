@@ -1,5 +1,4 @@
 const loginBtn = document.getElementById('loginBtn');
-const startBtn = document.getElementById('startSessionBtn');
 const endBtn = document.getElementById('endSessionBtn');
 
 const timerDisplay = document.getElementById('timer');
@@ -9,179 +8,141 @@ const studentCount = document.getElementById('studentCount');
 const finalizeModal= document.getElementById('finalizeModal');
 const finalizeList= document.getElementById('finalizeList');
 const finalizeSubmitBtn = document.getElementById('finalizeSubmitBtn');
-const finalizeCancelBtn = document.getElementById('finalizeCancelBtn');
-const qrContainer = document.getElementById('qrCode');
-const subjectName = document.getElementById('sub-name');
 
-if (!window.__API_BASE) {
-    window.__API_BASE = (location.protocol && location.protocol.startsWith('http') ? location.origin : 'https://192.168.1.16:4000');
-}
-const url = window.__API_BASE;
 
-let refreshTimer = null;
-let currentSessionId = null;
-let socket = null;
+let qrTimer = null;
+let sessionId = null;
 
-// Display user name
-document.querySelector('.user-name b').textContent = getCurrentUser().name || 'Teacher';
+// Display user and subject name
+const userName = document.querySelector('.user-name b');
+userName.textContent = getCurrentUser().name || 'Teacher';
+
+const subjectName = document.querySelector('#sub-name');
 subjectName.textContent = getCurrentUser().subName;
 
 
  // --------------- Socket initialization -------------
- function initSocket() {
-    socket = io(url);
+ initializeSocket();
 
-    socket.on('connect', () => {
-        socket.emit('register_teacher');
-    });
+ function initializeSocket() {
+  const socket = io(location.origin);
 
-    socket.on('attendance_update', data => {
-        if (currentSessionId && data.sessionId !== currentSessionId) {
-            console.log('Ignoring attendance for another session:', data.sessionId);
-            return;
-        }
-        const li = document.createElement('li');
-        li.textContent = `${data.studentId} (${data.time})`;
-        studentList.appendChild(li);
-        li.scrollIntoView();
-        studentCount.textContent = `Present: ${studentList.children.length}`;
-    });
+  socket.on('connect', () => {
+    socket.emit('register_teacher');
+  });
 
-    socket.on('session_finalized', (payload) => {
-        if(payload.sessionId === currentSessionId) alert('Session finalized by teacher.');
-    });
+  socket.on('attendance_update', data => {
+    if (sessionId && data.sessionId !== sessionId) {
+      console.log('Ignoring attendance for another session:', data.sessionId);
+      return;
+    }
+    const li = document.createElement('li');
+    li.textContent = `${data.studentId} (${data.time})`;
+    studentList.appendChild(li);
+    li.scrollIntoView();
+    studentCount.textContent = `Present: ${studentList.children.length}`;
+  });
+
+  // socket.on('session_finalized', (payload) => {
+  //   if(payload.sessionId === sessionId) alert('Session finalized by teacher.');
+  // });
 }
-
-initSocket();
-
 
 
 // ------------- Event handlers ---------------
 
 // Start session
-startBtn.addEventListener('click', async (e) => {
-    e.preventDefault();
+const startBtn = document.querySelector('#startSessionBtn');
 
-    const courseId = document.getElementById('courseId').value;
-    if (!courseId) return alert('Select Course ID');
+startBtn.addEventListener('click', async (event) => {
+  const courseId = document.querySelector('#courseId').value;
+  const teacherId = getCurrentUser().username;
 
-    try {
-        // Attach the logged-in teacher's username as teacherId when available
-        let teacherIdToSend = 'T1';
-        try {
-            const user = (typeof getCurrentUser === 'function') ? getCurrentUser() : null;
-            if (user && user.role === 'faculty') {
-                teacherIdToSend = user.username || user.loginId || teacherIdToSend;
-            }
-        } catch (e) {
-            // fallback to T1 if anything goes wrong
-        }
+  try {
+    const response = await postData('/api/session/start', { courseId, teacherId });
+    sessionId = response.sessionId;
 
-        const res = await fetch(`${url}/api/session/start`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ courseId, teacherId: teacherIdToSend })
-        });
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error || 'start_failed');
-        currentSessionId = data.sessionId;
-        document.getElementById('beforeStart').style.display = 'none';
-        document.getElementById('afterStart').style.display = 'flex';
+    document.getElementById('beforeStart').style.display = 'none';
+    document.getElementById('afterStart').style.display = 'flex';
 
-        renderQR(data);
+    renderQR(response);
 
-        const afterStart = document.querySelector('#afterStart');
-        const canvas = document.querySelector('canvas');
-        const liveSection = document.querySelector('.live-section');
-        const toggleFullScreenBtn = document.querySelector('.toggle-fullscreen-btn');
-        toggleFullScreenBtn.addEventListener('click', ()=> {
-            toggleFullScreen(afterStart, canvas, liveSection);
-        });
+    const afterStart = document.querySelector('#afterStart');
+    const canvas = document.querySelector('canvas');
+    const liveSection = document.querySelector('.live-section');
+    const toggleFullScreenBtn = document.querySelector('.toggle-fullscreen-btn');
+    toggleFullScreenBtn.addEventListener('click', ()=> {
+      toggleFullScreen(afterStart, canvas, liveSection);
+    });
 
-        // Schedule token refresh
-        if (refreshTimer) clearInterval(refreshTimer);
-        refreshTimer = setInterval(async () => {
-            try{
-                const r = await fetch(`${url}/api/session/token`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ sessionId: currentSessionId })
-                });
-                const tokenData = await r.json();
-                if (!tokenData.ok) {
-                    console.warn('Token refresh failed:', tokenData);
-                    return;
-                }
+    // Schedule token refresh
+    if (qrTimer) clearInterval(qrTimer);
+    qrTimer = setInterval(async () => {
+      try{
+        const tokenData = await postData('/api/session/token', { sessionId });
+        if (!tokenData.ok) return console.warn('Token refresh failed:', tokenData);
+        renderQR(tokenData); 
 
-                renderQR(tokenData); 
-            } catch (e) {
-                console.error('Token refresh error:', e);
-            }
-        }, 1000);  
+      } catch (e) {
+        console.error('Token refresh error:', e);
+      }
+    }, 500);   
         
-         
-    } catch (err) {
-        console.error('Start session error:', err);
-        alert('Failed to start session');
-    }
+  } catch (err) {
+    console.error('Start session error:', err);
+    alert('Failed to start session');
+  }
 });
 
 
 // End session and open review modal
 endBtn.addEventListener('click', async () => {
-    if(!currentSessionId) return alert('No active session');
-    try {
-        const res = await fetch(`${url}/api/session/end`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: currentSessionId })
-        });
-        const data = await res.json();
-        if (data.ok) {
-            openFinalizeModal(data.records || []);
-        } else {
-            alert('Failed to end session:' + (data.error || 'unknown'));
-        } 
-    } catch (err) {
-            console.error('End session error:', err);
-            alert('Error ending session');
-        }
+  if(!sessionId) return alert('No active session');
+  try {
+    const response = await postData('/api/session/end', { sessionId });
+    if (!response.ok) alert('Failed to end session:' + (response.error || 'unknown'));
+
+    openFinalizeModal(response.records || []);
+
+  } catch (err) {
+      console.error('End session error:', err);
+      alert('Error ending session');
+    }
 });
 
+
+const finalizeCancelBtn = document.getElementById('finalizeCancelBtn');
 finalizeCancelBtn.addEventListener('click', ()=> finalizeModal.style.display = 'none');
 
-finalizeSubmitBtn.addEventListener('click', async ()=> {
-    const cbs = finalizeList.querySelectorAll('input[type=checkbox]');
-    const keep = [];
-    cbs.forEach(cb => { if (cb.checked) keep.push(cb.dataset.studentId); });
 
-    try {
-        const res = await fetch(`${url}/api/session/finalize`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: currentSessionId, keepStudentIds: keep }) 
-        });
-        const data = await res.json();
-        if (!data.ok) {
-            console.error('Finalize returned error:', data);
-            alert('Finalize failed: ' + (data.error || 'unknown'));
-        }
-        console.log('Finalized. kept: ' + (data.keptCount || keep.length));
-        finalizeModal.style.display = 'none';
-        
-        // clear local UI
-        studentCount.textContent = "Present: 0";
-        studentList.textContent = '';
-        const afterStart = document.getElementById('afterStart');
-        const beforeStart = document.getElementById('beforeStart');
-        afterStart.style.display = 'none';
-        beforeStart.style.display = 'flex';
-        currentSessionId = null;
-        if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
-    } catch (err) {
-        console.error('Finalize error:', err);
-        alert('Error finalizing attendance');
+finalizeSubmitBtn.addEventListener('click', async ()=> {
+  const cbs = finalizeList.querySelectorAll('input[type=checkbox]');
+  const keep = [];
+  cbs.forEach(cb => { if (cb.checked) keep.push(cb.dataset.studentId); });
+
+  try {
+    const response = await postData('/api/session/finalize', { sessionId, keepStudentIds: keep });
+
+    if (!response.ok) {
+      console.error('Finalize returned error:', data);
+      alert('Finalize failed: ' + (data.error || 'unknown'));
     }
+    finalizeModal.style.display = 'none';
+    
+    // clear local UI
+    studentCount.textContent = "Present: 0";
+    studentList.textContent = '';
+    const afterStart = document.getElementById('afterStart');
+    const beforeStart = document.getElementById('beforeStart');
+    afterStart.style.display = 'none';
+    beforeStart.style.display = 'flex';
+    sessionId = null;
+    if (qrTimer) { clearInterval(qrTimer); qrTimer = null; }
+
+  } catch (err) {
+    console.error('Finalize error:', err);
+    alert('Error finalizing attendance');
+  }
 });
 
 
@@ -189,55 +150,56 @@ finalizeSubmitBtn.addEventListener('click', async ()=> {
 // ------------- Functions ---------------
 
 function renderQR(data) {
-    const canvas = document.querySelector('canvas');
-    const options = {
-        width: canvas.clientWidth,
-        height: canvas.clientWidth,
-        margin: 2
-    }
+  const canvas = document.querySelector('canvas');
+  const options = {
+    width: canvas.clientWidth,
+    height: canvas.clientWidth,
+    margin: 2
+  }
 
-    QRCode.toCanvas(canvas, data.token, options, err => {
-        if (err) return console.error(err);
-    });
+  QRCode.toCanvas(canvas, data.token, options, err => {
+    if (err) return console.error(err);
+  });
 }
 
 function openFinalizeModal(records) {
-    finalizeList.innerHTML = '';
-    if (!records || records.length ===0) {
-        finalizeList.innerHTML = '(No attendance records for this session)';
-    } else {
-        records.forEach(r => {
-            const div = document.createElement('div');
-            div.className = 'student-row';
-            const cb = document.createElement('input');
-            cb.type = 'checkbox';
-            cb.checked = true;
-            cb.dataset.studentId = r.studentId;
-            cb.dataset.rowid = r.id;
-            const txt = document.createElement('span');
+  finalizeList.innerHTML = '';
+  if (!records || records.length ===0) {
+    finalizeList.innerHTML = '(No attendance records for this session)';
+    return;
+  } 
 
-            const localTime = new Date(r.timestamp + 'Z').toLocaleTimeString();
-            txt.textContent = ` ${r.studentId} (${localTime})`;
-            txt.scrollIntoView();
-            div.appendChild(cb);
-            div.appendChild(txt);
-            finalizeList.appendChild(div);
-        });
-    }
-    finalizeModal.style.display= 'flex';
+  records.forEach(r => {
+    const div = document.createElement('div');
+    div.className = 'student-row';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = true;
+    cb.dataset.studentId = r.studentId;
+    cb.dataset.rowid = r.id;
+    const txt = document.createElement('span');
+
+    const localTime = new Date(r.timestamp + 'Z').toLocaleTimeString();
+    txt.textContent = ` ${r.studentId} (${localTime})`;
+    txt.scrollIntoView();
+    div.appendChild(cb);
+    div.appendChild(txt);
+    finalizeList.appendChild(div);
+  });
 }
+finalizeModal.style.display= 'flex';
 
 
 function toggleFullScreen(afterStart, canvas, liveSection) {
-    if (!document.fullscreenElement) {
-        afterStart.classList.add('afterStart-fs');
-        canvas.classList.add('canvas-fs');
-        liveSection.classList.add('live-section-fs');
-        afterStart.requestFullscreen();
-    } else {
-        afterStart.classList.remove('afterStart-fs');
-        canvas.classList.remove('canvas-fs');
-        liveSection.classList.remove('live-section-fs');
-        document.exitFullscreen();
-    }
+  if (!document.fullscreenElement) {
+    afterStart.classList.add('afterStart-fs');
+    canvas.classList.add('canvas-fs');
+    liveSection.classList.add('live-section-fs');
+    afterStart.requestFullscreen();
+  } else {
+    afterStart.classList.remove('afterStart-fs');
+    canvas.classList.remove('canvas-fs');
+    liveSection.classList.remove('live-section-fs');
+    document.exitFullscreen();
+  }
 }

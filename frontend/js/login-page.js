@@ -14,13 +14,14 @@ passwordBox.addEventListener('keydown', (event) => {
   }
 })
 
+
 // Show password feature
 const viewPasswordIcon = document.querySelector('.view-password-icon');
 viewPasswordIcon.addEventListener('click', () => {
   if (passwordBox.type === 'password') {
-    passwordBox.type = 'text'
+    passwordBox.type = 'text';
   } else {
-    passwordBox.type = 'password'
+    passwordBox.type = 'password';
   }
 });
 
@@ -40,13 +41,12 @@ loginBtn.addEventListener('click', async () => {
 
   try {
     // Send credentials to backend for verification
-    const res = await fetch(`/api/login`, {
+    const response = await fetch(`/api/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password, role }) 
     });
-
-    const data = await res.json();
+    const data = await response.json();
 
     if (!data.ok) {
       msg.textContent = 'Login failed. Check your credentials.';
@@ -54,7 +54,7 @@ loginBtn.addEventListener('click', async () => {
     }
 
     storeUser(data); // Save user login status in localStorage
-    redirectUser(data); // redirect user to their respective web-page
+    window.location.href = `${data.role}.html`; // redirect user to their respective web-page
 
   } catch (err) {
     console.error('Login error:', err);
@@ -62,18 +62,6 @@ loginBtn.addEventListener('click', async () => {
   }
 });
 
-
-// --------- Functions -------------
-
-function redirectUser(data) {
-  if (data.role === 'student') {
-    window.location.href = `student.html`;
-  } else if (data.role === 'faculty') {
-    window.location.href = `faculty.html`;
-  } else {
-    window.location.href = `admin.html`;
-  }
-}
 
 function storeUser(data) {
   localStorage.setItem('user', JSON.stringify({
