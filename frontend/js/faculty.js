@@ -5,6 +5,7 @@ const liveSection = document.querySelector('.live-section');
 const studentList = document.querySelector('#studentList');
 const studentCount = document.querySelector('#studentCount');
 let sessionId = null;
+let qrTimer = null;
 
 
 // Display user and subject name
@@ -57,6 +58,7 @@ startBtn.addEventListener('click', async () => {
     sessionId = response.sessionId;
     beforeStart.style.display = 'none';
     afterStart.style.display = 'flex';
+    if (qrTimer) clearTimeout(qrTimer);
     renderQR(response); 
           
   } catch (err) {
@@ -106,12 +108,11 @@ function renderQR(data) {
   }
   QRCode.toCanvas(canvas, data.token, options);
 
-  setTimeout(async () => {
+  qrTimer = setTimeout(async () => {
     const tokenData = await postData('/api/session/token', { sessionId });
-    
     if (!tokenData.ok) return console.warn('Token refresh failed:', tokenData);
+    
     renderQR(tokenData); 
-
   }, 500);
 }
 
@@ -134,4 +135,5 @@ function clearAttendanceUI() {
   studentList.textContent = '';
   afterStart.style.display = 'none';
   beforeStart.style.display = 'flex';
+  clearTimeout(qrTimer);
 }

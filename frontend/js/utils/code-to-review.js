@@ -116,3 +116,39 @@ app.post('/api/session/end', (req, res) => {
         }
     );
 });
+
+
+
+// #finalizeModal {
+//   display: none; /* Dynamically changed to 'flex' by JS */
+//   position: fixed;
+//   inset: 0;
+//   background-color: rgba(0,0,0,0.3);
+//   justify-content: center;
+//   align-items: center;
+//   z-index: 999;
+// }
+// #finalizeContent {
+//   background-image: linear-gradient(to bottom, var(--highlight), var(--bg) );
+//   padding: 2rem;
+//   border-radius: 16px;
+//   width: 324px;
+//   text-align: left;
+//   box-shadow: 0px 4px 4px #00000030, 0px 12px 12px #00000015;
+// }
+// #finalizeContent p {
+//   font-size: 1.5rem;
+//   font-weight: 700;
+//   opacity: 0.8;
+//   margin: 0;
+//   margin-bottom: 1rem;
+// }
+// .finalize-buttons {
+//   margin-top: 16px;
+//   display: flex;
+//   justify-content: space-around;
+// }
+// #finalizeSubmitBtn {
+//   background-color: #238636;
+//   color: #fff;
+// }

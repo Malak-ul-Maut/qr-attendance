@@ -1,10 +1,10 @@
 import QrScanner from './utils/qr-scanner/qr-scanner.min.js';
 
-const markAttendanceCard = document.getElementById('markAttendanceCard');
-const closeScanBtn = document.getElementById('closeScanBtn');
-const video = document.getElementById('video');
-const scanResult = document.getElementById('scan-result');
-const scannerSection = document.getElementById('scanner-section');
+const markAttendanceCard = document.querySelector('#markAttendanceCard');
+const closeScanBtn = document.querySelector('#closeScanBtn');
+const video = document.querySelector('#video');
+const scanResult = document.querySelector('#scan-result');
+const scannerSection = document.querySelector('#scanner-section');
 const mainSection = document.querySelector('main');
 
 let studentName = document.querySelector('.user-name b').textContent = getCurrentUser().name;
@@ -19,8 +19,7 @@ markAttendanceCard.addEventListener('click', async () => {
   closeScanBtn.style.display = 'block';
   mainSection.style.display = 'none';
   
-  // Access camera
-  try{
+  try{  // Access camera
     let currentStream = await navigator.mediaDevices.getUserMedia({ 
       video: { facingMode: 'environment' } 
     });
@@ -29,8 +28,8 @@ markAttendanceCard.addEventListener('click', async () => {
     scanQRCode(studentId, video);
 
   } catch (err) {
-    console.error("Camera error:", err);
     alert("Unable to access camera. Make sure you allow permission.");
+    return console.error("Camera error:", err);
   }
 });
 
