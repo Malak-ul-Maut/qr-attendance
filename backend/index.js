@@ -19,7 +19,6 @@ function createSessionToken(sessionId, section, expiresInSeconds) {
     activeTokens[token] = { sessionId, section, expiresAt };
     
     setTimeout(() => delete activeTokens[token], expiresInSeconds * 1000);
-    
     return token;
 }
 
@@ -123,74 +122,70 @@ app.post('/api/session/token', (req, res) => {
 
 // Verify student scan
 app.post('/api/session/verify', (req, res) => {
-    const { studentId, studentName, token, cameraFingerprint } = req.body;
-    if (!studentId || !token || !cameraFingerprint) 
-        return res.status(400).json({ ok: false, error: 'missing_fields' });
+  const { studentId, studentName, token, cameraFingerprint } = req.body;
+  if (!studentId || !token || !cameraFingerprint) 
+    return res.status(400).json({ ok: false, error: 'missing_fields' });
 
-    if (!activeTokens[token])
-        return res.status(400).json({ ok: false, error: 'invalid_or_expired_token' });
+  if (!activeTokens[token])
+    return res.status(400).json({ ok: false, error: 'invalid_or_expired_token' });
 
-    const { sessionId, section } = activeTokens[token];
+  const { sessionId, section } = activeTokens[token];
 
-    db.get(
-      `SELECT * FROM attendance WHERE (studentId = ? OR cameraFingerprint = ?) AND sessionId = ?`, 
-      [studentId, cameraFingerprint, sessionId],
-      (err, row) => {
-        if (err) return res.status(500).json({ ok: false, error: err });
-      
-        if (row) {
-          if (row.studentId === studentId) 
-            return res.status(400).json({ ok: false, error: 'already_marked'});
-          if (row.cameraFingerprint === cameraFingerprint) 
-            return res.status(400).json({ ok: false, error: 'duplicate_device_entry'});
-        }
-
-        db.run(
-          `INSERT INTO attendance (studentid, studentName, section, sessionId, cameraFingerprint) VALUES (?, ?, ?, ?, ?)`,
-          [studentId, studentName, section, sessionId, cameraFingerprint],
-          () => {
-            teacherSockets.forEach(sock => sock.emit('attendance_update', { 
-              studentId, 
-              studentName, 
-              section, 
-              sessionId, 
-              time: new Date().toLocaleTimeString()
-            }));
-            return res.json({ ok:true, message: 'Attendance recorded', sessionId });
-          }
-        );
+  db.get(
+    `SELECT * FROM attendance WHERE (studentId = ? OR cameraFingerprint = ?) AND sessionId = ?`, 
+    [studentId, cameraFingerprint, sessionId],
+    (err, row) => {
+      if (err) return res.status(500).json({ ok: false, error: err });
+    
+      if (row) {
+        if (row.studentId === studentId) 
+          return res.status(400).json({ ok: false, error: 'already_marked'});
+        if (row.cameraFingerprint === cameraFingerprint) 
+          return res.status(400).json({ ok: false, error: 'duplicate_device_entry'});
       }
-    );
+
+      db.run(
+        `INSERT INTO attendance (studentid, studentName, section, sessionId, cameraFingerprint) VALUES (?, ?, ?, ?, ?)`,
+        [studentId, studentName, section, sessionId, cameraFingerprint],
+        () => {
+          teacherSockets.forEach(sock => sock.emit('attendance_update', { 
+            studentId, 
+            studentName, 
+            section, 
+            sessionId, 
+            time: new Date().toLocaleTimeString()
+          }));
+          return res.json({ ok:true, message: 'Attendance recorded', sessionId });
+        }
+      );
+    }
+  );
 });
 
 
 // Finalize attendance
 app.post('/api/session/finalize', (req, res) => {
-  try{
-    const { sessionId, keepStudentIds } = req.body;
-    sessions[sessionId].active = false;
-    const placeholders = keepStudentIds.map(()=> '?').join(','); // '?,?,?,?,....,?'
+  const { sessionId, keepStudentIds } = req.body;
+  sessions[sessionId].active = false;
+  const placeholders = keepStudentIds.map(()=> '?').join(','); // '?,?,?,?,....,?'
 
-    if (keepStudentIds.length === 0) {
-      teacherSockets.forEach(sock => sock.emit('session_finalized', { sessionId }));
-      return res.json({ ok:true, message:'Finalized (no students kept)'});
-    }
-
-    db.run(
-      `UPDATE sessions SET endTime = datetime('now'), status = 'ended' WHERE sessionId = ?`, [sessionId]
-    );
-    
-    db.run(
-      `UPDATE attendance SET removed = 0 WHERE sessionId = ? AND studentId IN (${placeholders})`, 
-      [sessionId, ...keepStudentIds], 
-      () => {
-      return res.json({ ok:true, message:'Finalized', keptCount: keepStudentIds.length });
-    });
-
-  } catch (err) {
-    return res.status(500).json({ ok:false, error: err });
+  if (keepStudentIds.length === 0) {
+    teacherSockets.forEach(sock => sock.emit('session_finalized', { sessionId }));
+    return res.json({ ok:true, message:'Finalized (no students kept)'});
   }
+
+  db.run(
+    `UPDATE sessions SET endTime = datetime('now'), status = 'ended' WHERE sessionId = ?`, [sessionId]
+  );
+  
+  db.run(
+    `UPDATE attendance SET removed = 0 WHERE sessionId = ? AND studentId IN (${placeholders})`, 
+    [sessionId, ...keepStudentIds], 
+    () => {
+    return res.json({ ok:true, message:'Finalized', keptCount: keepStudentIds.length });
+  });
 });
+
 
 
 // -------------- Server config----------------
