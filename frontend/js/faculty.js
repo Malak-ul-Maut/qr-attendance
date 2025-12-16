@@ -53,18 +53,14 @@ startBtn.addEventListener('click', async () => {
   const toggleFullScreenBtn = document.querySelector('.toggle-fullscreen-btn');
   toggleFullScreenBtn.addEventListener('click', ()=> toggleFullScreen() );
 
-  try {
-    const response = await postData('/api/session/start', { section, teacherId });
-    sessionId = response.sessionId;
-    beforeStart.style.display = 'none';
-    afterStart.style.display = 'flex';
-    if (qrTimer) clearTimeout(qrTimer);
-    renderQR(response); 
-          
-  } catch (err) {
-    console.error('Start session error:', err);
-    alert('Failed to start session');
-  }
+  const response = await postData('/api/session/start', { section, teacherId });
+  sessionId = response.sessionId;
+
+  beforeStart.style.display = 'none';
+  afterStart.style.display = 'flex';
+
+  if (qrTimer) clearTimeout(qrTimer);
+  renderQR(response); 
 });
 
 
@@ -79,21 +75,11 @@ submitBtn.addEventListener('click', async () => {
     if (student.checked) keepStudentIds.push(student.dataset.id); 
   });
 
-  try {
-    const response = await postData('/api/session/finalize', { sessionId, keepStudentIds });
+  const response = await postData('/api/session/finalize', { sessionId, keepStudentIds });
+  if (!response.ok) return console.error('Finalize returned error:', data);
 
-    if (!response.ok) {
-      alert('Finalize failed: ' + (data.error || 'unknown'));
-      return console.error('Finalize returned error:', data);
-    }
-
-    alert('✔ Attendance submitted successfully');
-    clearAttendanceUI();
-
-  } catch (err) {
-    console.error('Finalize error:', err);
-    alert('Error finalizing attendance');
-  }
+  alert('✔ Attendance submitted successfully');
+  clearAttendanceUI();
 });
 
 

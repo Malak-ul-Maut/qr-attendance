@@ -27,14 +27,12 @@ markAttendanceCard.addEventListener('click', async () => {
     scanQRCode(studentId, video);
 
   } catch (err) {
-    alert("Unable to access camera. Make sure you allow permission.");
-    return console.error("Camera error:", err);
+    return alert("Unable to access camera:", err);
   }
 });
 
 
 const closeScanBtn = document.querySelector('#closeScanBtn');
-
 closeScanBtn.addEventListener('click', () => {
     scannerSection.style.display = 'none';
     closeScanBtn.style.display = 'none';
@@ -74,21 +72,15 @@ async function scanQRCode(studentId, video) {
 
 
 async function sendAttendance(studentId, token, cameraFingerprint) {
-  try {
-    const response = await postData('/api/session/verify', {studentId, studentName, token, cameraFingerprint });
+  const response = await postData('/api/session/verify', {studentId, studentName, token, cameraFingerprint });
 
-    if (response.ok) {
-      scanResult.textContent = "✔ Attendance marked successfully!";
-      scanResult.style.color = '#2e9c17ff';
-    } else {
-      scanResult.textContent = `⚠︎ Verification failed !!! (${response.error || 'unknown'})`;
-      scanResult.style.color = '#b81616';
-    }
-    
-  } catch (err) {
-    console.error('Send attendance error:', err);
-    scanResult.textContent = 'Error contacting server. Check connection.';
-  } 
+  if (response.ok) {
+    scanResult.textContent = "✔ Attendance marked successfully!";
+    scanResult.style.color = '#2e9c17ff';
+  } else {
+    scanResult.textContent = `⚠︎ Verification failed !!! (${response.error || 'unknown'})`;
+    scanResult.style.color = '#b81616';
+  }
 }
 
 

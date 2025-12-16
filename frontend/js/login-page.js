@@ -65,6 +65,6 @@ function storeUser(data) {
     role,
     username: data.username,
     name: data.name,
-    subName: data.subName
+    subName: data.subjectName
   }));
 }

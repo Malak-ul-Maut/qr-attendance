@@ -77,15 +77,10 @@ app.post('/api/login', (req,res) => {
     db.get(`SELECT * FROM users WHERE username = ? AND password = ? AND role = ?`, 
         [username, password, role], 
         (err, row) => {
-        if (err) return res.status(500).json({ ok:false, error: "db_error: " + err });
         if(!row) return res.status(401).json({ ok:false, error: "invallid_credentials" });
+        const { name, username, subjectName } = row;
 
-        return res.json({
-            ok: true,
-            name: row.name,
-            username: row.username,
-            subName: row.subjectName
-        });
+        return res.json({ ok: true, name, username, subjectName });
     });
 });
 
@@ -98,12 +93,9 @@ app.post('/api/session/start', (req, res) => {
 
     db.run(
         `INSERT OR REPLACE INTO sessions (sessionId, section, teacherId, status) VALUES (?, ?, ?, 'active')`,
-        [sessionId, section, teacherId],
-        (err) => {
-            if(err) console.error('Failed to insert session:', err);
-        }
+        [sessionId, section, teacherId]
     );
-
+    
     let token = createSessionToken(sessionId, section, 3);
     return res.json({ ok: true, sessionId, token});
 });
@@ -123,20 +115,15 @@ app.post('/api/session/token', (req, res) => {
 // Verify student scan
 app.post('/api/session/verify', (req, res) => {
   const { studentId, studentName, token, cameraFingerprint } = req.body;
-  if (!studentId || !token || !cameraFingerprint) 
-    return res.status(400).json({ ok: false, error: 'missing_fields' });
 
-  if (!activeTokens[token])
-    return res.status(400).json({ ok: false, error: 'invalid_or_expired_token' });
-
+  if (!activeTokens[token]) return res.status(400).json({ ok: false, error: 'invalid_or_expired_token' });
   const { sessionId, section } = activeTokens[token];
 
   db.get(
     `SELECT * FROM attendance WHERE (studentId = ? OR cameraFingerprint = ?) AND sessionId = ?`, 
     [studentId, cameraFingerprint, sessionId],
     (err, row) => {
-      if (err) return res.status(500).json({ ok: false, error: err });
-    
+  
       if (row) {
         if (row.studentId === studentId) 
           return res.status(400).json({ ok: false, error: 'already_marked'});
@@ -175,15 +162,15 @@ app.post('/api/session/finalize', (req, res) => {
   }
 
   db.run(
-    `UPDATE sessions SET endTime = datetime('now'), status = 'ended' WHERE sessionId = ?`, [sessionId]
-  );
-  
-  db.run(
     `UPDATE attendance SET removed = 0 WHERE sessionId = ? AND studentId IN (${placeholders})`, 
     [sessionId, ...keepStudentIds], 
     () => {
     return res.json({ ok:true, message:'Finalized', keptCount: keepStudentIds.length });
   });
+
+  db.run(
+    `UPDATE sessions SET endTime = datetime('now'), status = 'ended' WHERE sessionId = ?`, [sessionId]
+  );
 });
 
 
