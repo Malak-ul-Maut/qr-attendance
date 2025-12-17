@@ -73,18 +73,23 @@ main {
 }
 
 #zoom-slider {
+  --fill: 0%;
+  appearance: none;
   margin: 0 auto;
-  accent-color: #1f6feb;
   width: 70%;
   height: 0.8rem;
   border-radius: 8px;
   flex-shrink: 0;
-  appearance: none;
-  background-color: hsl(204, 100%, 88%);
+  background: linear-gradient(
+    to right,
+    #1f6feb 0%,
+    #1f6feb var(--fill),
+    hsl(204, 100%, 88%) var(--fill),
+    hsl(204, 100%, 88%) 100%
+  );
 }
 
 #zoom-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
   appearance: none;
   width: 2rem;
   height: 2rem;

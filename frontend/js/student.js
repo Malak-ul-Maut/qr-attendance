@@ -33,6 +33,7 @@ markAttendanceCard.addEventListener('click', async () => {
 
 
 const closeScanBtn = document.querySelector('#closeScanBtn');
+
 closeScanBtn.addEventListener('click', () => {
     scannerSection.style.display = 'none';
     closeScanBtn.style.display = 'none';
@@ -47,10 +48,8 @@ closeScanBtn.addEventListener('click', () => {
 async function getCameraId() {
   const devices = await navigator.mediaDevices.enumerateDevices();
   const videoInputs = devices.filter(d => d.kind === 'videoinput');
-
-  if (videoInputs.length === 0) return null;
-
   const preferred = videoInputs.find(d => d.label.toLowerCase().includes('back')) || videoInputs[0];
+
   return preferred.deviceId;
 }
 
@@ -78,57 +77,40 @@ async function sendAttendance(studentId, token, cameraFingerprint) {
     scanResult.textContent = "✔ Attendance marked successfully!";
     scanResult.style.color = '#2e9c17ff';
   } else {
-    scanResult.textContent = `⚠︎ Verification failed !!! (${response.error || 'unknown'})`;
+    scanResult.textContent = `⚠︎ Verification failed !!! (${response.error})`;
     scanResult.style.color = '#b81616';
   }
 }
 
 
 function enableZoom(currentStream) {
-  const [track] = currentStream.getVideoTracks();
-  const capabilities = track.getCapabilities();
-  const settings = currentStream.getVideoTracks()[0].getSettings();
   const zoomSlider = document.querySelector('#zoom-slider');
   const zoomMinus = document.querySelector('.slider-icon.left');
   const zoomPlus = document.querySelector('.slider-icon.right');
 
-  if (!capabilities.zoom || !capabilities.focusMode) return console.warn("Auto-focus/Zoom not supported");
-
-  zoomSlider.style.display = 'block';
-  zoomSlider.min = capabilities.zoom.min;
+  const track = currentStream.getVideoTracks()[0];
+  const capabilities = track.getCapabilities();
   zoomSlider.max = capabilities.zoom.max;
-  zoomSlider.step = capabilities.zoom.step || 0.1;
-  zoomSlider.value = settings.zoom || capabilities.zoom.min;
+  if (!capabilities.zoom) return console.warn("Zoom not supported");
 
-  zoomSlider.addEventListener('input', async (ev) => { 
-    // Update slider track color and apply zoom on input (will replace it with progress/meter html element)
-    const el = ev.target;
-    const min = parseFloat(el.min) || 0;
-    const max = parseFloat(el.max) || 1;
-    const val = parseFloat(el.value);
-    const pct = ((val - min) / (max - min)) * 100;
-    el.style.background = `linear-gradient(to right, #0b4db3 0%, #0b4db3 ${pct}%, #d0d7e2 ${pct}%, #d0d7e2 100%)`; // 
-    const zoom = parseFloat(el.value);
-    const track = currentStream.getVideoTracks()[0];
-    track.applyConstraints({ advanced: [{ zoom }, { focusMode: "continuous" }] });
+  if (capabilities.focusMode.includes('continuous')) {
+    track.applyConstraints({ advanced: [{focusMode: "continuous"}] });
+  }
+
+  zoomSlider.addEventListener('input', (event) => { 
+    const percent = (zoomSlider.value - zoomSlider.min) / (zoomSlider.max - zoomSlider.min) * 100;
+    zoomSlider.style.setProperty('--fill', `${percent}%`); // Update slider fill
+    const zoom = parseFloat(event.target.value);
+    track.applyConstraints({ advanced: [{ zoom }] });
   });
 
-
-  // Slider icon click handlers (step slider and dispatch input event)
-  const iconStep = parseFloat(zoomSlider.step)*10 || 1;
   zoomMinus.addEventListener('click', () => {
-    const iconMin = parseFloat(zoomSlider.min) || 0;
-    let v = parseFloat(zoomSlider.value) - iconStep;
-    if (v < iconMin) v = iconMin;
-    zoomSlider.value = v;
+    zoomSlider.value = parseFloat(zoomSlider.value) - 1;
     zoomSlider.dispatchEvent(new Event('input'));
   });
 
   zoomPlus.addEventListener('click', () => {
-    const iconMax = parseFloat(zoomSlider.max) || (parseFloat(zoomSlider.value) + iconStep);
-    let v = parseFloat(zoomSlider.value) + iconStep;
-    if (v > iconMax) v = iconMax;
-    zoomSlider.value = v;
+    zoomSlider.value = parseFloat(zoomSlider.value) + 1;
     zoomSlider.dispatchEvent(new Event('input'));
   });
 }
