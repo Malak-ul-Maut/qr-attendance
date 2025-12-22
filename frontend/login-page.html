@@ -1,37 +1,37 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Login page</title>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Login page</title>
 
-	<link rel="icon" href="icons/qr-code.png"/>
-  <link rel="stylesheet" href="css/general.css">
-	<link rel="stylesheet" href="css/button.css">
-  <link rel="stylesheet" href="css/loginpage.css">
-	
-	<script>
-		const user = JSON.parse(localStorage.getItem('user'));
-		if (user) {
-    	window.location.href = `/${user.role}.html`;
-		}
-	</script>
-</head>
+    <link rel="icon" href="icons/qr-code.png" />
+    <link rel="stylesheet" href="css/general.css" />
+    <link rel="stylesheet" href="css/button.css" />
+    <link rel="stylesheet" href="css/loginpage.css" />
 
-<body>
-	<main>
-		<img class="qr-logo" src="icons/generate-qr.svg">
-		<p class="signInMsg"></p>
+    <script>
+      const user = JSON.parse(localStorage.getItem('user'));
+      if (user) {
+        window.location.href = `/${user.role}.html`;
+      }
+    </script>
+  </head>
 
-		<input type="text" id="username" placeholder="✉ Username">
-		<input type="password" id="password" placeholder="🔒 Password">
-		
-		<img class="view-password-icon" src="icons/view-password.svg">
-		<p class="forgot-password-link">Forgot password?</p>
-		<button id="loginBtn">Sign in</button>
-		<p id="login-msg"></p>
-	</main>
+  <body>
+    <main>
+      <img class="qr-logo" src="icons/generate-qr.svg" />
+      <p class="signInMsg"></p>
 
-  <script src="js/login-page.js"></script>
-</body>
+      <input type="text" id="username" placeholder="✉ Username" />
+      <input type="password" id="password" placeholder="🔒 Password" />
+
+      <img class="view-password-icon" src="icons/view-password.svg" />
+      <p class="forgot-password-link">Forgot password?</p>
+      <button id="loginBtn">Sign in</button>
+      <p id="login-msg"></p>
+    </main>
+
+    <script src="js/login-page.js"></script>
+  </body>
 </html>

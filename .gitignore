@@ -1,10 +1,1 @@
-# Node dependencies
-node_modules/
-
-# Database
-# backend/attendance.db
-
-# Build & temp files
-.github/
-.vscode/
-
+node_modules

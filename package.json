@@ -1,0 +1,26 @@
+{
+  "name": "qr-attendance",
+  "version": "1.0.0",
+  "description": "Mark attendance securely using dynamic QR codes",
+  "main": "backend/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node backend/index.js"
+  },
+  "keywords": [
+    "qr-attendance"
+  ],
+  "author": "Ahad Ali",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.17.1",
+    "qr-scanner": "^1.4.2",
+    "selfsigned": "^5.2.0",
+    "socket.io": "^4.8.1",
+    "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "prettier": "3.7.4"
+  }
+}

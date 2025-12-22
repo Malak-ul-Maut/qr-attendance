@@ -1,85 +1,87 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Faculty Dashboard</title>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Faculty Dashboard</title>
 
-  <link rel="icon" href="icons/qr-code.png"/>
-  <link rel="stylesheet" href="css/general.css">
-  <link rel="stylesheet" href="css/header.css">
-  <link rel="stylesheet" href="css/sidebar.css">
-  <link rel="stylesheet" href="css/button.css">
-  <link rel="stylesheet" href="css/teacher.css">
+    <link rel="icon" href="icons/qr-code.png" />
+    <link rel="stylesheet" href="css/general.css" />
+    <link rel="stylesheet" href="css/header.css" />
+    <link rel="stylesheet" href="css/sidebar.css" />
+    <link rel="stylesheet" href="css/button.css" />
+    <link rel="stylesheet" href="css/teacher.css" />
 
-	<script src="js/utils/auth-guard.js"></script>
-</head>
+    <script src="js/utils/auth-guard.js"></script>
+  </head>
 
-<body> 
-  <header>
-    <div class="left-section">
-      <img src="icons/hamburger-menu.svg" alt="Menu">
-    </div>
-    <div class="middle-section">Teacher Dashboard</div>
-    <div class="right-section">
-      <span class="user-name">Welcome, <b></b></span>
-    </div>
-  </header>
-
-  <nav class="sidebar">
-    <div class="sidebar-content">
-      <img src="icons/generate-qr.svg">
-      <div>Generate QR</div>
-    </div>
-    <div class="sidebar-content">
-      <img src="icons/history.svg">
-      <div>History</div>
-    </div>
-    <div class="sidebar-content">
-      <img src="icons/feedback.svg">
-      <div>Feedback</div>
-    </div>
-    <div class="sidebar-content" onclick="logout();">
-      <img src="icons/logout-black.svg">
-      <div>Log out</div>
-    </div>
-  </nav>
-
-  <section id="beforeStart">
-    <div id="sub-name"></div>
-    <div class="select-section">
-      <label for="section">Select section:</label>
-      <select id="section">
-        <option value="A">A</option>
-        <option value="B">B</option>
-        <option value="C">C</option>
-        <option value="D">D</option>
-      </select>
-    </div>
-    <button id="startSessionBtn" type="button">Start session</button>
-  </section>
-  
-  <section id="afterStart">
-    <canvas></canvas>
-  
-    <div class="live-section">
-      <abbr title="Toggle Fullscreen">
-        <div class="toggle-fullscreen-btn"></div>
-        <img class="toggle-fullscreen-icon" src="icons/fullscreen.svg">
-      </abbr>
-      <p class="live-section-heading">Live Attendance</p>
-      <div>
-        <p id="studentCount">Present: 0</p>
-        <button id="add-manually-btn" type="button">Add Manually</button>
-        <button id="submit-attendance-btn" class="white-btn" type="button">Submit</button>
+  <body>
+    <header>
+      <div class="left-section">
+        <img src="icons/hamburger-menu.svg" alt="Menu" />
       </div>
+      <div class="middle-section">Teacher Dashboard</div>
+      <div class="right-section">
+        <span class="user-name">Welcome, <b></b></span>
+      </div>
+    </header>
 
-      <ol id="studentList"></ol>
-    </div>
-  </section>
+    <nav class="sidebar">
+      <div class="sidebar-content">
+        <img src="icons/generate-qr.svg" />
+        <div>Generate QR</div>
+      </div>
+      <div class="sidebar-content">
+        <img src="icons/history.svg" />
+        <div>History</div>
+      </div>
+      <div class="sidebar-content">
+        <img src="icons/feedback.svg" />
+        <div>Feedback</div>
+      </div>
+      <div class="sidebar-content" onclick="logout()">
+        <img src="icons/logout-black.svg" />
+        <div>Log out</div>
+      </div>
+    </nav>
 
-  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
-  <script src="/socket.io/socket.io.js"></script>
-  <script src="js/faculty.js" type="module"></script>
-</body>
+    <section id="beforeStart">
+      <div id="sub-name"></div>
+      <div class="select-section">
+        <label for="section">Select section:</label>
+        <select id="section">
+          <option value="A">A</option>
+          <option value="B">B</option>
+          <option value="C">C</option>
+          <option value="D">D</option>
+        </select>
+      </div>
+      <button id="startSessionBtn" type="button">Start session</button>
+    </section>
+
+    <section id="afterStart">
+      <canvas></canvas>
+
+      <div class="live-section">
+        <abbr title="Toggle Fullscreen">
+          <div class="toggle-fullscreen-btn"></div>
+          <img class="toggle-fullscreen-icon" src="icons/fullscreen.svg" />
+        </abbr>
+        <p class="live-section-heading">Live Attendance</p>
+        <div>
+          <p id="studentCount">Present: 0</p>
+          <button id="add-manually-btn" type="button">Add Manually</button>
+          <button id="submit-attendance-btn" class="white-btn" type="button">
+            Submit
+          </button>
+        </div>
+
+        <ol id="studentList"></ol>
+      </div>
+    </section>
+
+    <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="js/faculty.js" type="module"></script>
+  </body>
 </html>

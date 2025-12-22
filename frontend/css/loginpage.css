@@ -1,83 +1,83 @@
 main {
-    width: 26vw;
-    border: none;
-    border-radius: 1.2rem;
-    background-color: var(--bg);
-    margin-top: 16vh;
-    padding: 1.5rem 2rem;
-    
-    display: flex;
-    flex-direction: column;
-    row-gap: 1rem;
-    justify-self: center;
-    align-items: center;
+  width: 26vw;
+  border: none;
+  border-radius: 1.2rem;
+  background-color: var(--bg);
+  margin-top: 16vh;
+  padding: 1.5rem 2rem;
 
-    position: relative;
-    box-shadow: 0px 4px 4px #00000030, 0px 12px 12px #00000015;
+  display: flex;
+  flex-direction: column;
+  row-gap: 1rem;
+  justify-self: center;
+  align-items: center;
+
+  position: relative;
+  box-shadow:
+    0px 4px 4px #00000030,
+    0px 12px 12px #00000015;
 }
-
 
 .qr-logo {
-    width: 4rem;
+  width: 4rem;
 }
 .signInMsg {
-    font-weight: 600;
-    font-size: 1.5rem;
-    opacity: 0.8;
-    display: block;
+  font-weight: 600;
+  font-size: 1.5rem;
+  opacity: 0.8;
+  display: block;
 }
 
 input {
-    font-size: 0.9rem;
-    font-weight: 500;
-    opacity: 0.9;
-    width: 90%;
-    border-style: none;
-    border-radius: 0.6rem;
-    background-color: hsl(203, 23%, 89%);
-    padding: 0.8rem 1.2rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  opacity: 0.9;
+  width: 90%;
+  border-style: none;
+  border-radius: 0.6rem;
+  background-color: hsl(203, 23%, 89%);
+  padding: 0.8rem 1.2rem;
 }
 
 .view-password-icon {
-    position: absolute;
-    right: 3rem;
-    top: 61%;
-   
-    width: 1.4rem;
-    opacity: 0.6;
-    cursor: pointer;
+  position: absolute;
+  right: 3rem;
+  top: 61%;
+
+  width: 1.4rem;
+  opacity: 0.6;
+  cursor: pointer;
 }
 
 .forgot-password-link {
-    align-self: self-end;
-    color: royalblue;
-    margin: 0;
+  align-self: self-end;
+  color: royalblue;
+  margin: 0;
 }
 .forgot-password-link:hover {
-    cursor: pointer;
-    text-decoration: underline;
+  cursor: pointer;
+  text-decoration: underline;
 }
 
 #loginBtn {
-    color: white;
-    background-color:hsl(220, 20%, 6%);
-    width: 100%;
-    margin-top: 8px;
-    border: 0.8px solid rgba(31, 35, 40, 0.15);
-    border-radius: 0.8rem;
+  color: white;
+  background-color: hsl(220, 20%, 6%);
+  width: 100%;
+  margin-top: 8px;
+  border: 0.8px solid rgba(31, 35, 40, 0.15);
+  border-radius: 0.8rem;
 }
 #login-msg {
-    font-size: 1rem;
-    font-weight: 500;
-    opacity: 0.8;
-    text-align: center;
-    margin: 0;
+  font-size: 1rem;
+  font-weight: 500;
+  opacity: 0.8;
+  text-align: center;
+  margin: 0;
 }
-
 
 /*----------- Stylings for mobile view ------------*/
 @media (max-width: 480px) {
-    main {
-        width: 70vw;
-    }
+  main {
+    width: 70vw;
+  }
 }

@@ -4,7 +4,11 @@ header {
   display: flex;
   column-gap: 30px;
   justify-content: center;
-  background-image: linear-gradient(to right, hsl(223, 46%, 23%), hsla(223, 66%, 33%, 0.815));
+  background-image: linear-gradient(
+    to right,
+    hsl(223, 46%, 23%),
+    hsla(223, 66%, 33%, 0.815)
+  );
 }
 header img {
   width: 80px;
@@ -19,9 +23,8 @@ header p {
   opacity: 0.8;
 }
 
-
 /*-------------- Heading & sub-heading --------------*/
-.heading{
+.heading {
   font-size: 40px;
   font-weight: 800;
   color: var(--text);
@@ -38,19 +41,13 @@ header p {
   margin-bottom: 48px;
 }
 
-
-
-
-
-
-
 /*-------------- Responsive for mobile ----------------*/
- @media (max-width: 540px) {
+@media (max-width: 540px) {
   body {
     height: 100vh;
   }
 
-  header{
+  header {
     height: 50px;
   }
   header img {
@@ -65,7 +62,7 @@ header p {
     color: white;
   }
 
-  .heading{
+  .heading {
     font-size: 22px;
     font-weight: 800;
     opacity: 0.9;

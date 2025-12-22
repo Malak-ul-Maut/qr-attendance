@@ -1,0 +1,13 @@
+{
+  "sqlite3-editor.ui.conditionalFormatting": [
+    {
+      "database": "attendance.db",
+      "table": "attendance",
+      "column": "timestamp",
+      "startsWith": "2025-11-28 0"
+    }
+  ],
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.formatOnPaste": true,
+  "editor.formatOnSave": true
+}

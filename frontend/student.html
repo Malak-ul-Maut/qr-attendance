@@ -1,69 +1,72 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-	<meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Student Attendance</title>
-	<link rel="icon" href="icons/qr-code.png"/>
-	<link rel="stylesheet" href="css/general.css">
-	<link rel="stylesheet" href="css/header.css">
-	<link rel="stylesheet" href="css/card.css">
-	<link rel="stylesheet" href="css/student.css">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Student Attendance</title>
+    <link rel="icon" href="icons/qr-code.png" />
+    <link rel="stylesheet" href="css/general.css" />
+    <link rel="stylesheet" href="css/header.css" />
+    <link rel="stylesheet" href="css/card.css" />
+    <link rel="stylesheet" href="css/student.css" />
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@100..900&display=swap" rel="stylesheet">
-	
-	<script src="js/utils/auth-guard.js"></script>
-</head>
+    <script src="js/utils/auth-guard.js"></script>
+  </head>
 
-<body>
-	<header>
-		<div class="left-section">
-			<img src="icons/hamburger-menu.svg" alt="Menu">
-		</div>
+  <body>
+    <header>
+      <div class="left-section">
+        <img src="icons/hamburger-menu.svg" alt="Menu" />
+      </div>
 
-		<div class="middle-section">
-			<span class="user-name"> <b></b></span>
-		</div>
+      <div class="middle-section">
+        <span class="user-name"> <b></b></span>
+      </div>
 
-		<div class="right-section" onclick="logout()">
-			<img src="icons/logout.svg" alt="Logout">
-			<div>Log out</div>
-		</div>
-	</header>
-	
-	<div id="scanner-section" style="display: none;">
-		<button id="closeScanBtn" type="button">✕</button>
-		
-		<video id="video"></video>
-		
-		<div class="slider-row">
-			<img src="icons/zoom-out.svg" class="slider-icon left" alt="zoom out">
-			<input id="zoom-slider" type="range" min="1" max="5" step="0.1" value="1">
-			<img src="icons/zoom-in.svg" class="slider-icon right" alt="zoom in">
-		</div>
+      <div class="right-section" onclick="logout()">
+        <img src="icons/logout.svg" alt="Logout" />
+        <div>Log out</div>
+      </div>
+    </header>
 
-		<p id="scan-result"></p>
-	</div>	
+    <div id="scanner-section" style="display: none">
+      <button id="closeScanBtn" type="button">✕</button>
 
-	<main>
-		<div id="markAttendanceCard" class="link-card">
-			<img src="icons/generate-qr.svg">
-			<p>Mark attendance</p>
-		</div>
+      <video id="video"></video>
 
-		<div class="link-card">
-			<img src="icons/courses.svg">
-			<p>Subjects</p>
-		</div>
+      <div class="slider-row">
+        <img src="icons/zoom-out.svg" class="slider-icon left" alt="zoom out" />
+        <input
+          id="zoom-slider"
+          type="range"
+          min="1"
+          max="5"
+          step="0.1"
+          value="1"
+        />
+        <img src="icons/zoom-in.svg" class="slider-icon right" alt="zoom in" />
+      </div>
 
-		<div class="link-card">
-			<img src="icons/history.svg">
-			<p>History</p>
-		</div>
-	</main>
+      <p id="scan-result"></p>
+    </div>
 
-	<script src="js/student.js" type="module"></script>
-</body>
+    <main>
+      <div id="markAttendanceCard" class="link-card">
+        <img src="icons/generate-qr.svg" />
+        <p>Mark attendance</p>
+      </div>
+
+      <div class="link-card">
+        <img src="icons/courses.svg" />
+        <p>Subjects</p>
+      </div>
+
+      <div class="link-card">
+        <img src="icons/history.svg" />
+        <p>History</p>
+      </div>
+    </main>
+
+    <script src="js/student.js" type="module"></script>
+  </body>
 </html>

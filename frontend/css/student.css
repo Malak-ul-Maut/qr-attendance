@@ -13,7 +13,6 @@ main {
   color: var(--text-muted);
 }
 
-
 #scanner-section {
   width: 100%;
   height: calc(100vh - 4rem);
@@ -42,7 +41,7 @@ main {
   border-radius: 1rem;
   height: 3rem;
   width: 3rem;
-  
+
   position: absolute;
   top: 1.2rem;
   right: 0.4rem;
@@ -54,9 +53,10 @@ main {
   width: 100%;
   border: 0.4rem solid gray;
   border-radius: 2rem;
-  box-shadow: 0px 16px 16px #00000030, 0px 48px 48px #00000015;
+  box-shadow:
+    0px 16px 16px #00000030,
+    0px 48px 48px #00000015;
 }
-
 
 .slider-row {
   display: flex;
@@ -96,7 +96,7 @@ main {
   border-radius: 50%;
   background: #0b4db3;
   border: 3px solid rgba(0, 0, 0, 0.9);
-  box-shadow: 0 4px 8px rgba(11,77,179,0.25);
+  box-shadow: 0 4px 8px rgba(11, 77, 179, 0.25);
 }
 
 #scan-result {

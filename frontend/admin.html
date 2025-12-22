@@ -1,89 +1,94 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin Portal</title>
-  <link rel="stylesheet" href="css/general.css">
-  <link rel="stylesheet" href="css/header.css">
-  <link rel="stylesheet" href="css/sidebar.css">
-  <link rel="stylesheet" href="css/card.css">
-  <link rel="stylesheet" href="css/admin.css">
-	<script src="js/utils/auth-guard.js"></script>
-</head>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Portal</title>
+    <link rel="stylesheet" href="css/general.css" />
+    <link rel="stylesheet" href="css/header.css" />
+    <link rel="stylesheet" href="css/sidebar.css" />
+    <link rel="stylesheet" href="css/card.css" />
+    <link rel="stylesheet" href="css/admin.css" />
+    <script src="js/utils/auth-guard.js"></script>
+  </head>
 
-<body>
-  <header>
-    <div class="left-section">
-      <img style="cursor:pointer;" src="icons/hamburger-menu.svg" alt="Menu">
-    </div>
-    <div class="middle-section">Admin Dashboard</div>
-    <div class="right-section">
-      <span class="user-name">Welcome, <b>Admin</b></span>
-    </div>
-  </header>
-  
-  <nav class="sidebar">
-    <div class="sidebar-content">
-      <img src="icons/home.svg" alt="Home">
-      <div>Home</div>
-    </div>
-    <div class="sidebar-content">
-      <img src="icons/student.svg" alt="Students">
-      <div>Students</div>
-    </div>
-    <div class="sidebar-content">
-      <img src="icons/teacher.svg" alt="Faculty">
-      <div>Faculty</div>
-    </div>
-    <div class="sidebar-content">
-      <img src="icons/courses.svg" alt="Courses">
-      <div>Courses</div>
-    </div>
-    <div class="sidebar-content" onclick="logout();">
-      <img src="icons/logout-black.svg" alt="Logout">
-      <div>Log out</div>
-    </div>
-  </nav>
-    
-  <main>
-    <section class="home-cards">
-      <div class="link-card">
-        <p class="sub-title">Students</p>
-        <p class="title">1240</p>
+  <body>
+    <header>
+      <div class="left-section">
+        <img
+          style="cursor: pointer"
+          src="icons/hamburger-menu.svg"
+          alt="Menu"
+        />
       </div>
-
-      <div class="link-card">
-        <p class="sub-title">Faculty</p>
-        <p class="title">75</p>
+      <div class="middle-section">Admin Dashboard</div>
+      <div class="right-section">
+        <span class="user-name">Welcome, <b>Admin</b></span>
       </div>
+    </header>
 
-      <div class="link-card">
-        <p class="sub-title">Courses</p>
-        <p class="title">58</p>
+    <nav class="sidebar">
+      <div class="sidebar-content">
+        <img src="icons/home.svg" alt="Home" />
+        <div>Home</div>
       </div>
-
-      <div class="link-card">
-        <p class="sub-title">Live sessions</p>
-        <p class="title">12</p>
+      <div class="sidebar-content">
+        <img src="icons/student.svg" alt="Students" />
+        <div>Students</div>
       </div>
-    </section>
-
-    <section class="activities">
-      <p>Activities</p>
-      <div>
-        <!-- Recent activities will be listed here -->
-        <ul>
-          <li>✔️ Attendance finalised for CSE101, 10:22 AM</li>
-          <li>➕ Student added: Yash Sharma</li>
-          <li>🕒 Session started for DBMS, Faculty: Mukesh Rathor</li>
-        </ul>
+      <div class="sidebar-content">
+        <img src="icons/teacher.svg" alt="Faculty" />
+        <div>Faculty</div>
       </div>
-    </section>
-  </main>
+      <div class="sidebar-content">
+        <img src="icons/courses.svg" alt="Courses" />
+        <div>Courses</div>
+      </div>
+      <div class="sidebar-content" onclick="logout()">
+        <img src="icons/logout-black.svg" alt="Logout" />
+        <div>Log out</div>
+      </div>
+    </nav>
 
-  <script>
-    document.querySelector('.user-name b').textContent = getCurrentUser().name || 'Admin';
-  </script>
-</body>
+    <main>
+      <section class="home-cards">
+        <div class="link-card">
+          <p class="sub-title">Students</p>
+          <p class="title">1240</p>
+        </div>
+
+        <div class="link-card">
+          <p class="sub-title">Faculty</p>
+          <p class="title">75</p>
+        </div>
+
+        <div class="link-card">
+          <p class="sub-title">Courses</p>
+          <p class="title">58</p>
+        </div>
+
+        <div class="link-card">
+          <p class="sub-title">Live sessions</p>
+          <p class="title">12</p>
+        </div>
+      </section>
+
+      <section class="activities">
+        <p>Activities</p>
+        <div>
+          <!-- Recent activities will be listed here -->
+          <ul>
+            <li>✔️ Attendance finalised for CSE101, 10:22 AM</li>
+            <li>➕ Student added: Yash Sharma</li>
+            <li>🕒 Session started for DBMS, Faculty: Mukesh Rathor</li>
+          </ul>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      document.querySelector('.user-name b').textContent =
+        getCurrentUser().name || 'Admin';
+    </script>
+  </body>
 </html>

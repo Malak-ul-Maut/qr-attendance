@@ -2,7 +2,7 @@ checkAuthAndRedirect();
 
 function checkAuthAndRedirect() {
   const userData = localStorage.getItem('user');
-  if (!userData) return window.location.href = '/homepage.html';
+  if (!userData) return (window.location.href = '/homepage.html');
 }
 
 function getCurrentUser() {
@@ -20,7 +20,7 @@ async function postData(url, dataObject) {
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(dataObject)
+      body: JSON.stringify(dataObject),
     });
     return response.json();
   } catch (error) {

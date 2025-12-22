@@ -7,7 +7,6 @@ const studentCount = document.querySelector('#studentCount');
 let sessionId = null;
 let qrTimer = null;
 
-
 // Display user and subject name
 const userName = document.querySelector('.user-name b');
 userName.textContent = getCurrentUser().name || 'Teacher';
@@ -15,19 +14,18 @@ userName.textContent = getCurrentUser().name || 'Teacher';
 const subjectName = document.querySelector('#sub-name');
 subjectName.textContent = getCurrentUser().subName;
 
-
- // --------------- Socket initialization -------------
+// --------------- Socket initialization -------------
 const socket = io(location.origin);
 
 socket.on('connect', () => {
   socket.emit('register_teacher');
 });
 
-// Dynamically generate html for attendance list 
+// Dynamically generate html for attendance list
 socket.on('attendance_update', data => {
   const li = document.createElement('li');
   const span = document.createElement('span');
-  span.textContent = `${data.studentName} (${data.time})`
+  span.textContent = `${data.studentName} (${data.time})`;
   span.dataset.id = data.studentId;
 
   const checkBox = document.createElement('input');
@@ -42,7 +40,6 @@ socket.on('attendance_update', data => {
   studentCount.textContent = `Present: ${studentList.children.length}`;
 });
 
-
 // Start session
 const startBtn = document.querySelector('#startSessionBtn');
 
@@ -51,7 +48,7 @@ startBtn.addEventListener('click', async () => {
   const teacherId = getCurrentUser().username;
 
   const toggleFullScreenBtn = document.querySelector('.toggle-fullscreen-btn');
-  toggleFullScreenBtn.addEventListener('click', ()=> toggleFullScreen() );
+  toggleFullScreenBtn.addEventListener('click', () => toggleFullScreen());
 
   const response = await postData('/api/session/start', { section, teacherId });
   sessionId = response.sessionId;
@@ -60,28 +57,29 @@ startBtn.addEventListener('click', async () => {
   afterStart.style.display = 'flex';
 
   if (qrTimer) clearTimeout(qrTimer);
-  renderQR(response); 
+  renderQR(response);
 });
 
-
-// Submit attendance and end session 
+// Submit attendance and end session
 const submitBtn = document.querySelector('#submit-attendance-btn');
 
 submitBtn.addEventListener('click', async () => {
-  const students = studentList.querySelectorAll('input[type=checkbox]'); 
+  const students = studentList.querySelectorAll('input[type=checkbox]');
   const keepStudentIds = [];
 
-  students.forEach(student => { 
-    if (student.checked) keepStudentIds.push(student.dataset.id); 
+  students.forEach(student => {
+    if (student.checked) keepStudentIds.push(student.dataset.id);
   });
 
-  const response = await postData('/api/session/finalize', { sessionId, keepStudentIds });
+  const response = await postData('/api/session/finalize', {
+    sessionId,
+    keepStudentIds,
+  });
   if (!response.ok) return console.error('Finalize returned error:', data);
 
   alert('✔ Attendance submitted successfully');
   clearAttendanceUI();
 });
-
 
 // ------------- Functions ---------------
 
@@ -90,15 +88,15 @@ function renderQR(data) {
   const options = {
     width: canvas.clientWidth,
     height: canvas.clientWidth,
-    margin: 2
-  }
+    margin: 2,
+  };
   QRCode.toCanvas(canvas, data.token, options);
 
   qrTimer = setTimeout(async () => {
     const tokenData = await postData('/api/session/token', { sessionId });
     if (!tokenData.ok) return console.warn('Token refresh failed:', tokenData);
-    
-    renderQR(tokenData); 
+
+    renderQR(tokenData);
   }, 500);
 }
 
@@ -117,7 +115,7 @@ function toggleFullScreen() {
 }
 
 function clearAttendanceUI() {
-  studentCount.textContent = "Present: 0";
+  studentCount.textContent = 'Present: 0';
   studentList.textContent = '';
   afterStart.style.display = 'none';
   beforeStart.style.display = 'flex';

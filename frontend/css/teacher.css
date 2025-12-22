@@ -6,8 +6,10 @@
   border-radius: 1rem;
   align-items: center;
   justify-self: center;
-  background-image: linear-gradient(to bottom, var(--highlight), var(--bg) );
-  box-shadow: 0px 4px 4px #00000030, 0px 12px 12px #00000015;
+  background-image: linear-gradient(to bottom, var(--highlight), var(--bg));
+  box-shadow:
+    0px 4px 4px #00000030,
+    0px 12px 12px #00000015;
 }
 #sub-name {
   font-size: 3rem;
@@ -36,8 +38,6 @@ select {
   margin-top: 16px;
 }
 
-
-
 #afterStart {
   display: none; /* Dynamically changed to 'flex' by JS */
   justify-content: space-evenly;
@@ -53,12 +53,13 @@ canvas {
   width: 35% !important;
   padding: 1rem;
   background-color: white;
-  box-shadow: 0px 0.5rem 0.5rem #0000006b, 0px 1rem 1rem #00000031;
+  box-shadow:
+    0px 0.5rem 0.5rem #0000006b,
+    0px 1rem 1rem #00000031;
 }
 .canvas-fs {
   width: 50% !important;
 }
-
 
 .live-section {
   background-color: var(--bg-light);
@@ -70,7 +71,9 @@ canvas {
   justify-content: flex-start;
   align-items: center;
   position: relative;
-  box-shadow: 0px 0.5rem 0.5rem #0000006b, 0px 1rem 1rem #00000031;
+  box-shadow:
+    0px 0.5rem 0.5rem #0000006b,
+    0px 1rem 1rem #00000031;
 }
 .live-section-fs {
   max-height: 100vh !important;
@@ -128,7 +131,6 @@ canvas {
   right: 0.5rem;
   transform: translateX(-30%) translateY(30%);
 }
-
 
 #studentList {
   overflow-y: auto;

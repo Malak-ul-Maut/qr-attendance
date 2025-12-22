@@ -1,36 +1,43 @@
 // This is the unused code from faculty.js
 
-const finalizeModal= document.getElementById('finalizeModal');
-const finalizeList= document.getElementById('finalizeList');
+const finalizeModal = document.getElementById('finalizeModal');
+const finalizeList = document.getElementById('finalizeList');
 const finalizeSubmitBtn = document.getElementById('finalizeSubmitBtn');
-
 
 const addManuallyBtn = document.querySelector('#add-manually-btn');
 
-addManuallyBtn.addEventListener('click', async() => {
-  if(!sessionId) return alert('No active session');
+addManuallyBtn.addEventListener('click', async () => {
+  if (!sessionId) return alert('No active session');
   try {
     const response = await postData('/api/session/end', { sessionId });
-    if (!response.ok) alert('Failed to end session:' + (response.error || 'unknown'));
+    if (!response.ok)
+      alert('Failed to end session:' + (response.error || 'unknown'));
 
     openFinalizeModal(response.records || []);
-
   } catch (err) {
     console.error('End session error:', err);
     alert('Error ending session');
-    }
-})
+  }
+});
 
 const finalizeCancelBtn = document.getElementById('finalizeCancelBtn');
-finalizeCancelBtn.addEventListener('click', ()=> finalizeModal.style.display = 'none');
+finalizeCancelBtn.addEventListener(
+  'click',
+  () => (finalizeModal.style.display = 'none'),
+);
 
-finalizeSubmitBtn.addEventListener('click', async ()=> {
+finalizeSubmitBtn.addEventListener('click', async () => {
   const cbs = finalizeList.querySelectorAll('input[type=checkbox]');
   const keep = [];
-  cbs.forEach(cb => { if (cb.checked) keep.push(cb.dataset.studentId); });
+  cbs.forEach(cb => {
+    if (cb.checked) keep.push(cb.dataset.studentId);
+  });
 
   try {
-    const response = await postData('/api/session/finalize', { sessionId, keepStudentIds: keep });
+    const response = await postData('/api/session/finalize', {
+      sessionId,
+      keepStudentIds: keep,
+    });
 
     if (!response.ok) {
       console.error('Finalize returned error:', data);
@@ -38,7 +45,6 @@ finalizeSubmitBtn.addEventListener('click', async ()=> {
     }
     finalizeModal.style.display = 'none';
     clearAttendanceUI();
-
   } catch (err) {
     console.error('Finalize error:', err);
     alert('Error finalizing attendance');
@@ -47,11 +53,11 @@ finalizeSubmitBtn.addEventListener('click', async ()=> {
 
 function openFinalizeModal(records) {
   finalizeList.innerHTML = '';
-  if (!records || records.length ===0) {
+  if (!records || records.length === 0) {
     finalizeList.innerHTML = '(No attendance records for this session)';
-    finalizeModal.style.display= 'flex';
+    finalizeModal.style.display = 'flex';
     return;
-  } 
+  }
 
   records.forEach(r => {
     const div = document.createElement('div');
@@ -70,23 +76,22 @@ function openFinalizeModal(records) {
     div.appendChild(txt);
     finalizeList.appendChild(div);
   });
-  finalizeModal.style.display= 'flex';
+  finalizeModal.style.display = 'flex';
 }
 
 function cutStudentName(studentId) {
   const students = studentList.querySelectorAll('span[data-id]');
   const keepStudentIds = [];
-  students.forEach(student => { 
+  students.forEach(student => {
     if (student.dataset.id === `${String(studentId)}`) {
       span.classList.add('removed');
     }
   });
   console.log(students);
-  
 }
 
-
-{/* <section id="finalizeModal">
+{
+  /* <section id="finalizeModal">
   <div id="finalizeContent">
     <p>Review Attendance</p>
     <div id="finalizeList"></div>
@@ -95,29 +100,29 @@ function cutStudentName(studentId) {
       <button id="finalizeCancelBtn" class="white-btn">Cancel</button>
     </div>
   </div>
-</section> */}
+</section> */
+}
 
 // End session
 app.post('/api/session/end', (req, res) => {
-    const { sessionId } = req.body;
-    if (!sessionId || !sessions[sessionId]) return res.status(400).json({ ok: false, error: 'invalid_session' });
+  const { sessionId } = req.body;
+  if (!sessionId || !sessions[sessionId])
+    return res.status(400).json({ ok: false, error: 'invalid_session' });
 
-    // Fetch attendance rows for that session (for teacher review)
-    db.all(
-        `SELECT id, studentId, courseId, timestamp, removed FROM attendance WHERE sessionId = ?`, 
-        [sessionId],
-        (err, rows) => {
-            if (err) {
-                console.error('DB Error (fetching attendance on end):', err);
-                return res.status(500).json({ ok:false, error:'db_error' });
-            }
-            
-            return res.json({ ok:true, sessionId, records: rows });
-        }
-    );
+  // Fetch attendance rows for that session (for teacher review)
+  db.all(
+    `SELECT id, studentId, courseId, timestamp, removed FROM attendance WHERE sessionId = ?`,
+    [sessionId],
+    (err, rows) => {
+      if (err) {
+        console.error('DB Error (fetching attendance on end):', err);
+        return res.status(500).json({ ok: false, error: 'db_error' });
+      }
+
+      return res.json({ ok: true, sessionId, records: rows });
+    },
+  );
 });
-
-
 
 // #finalizeModal {
 //   display: none; /* Dynamically changed to 'flex' by JS */
