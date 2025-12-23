@@ -37,22 +37,17 @@ Open Command Prompt and run
 git clone https://github.com/Malak-ul-Maut/qr-attendance.git
 ```
 
-### 2. Navigate to the Project Directory:
 
-```bash
-cd qr-attendance/backend
-```
-
-### 3. Install dependencies:
+### 2. Install dependencies:
 
 ```bash
 npm install
 ```
 
-### 4. Run the Server
+### 3. Run the Server
 
 ```bash
-node index.js
+npm start
 ```
 
 You should see:
@@ -62,7 +57,7 @@ You should see:
 Connected to SQLite database
 ```
 
-### 5. Access the system
+### 4. Access the system
 
 Open your web browser and go here to use the system
 
