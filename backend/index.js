@@ -51,15 +51,16 @@ app.use('/api/attendance', require('./routes/attendance.routes'));
   });
 
   // --------------- Start server --------------
-  const serverIp = getServerIpAddress();
+  const serverIp = getServerIpAddress() || 'localhost';
   const PORT = 4000;
 
-  server.listen(PORT, () =>
+  server.listen(PORT, '0.0.0.0', () =>
     console.log(`🚀 Server running at https://${serverIp}:${PORT}`),
   );
 
   // Host tunnel online
-  hostTunnel(`https://${serverIp}:${PORT}`);
+  const url = `https://localhost:${PORT}`;
+  hostTunnel(url);
 })();
 
 async function hostTunnel(url) {
@@ -72,12 +73,16 @@ async function hostTunnel(url) {
 }
 
 function getServerIpAddress() {
-  return (
-    Object.values(os.networkInterfaces())
-      .flat()
-      .find(details => details.family === 'IPv4' && !details.internal)
-      ?.address || null
-  );
+  try {
+    return (
+      Object.values(os.networkInterfaces())
+        .flat()
+        .find(details => details.family === 'IPv4' && !details.internal)
+        ?.address || null
+    );
+  } catch (err) {
+    return null;
+  }
 }
 
 function initializeSocket(server) {
