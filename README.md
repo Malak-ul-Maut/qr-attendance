@@ -37,14 +37,20 @@ Open Command Prompt and run
 git clone https://github.com/Malak-ul-Maut/qr-attendance.git
 ```
 
+### 2. Navigate to the project directory:
 
-### 2. Install dependencies:
+```bash
+cd qr-attendance
+```
+
+
+### 3. Install dependencies:
 
 ```bash
 npm install
 ```
 
-### 3. Run the Server
+### 4. Start the server
 
 ```bash
 npm start
@@ -53,8 +59,9 @@ npm start
 You should see:
 
 ```
-🚀 Server running at https://<Your_IPv4_Address>:4000
 Connected to SQLite database
+🚀 Server running at https://<Your_IPv4_Address>:4000
+Tunnel established at: https://<random-subdomain>.ngrok-free.dev
 ```
 
 ### 4. Access the system
@@ -62,7 +69,8 @@ Connected to SQLite database
 Open your web browser and go here to use the system
 
 ```bash
-https://<Your_IPv4_Address>:4000
+https://<Your_IPv4_Address>:4000 (local url)
+https://<random-subdomain>.ngrok-free.dev (public url)
 ```
 
 You should be able to:
