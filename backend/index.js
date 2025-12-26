@@ -52,7 +52,7 @@ app.use('/api/attendance', require('./routes/attendance.routes'));
 
   // --------------- Start server --------------
   const serverIp = getServerIpAddress() || 'localhost';
-  const PORT = 4000;
+  const PORT = process.env.PORT || 4000;
 
   server.listen(PORT, '0.0.0.0', () =>
     console.log(`🚀 Server running at https://${serverIp}:${PORT}`),
@@ -66,7 +66,7 @@ app.use('/api/attendance', require('./routes/attendance.routes'));
 async function hostTunnel(url) {
   const listener = await ngrok.forward({
     addr: url,
-    authtoken: '34KSMFr7qqWSRNPIpbD2bXZwKvT_6cKTDHNoT8J1tP5Byge7T',
+    authtoken: process.env.NGROK_AUTH_TOKEN,
     verify_upstream_tls: false,
   });
   console.log(`Tunnel established at: ${listener.url()}`);

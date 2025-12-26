@@ -4,8 +4,8 @@
   "description": "Mark attendance securely using dynamic QR codes",
   "main": "backend/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node backend/index.js"
+    "start": "node --env-file=backend/.env backend/index.js",
+    "devStart": "node --watch --env-file=backend/.env backend/index.js"
   },
   "keywords": [
     "qr-attendance"
