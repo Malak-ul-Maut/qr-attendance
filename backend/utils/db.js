@@ -1,7 +1,11 @@
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
+import sqlite3 from 'sqlite3';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-const dbPath = path.join(__dirname, 'attendance.db');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const dbPath = path.join(__dirname, '../attendance.db');
 const db = new sqlite3.Database(
   dbPath,
   sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE,
@@ -37,6 +41,7 @@ db.serialize(() => {
   db.run(`
         CREATE TABLE IF NOT EXISTS sessions (
             sessionId TEXT PRIMARY KEY,
+            section TEXT,
             courseId TEXT,
             teacherId TEXT,
             startTime DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -46,4 +51,4 @@ db.serialize(() => {
     `);
 });
 
-module.exports = db;
+export default db;

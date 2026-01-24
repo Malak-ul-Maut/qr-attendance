@@ -10,12 +10,7 @@
     <link rel="stylesheet" href="css/button.css" />
     <link rel="stylesheet" href="css/loginpage.css" />
 
-    <script>
-      const user = JSON.parse(localStorage.getItem('user'));
-      if (user) {
-        window.location.href = `/${user.role}.html`;
-      }
-    </script>
+    <script defer src="js/login-page.js" type="module"></script>
   </head>
 
   <body>
@@ -31,7 +26,5 @@
       <button id="loginBtn">Sign in</button>
       <p id="login-msg"></p>
     </main>
-
-    <script src="js/login-page.js"></script>
   </body>
 </html>

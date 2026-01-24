@@ -1,20 +1,10 @@
-const express = require('express');
-const router = express.Router();
-const db = require('../db');
-
-const sessions = {};
-const utils = require('../utils');
-
-function createSessionToken(sessionId, section, expiresInSeconds) {
-  const token = Math.random().toString(36).slice(2);
-  const expiresAt = Date.now() + expiresInSeconds * 1000;
-  utils.activeTokens[token] = { sessionId, section, expiresAt };
-
-  setTimeout(() => delete utils.activeTokens[token], expiresInSeconds * 1000);
-  return token;
-}
+import express from 'express';
+import utils from '../utils/in-memory-db.js';
+import db from '../utils/db.js';
 
 // --------------- Session Routes ----------------
+const router = express.Router();
+const sessions = {};
 
 // Start session
 router.post('/start', (req, res) => {
@@ -73,4 +63,13 @@ router.post('/finalize', (req, res) => {
   );
 });
 
-module.exports = router;
+function createSessionToken(sessionId, section, expiresInSeconds) {
+  const token = Math.random().toString(36).slice(2);
+  const expiresAt = Date.now() + expiresInSeconds * 1000;
+  utils.activeTokens[token] = { sessionId, section, expiresAt };
+
+  setTimeout(() => delete utils.activeTokens[token], expiresInSeconds * 1000);
+  return token;
+}
+
+export default router;

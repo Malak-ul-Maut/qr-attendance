@@ -1,3 +1,6 @@
+import postData from '../utils/fetch-url.js';
+import { storeUser } from '../utils/local-storage.js';
+
 // Display user role
 const searchQuery = window.location.search; // '?role=faculty'
 const role = searchQuery.slice(6);
@@ -37,34 +40,16 @@ loginBtn.addEventListener('click', async () => {
   if (!username || !password)
     return (msg.textContent = 'Please enter both username and password');
 
-  try {
-    // Send credentials to backend for verification
-    const response = await fetch(`/api/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password, role }),
-    });
-    const data = await response.json();
+  // Send credentials to backend for verification
+  const response = await postData('/api/auth/login', {
+    username,
+    password,
+    role,
+  });
 
-    if (!data.ok)
-      return (msg.textContent = 'Login failed. Check your credentials.');
+  if (!response.ok)
+    return (msg.textContent = 'Login failed. Check your credentials.');
 
-    storeUser(data); // Save user login status in localStorage
-    window.location.href = `${role}.html`; // redirect user to their respective web-page
-  } catch (err) {
-    console.error('Login error:', err);
-    msg.textContent = 'Error contacting server';
-  }
+  storeUser(response);
+  window.location.href = `${role}.html`;
 });
-
-function storeUser(data) {
-  localStorage.setItem(
-    'user',
-    JSON.stringify({
-      role,
-      username: data.username,
-      name: data.name,
-      subName: data.subjectName,
-    }),
-  );
-}

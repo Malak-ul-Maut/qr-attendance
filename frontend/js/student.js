@@ -1,4 +1,6 @@
-import QrScanner from './utils/qr-scanner/qr-scanner.min.js';
+import QrScanner from '../utils/qr-scanner/qr-scanner.min.js';
+import postData from '../utils/fetch-url.js';
+import { getCurrentUser, logout } from '../utils/local-storage.js';
 
 const video = document.querySelector('#video');
 const scanResult = document.querySelector('#scan-result');
@@ -8,6 +10,9 @@ const mainSection = document.querySelector('main');
 let studentName = (document.querySelector('.user-name b').textContent =
   getCurrentUser().name);
 let studentId = getCurrentUser().username;
+
+const logoutBtn = document.querySelector('.logout-btn');
+logoutBtn.addEventListener('click', () => logout());
 
 // ------------ Event handlers ---------------
 const markAttendanceCard = document.querySelector('#markAttendanceCard');

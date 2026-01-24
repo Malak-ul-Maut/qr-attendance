@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="css/sidebar.css" />
     <link rel="stylesheet" href="css/card.css" />
     <link rel="stylesheet" href="css/admin.css" />
-    <script src="js/utils/auth-guard.js"></script>
+    <script src="utils/auth-guard.js" type="module"></script>
   </head>
 
   <body>
@@ -44,7 +44,7 @@
         <img src="icons/courses.svg" alt="Courses" />
         <div>Courses</div>
       </div>
-      <div class="sidebar-content" onclick="logout()">
+      <div class="sidebar-content logout-btn">
         <img src="icons/logout-black.svg" alt="Logout" />
         <div>Log out</div>
       </div>
@@ -86,9 +86,15 @@
       </section>
     </main>
 
-    <script>
+    <script type="module">
+      import { getCurrentUser, logout } from '/utils/local-storage.js';
+
       document.querySelector('.user-name b').textContent =
         getCurrentUser().name || 'Admin';
+
+      document
+        .querySelector('.logout-btn')
+        .addEventListener('click', () => logout());
     </script>
   </body>
 </html>

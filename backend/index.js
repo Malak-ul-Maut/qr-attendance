@@ -1,15 +1,19 @@
-const path = require('path');
-const cors = require('cors');
-const https = require('https');
-const { Server } = require('socket.io');
-const os = require('os');
-const selfsigned = require('selfsigned');
-const ngrok = require('@ngrok/ngrok');
+import express from 'express';
+import path from 'path';
+import cors from 'cors';
+import https from 'https';
+import os from 'os';
+import selfsigned from 'selfsigned';
+import { fileURLToPath } from 'url';
+
+import { initializeSocket } from './utils/socket-io.js';
+import hostTunnel from './utils/host-tunnel.js';
+import authRouter from './routes/auth.routes.js';
+import sessionRouter from './routes/session.routes.js';
+import attendanceRouter from './routes/attendance.routes.js';
 
 // ----------------- Server Config -----------------
-const express = require('express');
 const app = express();
-const utils = require('./utils');
 
 app.use(express.json());
 app.use(
@@ -19,58 +23,49 @@ app.use(
     allowedHeaders: ['Content-Type', 'Authorization'],
   }),
 );
-app.use('/api/auth', require('./routes/auth.routes'));
-app.use('/api/session', require('./routes/session.routes'));
-app.use('/api/attendance', require('./routes/attendance.routes'));
 
-// ----------------- Functions ---------------------
+app.use('/api/auth', authRouter);
+app.use('/api/session', sessionRouter);
+app.use('/api/attendance', attendanceRouter);
 
-(async function initializeServer() {
-  // Generate a self-signed certificate
-  const attrs = [{ name: 'commonName', value: 'localhost' }];
-  const pems = await selfsigned.generate(attrs, {
-    algorithm: 'sha256',
-  });
+// ------------------ Initialize server ---------------------
 
-  // Create HTTPS server with the generated certificate
-  const options = {
-    key: pems.private,
-    cert: pems.cert,
-  };
-  const server = https.createServer(options, app);
+const attrs = [{ name: 'commonName', value: 'localhost' }];
+const pems = await selfsigned.generate(attrs, {
+  algorithm: 'sha256',
+});
 
-  initializeSocket(server); // Initialize Socket.io server
+const options = {
+  key: pems.private,
+  cert: pems.cert,
+};
+const server = https.createServer(options, app);
 
-  // Serve frontend
-  const FRONTEND_DIR = path.join(__dirname, '../frontend');
-  app.use(express.static(FRONTEND_DIR));
+initializeSocket(server); // Initialize Socket.io server
 
-  // If someone hits a route that's not an API (fallback)
-  app.get(/^\/(?!api).*/, (req, res) => {
-    res.sendFile(path.join(FRONTEND_DIR, 'homepage.html'));
-  });
+// Serve frontend
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-  // --------------- Start server --------------
-  const serverIp = getServerIpAddress() || 'localhost';
-  const PORT = process.env.PORT || 4000;
+const FRONTEND_DIR = path.join(__dirname, '../frontend');
+app.use(express.static(FRONTEND_DIR));
 
-  server.listen(PORT, '0.0.0.0', () =>
-    console.log(`🚀 Server running at https://${serverIp}:${PORT}`),
-  );
+// If someone hits a route that's not an API (fallback)
+app.get(/^\/(?!api).*/, (req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, 'homepage.html'));
+});
 
-  // Host tunnel online
-  const url = `https://localhost:${PORT}`;
-  hostTunnel(url);
-})();
+// --------------- Start server --------------
+const serverIp = getServerIpAddress() || 'localhost';
+const PORT = process.env.PORT || 4000;
 
-async function hostTunnel(url) {
-  const listener = await ngrok.forward({
-    addr: url,
-    authtoken: process.env.NGROK_AUTH_TOKEN,
-    verify_upstream_tls: false,
-  });
-  console.log(`Tunnel established at: ${listener.url()}`);
-}
+server.listen(PORT, '0.0.0.0', () =>
+  console.log(`🚀 Server running at https://${serverIp}:${PORT}`),
+);
+
+// Host tunnel online
+const url = `https://localhost:${PORT}`;
+hostTunnel(url);
 
 function getServerIpAddress() {
   try {
@@ -83,19 +78,4 @@ function getServerIpAddress() {
   } catch (err) {
     return null;
   }
-}
-
-function initializeSocket(server) {
-  const io = new Server(server, {
-    cors: { origin: '*', methods: ['GET', 'POST'] },
-  });
-
-  io.on('connection', socket => {
-    socket.on('register_teacher', () => utils.teacherSockets.push(socket));
-    socket.on('disconnect', () => {
-      utils.teacherSockets = utils.teacherSockets.filter(
-        s => s.id !== socket.id,
-      );
-    });
-  });
 }

@@ -10,7 +10,8 @@
     <link rel="stylesheet" href="css/card.css" />
     <link rel="stylesheet" href="css/student.css" />
 
-    <script src="js/utils/auth-guard.js"></script>
+    <script src="utils/auth-guard.js" type="module"></script>
+    <script defer src="js/student.js" type="module"></script>
   </head>
 
   <body>
@@ -23,7 +24,7 @@
         <span class="user-name"> <b></b></span>
       </div>
 
-      <div class="right-section" onclick="logout()">
+      <div class="right-section logout-btn">
         <img src="icons/logout.svg" alt="Logout" />
         <div>Log out</div>
       </div>
@@ -66,7 +67,5 @@
         <p>History</p>
       </div>
     </main>
-
-    <script src="js/student.js" type="module"></script>
   </body>
 </html>

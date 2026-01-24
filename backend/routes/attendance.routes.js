@@ -1,6 +1,7 @@
-const db = require('../db');
-const utils = require('../utils');
-const express = require('express');
+import db from '../utils/db.js';
+import utils from '../utils/in-memory-db.js';
+import express from 'express';
+
 const router = express.Router();
 
 // Verify student scan
@@ -50,4 +51,4 @@ router.post('/verify', (req, res) => {
   );
 });
 
-module.exports = router;
+export default router;

@@ -1,3 +1,6 @@
+import { getCurrentUser, logout } from '/utils/local-storage.js';
+import postData from '/utils/fetch-url.js';
+
 const beforeStart = document.querySelector('#beforeStart');
 const afterStart = document.querySelector('#afterStart');
 const canvas = document.querySelector('canvas');
@@ -13,6 +16,9 @@ userName.textContent = getCurrentUser().name || 'Teacher';
 
 const subjectName = document.querySelector('#sub-name');
 subjectName.textContent = getCurrentUser().subName;
+
+const logoutBtn = document.querySelector('.logout-btn');
+logoutBtn.addEventListener('click', () => logout());
 
 // --------------- Socket initialization -------------
 const socket = io(location.origin);
