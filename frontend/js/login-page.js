@@ -1,5 +1,5 @@
-import postData from '../utils/fetch-url.js';
-import { storeUser } from '../utils/local-storage.js';
+import postData from '../utils/fetch.js';
+import { storeUser } from '../utils/storage.js';
 
 // Display user role
 const searchQuery = window.location.search; // '?role=faculty'

@@ -1,5 +1,5 @@
-import { getCurrentUser, logout } from '/utils/local-storage.js';
-import postData from '/utils/fetch-url.js';
+import { getCurrentUser, logout } from '/utils/storage.js';
+import postData from '/utils/fetch.js';
 
 const beforeStart = document.querySelector('#beforeStart');
 const afterStart = document.querySelector('#afterStart');

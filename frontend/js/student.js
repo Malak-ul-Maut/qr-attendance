@@ -1,6 +1,6 @@
 import QrScanner from '../utils/qr-scanner/qr-scanner.min.js';
-import postData from '../utils/fetch-url.js';
-import { getCurrentUser, logout } from '../utils/local-storage.js';
+import postData from '../utils/fetch.js';
+import { getCurrentUser, logout } from '../utils/storage.js';
 
 const video = document.querySelector('#video');
 const scanResult = document.querySelector('#scan-result');

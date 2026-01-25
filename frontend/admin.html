@@ -87,7 +87,7 @@
     </main>
 
     <script type="module">
-      import { getCurrentUser, logout } from '/utils/local-storage.js';
+      import { getCurrentUser, logout } from '/utils/storage.js';
 
       document.querySelector('.user-name b').textContent =
         getCurrentUser().name || 'Admin';

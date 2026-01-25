@@ -1,6 +1,6 @@
 # 🎓 QR Attendance System
 
-![live-updates](https://github.com/Malak-ul-Maut/qr-attendance/blob/234a6e125c714e55fa0854209a2a9fb88b94437a/snapshots/live-updates.jpg)
+![live-updates](https://drive.google.com/file/d/1jPQ8bebqDM4vPXtg2sM6cjdevWu6SRIO/view?usp=drive_link)
 
 The QR Code Attendance System is an efficient, fast and user-friendly tool for tracking attendance using QR codes. It utilizes HTML, CSS, and JavaScript to create a web-based interface for marking attendance. This system is designed to work seamlessly when devices are connected to the Same College Local Network.
 
@@ -43,7 +43,6 @@ git clone https://github.com/Malak-ul-Maut/qr-attendance.git
 cd qr-attendance
 ```
 
-
 ### 3. Install dependencies:
 
 ```bash
@@ -85,15 +84,15 @@ You should be able to:
 
 ### 1) Homepage
 
-![homepage](https://github.com/Malak-ul-Maut/qr-attendance/blob/234a6e125c714e55fa0854209a2a9fb88b94437a/snapshots/homepage.jpg)
+![homepage](https://drive.google.com/file/d/184EjrayFAfLnT-Dsy_IcWlzNqsYi9yVi/view?usp=drive_link)
 
 ### 2) Instant scan validation
 
-![student scan](https://github.com/Malak-ul-Maut/qr-attendance/blob/234a6e125c714e55fa0854209a2a9fb88b94437a/snapshots/WhatsApp%20Image%202025-11-29%20at%2016.10.38_780f5764.jpg)
+![student scan](https://drive.google.com/file/d/13IhQNSxQ0qyK5ljF2H-yWKMMiD6iE23A/view?usp=drive_link)
 
 ### 3) Finalize window
 
-![finalize-window](https://github.com/Malak-ul-Maut/qr-attendance/blob/234a6e125c714e55fa0854209a2a9fb88b94437a/snapshots/finaliize-window.jpg)
+![finalize-window](https://drive.google.com/file/d/1fLhGirxZk1jJXwQoZXeC-uB5ypDu6hF2/view?usp=drive_link)
 
 ---
 

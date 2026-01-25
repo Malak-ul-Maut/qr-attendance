@@ -4,8 +4,8 @@
   "description": "Mark attendance securely using dynamic QR codes",
   "main": "backend/index.js",
   "scripts": {
-    "start": "node --env-file=backend/.env backend/index.js",
-    "devStart": "node --watch --env-file=backend/.env backend/index.js"
+    "start": "node --env-file=.env backend/index.js",
+    "devStart": "node --watch --env-file=.env backend/index.js"
   },
   "keywords": [
     "qr-attendance"
@@ -24,5 +24,13 @@
   },
   "devDependencies": {
     "prettier": "3.7.4"
+  },
+  "prettier": {
+    "singleQuote": true,
+    "arrowParens": "avoid",
+    "tabWidth": 2,
+    "semi": true,
+    "bracketSameLine": true,
+    "bracketSpacing": true
   }
 }
