@@ -8,13 +8,13 @@ const sessions = {};
 
 // Start session
 router.post('/start', (req, res) => {
-  const { section, teacherId } = req.body;
+  const { section, teacherId, year, semester } = req.body;
   const sessionId = 'sess_' + Math.random().toString(36).slice(2);
-  sessions[sessionId] = { section, teacherId, active: true };
+  sessions[sessionId] = { section, teacherId, year, semester, active: true };
 
   db.run(
-    `INSERT OR REPLACE INTO sessions (sessionId, section, teacherId, status) VALUES (?, ?, ?, 'active')`,
-    [sessionId, section, teacherId],
+    `INSERT OR REPLACE INTO sessions (sessionId, section, teacherId, year, semester, status) VALUES (?, ?, ?, 'active')`,
+    [sessionId, section, teacherId, year, semester],
   );
 
   let token = createSessionToken(sessionId, section, 3);
