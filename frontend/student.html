@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="css/student.css" />
 
     <script src="utils/auth-guard.js" type="module"></script>
+    <script defer src="utils/face-api.js"></script>
     <script defer src="js/student.js" type="module"></script>
   </head>
 
@@ -33,7 +34,7 @@
     <div id="scanner-section" style="display: none">
       <button id="closeScanBtn" type="button">✕</button>
 
-      <video id="video"></video>
+      <video id="video" muted></video>
 
       <div class="slider-row">
         <img src="icons/zoom-out.svg" class="slider-icon left" alt="zoom out" />
@@ -43,8 +44,7 @@
           min="1"
           max="5"
           step="0.1"
-          value="1"
-        />
+          value="1" />
         <img src="icons/zoom-in.svg" class="slider-icon right" alt="zoom in" />
       </div>
 
