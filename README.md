@@ -1,6 +1,6 @@
 # 🎓 QR Attendance System
 
-![live-updates](https://drive.google.com/file/d/1jPQ8bebqDM4vPXtg2sM6cjdevWu6SRIO/view?usp=drive_link)
+![live-updates](https://drive.google.com/uc?export=view&id=1jPQ8bebqDM4vPXtg2sM6cjdevWu6SRIO)
 
 The QR Code Attendance System is an efficient, fast and user-friendly tool for tracking attendance using QR codes. It utilizes HTML, CSS, and JavaScript to create a web-based interface for marking attendance. This system is designed to work seamlessly when devices are connected to the Same College Local Network.
 
@@ -84,15 +84,15 @@ You should be able to:
 
 ### 1) Homepage
 
-![homepage](https://drive.google.com/file/d/184EjrayFAfLnT-Dsy_IcWlzNqsYi9yVi/view?usp=drive_link)
+![homepage](https://drive.google.com/uc?export=view&id=184EjrayFAfLnT-Dsy_IcWlzNqsYi9yVi)
 
 ### 2) Instant scan validation
 
-![student scan](https://drive.google.com/file/d/13IhQNSxQ0qyK5ljF2H-yWKMMiD6iE23A/view?usp=drive_link)
+![student scan](https://drive.google.com/uc?export=view&id=13IhQNSxQ0qyK5ljF2H-yWKMMiD6iE23A)
 
 ### 3) Finalize window
 
-![finalize-window](https://drive.google.com/file/d/1fLhGirxZk1jJXwQoZXeC-uB5ypDu6hF2/view?usp=drive_link)
+![finalize-window](https://drive.google.com/uc?export=view&id=1fLhGirxZk1jJXwQoZXeC-uB5ypDu6hF2)
 
 ---
 
