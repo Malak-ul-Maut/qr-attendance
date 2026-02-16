@@ -6,11 +6,12 @@ import os from 'os';
 import selfsigned from 'selfsigned';
 import { fileURLToPath } from 'url';
 
-import { initializeSocket } from './utils/socket-io.js';
 import hostTunnel from './utils/host-tunnel.js';
+import { initializeSocket } from './utils/socket-io.js';
 import authRouter from './routes/auth.routes.js';
 import sessionRouter from './routes/session.routes.js';
 import attendanceRouter from './routes/attendance.routes.js';
+import studentRouter from './routes/students.routes.js';
 
 // ----------------- Server Config -----------------
 const app = express();
@@ -27,6 +28,7 @@ app.use(
 app.use('/api/auth', authRouter);
 app.use('/api/session', sessionRouter);
 app.use('/api/attendance', attendanceRouter);
+app.use('/api/students', studentRouter);
 
 // ------------------ Initialize server ---------------------
 
@@ -65,7 +67,7 @@ server.listen(PORT, '0.0.0.0', () =>
 
 // Host tunnel online
 const url = `https://localhost:${PORT}`;
-// hostTunnel(url);
+hostTunnel(url);
 
 function getServerIpAddress() {
   try {

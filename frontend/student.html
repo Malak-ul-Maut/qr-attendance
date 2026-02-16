@@ -13,10 +13,6 @@
     <script src="utils/auth-guard.js" type="module"></script>
     <script defer src="utils/face-api.js"></script>
     <script defer src="js/student.js" type="module"></script>
-    <script>
-      console.log("mishthi")
-    </script>
-  
   </head>
 
   <body>
@@ -38,7 +34,9 @@
     <div id="scanner-section" style="display: none">
       <button id="closeScanBtn" type="button">✕</button>
 
-      <video id="video" muted></video>
+      <div class="camera-wrapper">
+        <video id="video" muted></video>
+      </div>
 
       <div class="slider-row">
         <img src="icons/zoom-out.svg" class="slider-icon left" alt="zoom out" />
