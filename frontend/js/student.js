@@ -2,6 +2,42 @@ import QrScanner from '../utils/qr-scanner/qr-scanner.min.js';
 import postData from '../utils/fetch.js';
 import { getCurrentUser, logout } from '../utils/storage.js';
 
+import {
+  loadDescriptors,
+  saveDescriptors,
+} from '../utils/cache-descriptors.js';
+
+// Pre-download and cache all models from manifest
+await cacheModelsFromManifest('/utils/models/models-manifest.json');
+
+// Load models - they will now be served from IndexedDB cache via interceptors
+Promise.all([
+  faceapi.nets.tinyFaceDetector.loadFromUri('/utils/models'),
+  faceapi.nets.faceLandmark68Net.loadFromUri('/utils/models'),
+  faceapi.nets.faceRecognitionNet.loadFromUri('/utils/models'),
+]).then(() => console.log('models loaded'));
+
+let studentId = getCurrentUser().username;
+
+let descriptors = await loadDescriptors(studentId);
+
+if (!descriptors) {
+  const res = await fetch(`/api/students/descriptors?id=${studentId}`);
+  const data = await res.json();
+  await saveDescriptors(studentId, JSON.parse(data));
+  console.log('cached face descriptors');
+  descriptors = await loadDescriptors(studentId);
+}
+
+const labeled = [
+  new faceapi.LabeledFaceDescriptors(
+    studentId,
+    descriptors.map(x => new Float32Array(x)),
+  ),
+];
+
+let faceMatcher = new faceapi.FaceMatcher(labeled);
+
 const video = document.querySelector('#video');
 const scanResult = document.querySelector('#scan-result');
 const scannerSection = document.querySelector('#scanner-section');
@@ -9,7 +45,6 @@ const mainSection = document.querySelector('main');
 
 let studentName = (document.querySelector('.user-name b').textContent =
   getCurrentUser().name);
-let studentId = getCurrentUser().username;
 
 const logoutBtn = document.querySelector('.logout-btn');
 logoutBtn.addEventListener('click', () => logout());
@@ -57,7 +92,6 @@ async function getCameraId() {
 }
 
 let isProcessing = false;
-
 async function scanQRCode(studentId, video) {
   const cameraFingerprint = await getCameraId();
 
@@ -141,36 +175,16 @@ function enableZoom(currentStream) {
 }
 
 async function switchCamera() {
-  await Promise.all([
-    faceapi.nets.tinyFaceDetector.loadFromUri('/utils/models'),
-    faceapi.nets.faceLandmark68Net.loadFromUri('/utils/models'),
-    faceapi.nets.faceRecognitionNet.loadFromUri('/utils/models'),
-    faceapi.nets.ssdMobilenetv1.loadFromUri('/utils/models'),
-  ]);
-
-  const res = await fetch(`/api/students/descriptors?id=${studentId}`);
-  const data = await res.json();
-
-  const labeled = [
-    new faceapi.LabeledFaceDescriptors(
-      studentId,
-      JSON.parse(data).map(x => new Float32Array(x)),
-    ),
-  ];
-
-  let faceMatcher = new faceapi.FaceMatcher(labeled);
-
   let currentStream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: 'user' },
   });
   video.srcObject = currentStream;
-  video.style.transform = 'scaleX(-1)';
 
   await video.play();
-  startFaceVerification(faceMatcher);
+  startFaceVerification();
 }
 
-async function startFaceVerification(faceMatcher) {
+async function startFaceVerification() {
   let matchStreak = 0;
   const REQUIRED_STREAK = 8; // ~1 sec (8 × 120ms)
 
@@ -217,8 +231,6 @@ async function startFaceVerification(faceMatcher) {
     } else {
       matchStreak = 0;
     }
-
-    console.log('distance:', bestMatch.distance, 'streak:', matchStreak);
 
     if (matchStreak >= REQUIRED_STREAK) {
       // clearInterval(interval);

@@ -50,6 +50,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const FRONTEND_DIR = path.join(__dirname, '../frontend');
+
+// Cache models locally
+app.use(
+  '/utils/models',
+  express.static(path.join(FRONTEND_DIR, 'utils/models'), {
+    maxAge: '365d',
+    immutable: true,
+  }),
+);
+
 app.use(express.static(FRONTEND_DIR));
 
 // If someone hits a route that's not an API (fallback)
