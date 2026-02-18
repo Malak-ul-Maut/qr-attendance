@@ -49,10 +49,6 @@ async function cacheModelsFromManifest(
     const normalizedManifestUrl = new URL(manifestUrl, location.origin).href;
 
     // fetch the manifest (network)
-    console.log(
-      'cacheModelsFromManifest: fetching manifest',
-      normalizedManifestUrl,
-    );
     const manifestResp = await fetch(normalizedManifestUrl, {
       cache: 'no-store',
     });
@@ -80,7 +76,6 @@ async function cacheModelsFromManifest(
       await idbPut(url, blob);
       console.log('Cached model', url);
     }
-    console.log('All models cached locally.');
     installModelFetchInterceptor();
     return true;
   } catch (e) {
@@ -92,7 +87,6 @@ async function cacheModelsFromManifest(
 // ================== monkeypatch fetch for model requests ==================
 function installModelFetchInterceptor() {
   if (window.__faceApiFetchInterceptorInstalled) {
-    console.log('Model fetch interceptor already installed');
     return;
   }
 
@@ -105,10 +99,8 @@ function installModelFetchInterceptor() {
 
       // intercept model requests under /utils/models/
       if (absUrl.includes('/utils/models/')) {
-        console.log('Fetch Interceptor: model request for', absUrl);
         const blob = await idbGet(absUrl);
         if (blob) {
-          console.log('Fetch Interceptor: serving from IndexedDB', absUrl);
           // respond from IndexedDB without network
           const ct = contentTypeFromUrl(absUrl);
           return new Response(blob, {
@@ -131,5 +123,4 @@ function installModelFetchInterceptor() {
   };
 
   window.__faceApiFetchInterceptorInstalled = true;
-  console.log('✅ Fetch model interceptor installed');
 }

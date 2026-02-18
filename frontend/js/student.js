@@ -39,6 +39,7 @@ const labeled = [
 let faceMatcher = new faceapi.FaceMatcher(labeled);
 
 const video = document.querySelector('#video');
+const canvas = document.querySelector('#overlay');
 const scanResult = document.querySelector('#scan-result');
 const scannerSection = document.querySelector('#scanner-section');
 const mainSection = document.querySelector('main');
@@ -179,68 +180,57 @@ async function switchCamera() {
     video: { facingMode: 'user' },
   });
   video.srcObject = currentStream;
-
-  await video.play();
-  startFaceVerification();
+  video.onloadedmetadata = () => {
+    video.play();
+    startFaceVerification();
+  };
 }
 
+let matchStreak = 0;
+let bestMatchDistances = [];
+const REQUIRED_STREAK = 20; // ~1 sec (8 × 120ms)
+
 async function startFaceVerification() {
-  let matchStreak = 0;
-  const REQUIRED_STREAK = 8; // ~1 sec (8 × 120ms)
+  let inputSize = 128;
+  let scoreThreshold = 0.5;
 
-  const canvas = faceapi.createCanvasFromMedia(video);
-  video.after(canvas);
+  const result = await faceapi
+    .detectSingleFace(
+      video,
+      new faceapi.TinyFaceDetectorOptions({ inputSize, scoreThreshold }),
+    )
+    .withFaceLandmarks()
+    .withFaceDescriptor();
 
-  const displaySize = { width: video.videoWidth, height: video.videoHeight };
-  faceapi.matchDimensions(canvas, displaySize);
-  canvas.width = displaySize.width;
-  canvas.height = displaySize.height;
-
-  const interval = setInterval(async () => {
-    let inputSize = 128;
-    let scoreThreshold = 0.5;
-
-    const detection = await faceapi
-      .detectSingleFace(
-        video,
-        new faceapi.TinyFaceDetectorOptions({ inputSize, scoreThreshold }),
-      )
-      .withFaceLandmarks()
-      .withFaceDescriptor();
-
-    if (!detection) {
-      matchStreak = 0;
-      return;
-    }
-
-    const resizedDetection = faceapi.resizeResults(detection, displaySize);
-
-    canvas
-      .getContext('2d', { willReadFrequently: true })
-      .clearRect(0, 0, canvas.width, canvas.height);
-
-    const bestMatch = faceMatcher.findBestMatch(resizedDetection.descriptor);
-    const box = resizedDetection.detection.box;
-
+  if (result) {
+    const dims = faceapi.matchDimensions(canvas, video, true);
+    const resizedResult = faceapi.resizeResults(result, dims);
+    const bestMatch = faceMatcher.findBestMatch(resizedResult.descriptor);
+    const box = resizedResult.detection.box;
     new faceapi.draw.DrawBox(box, {
       label: bestMatch.toString(),
     }).draw(canvas);
 
+    console.log('Distance: ', bestMatch.distance, 'Streak: ', matchStreak);
     if (bestMatch.distance < 0.45) {
       matchStreak++;
+      bestMatchDistances.push(bestMatch.distance);
     } else {
       matchStreak = 0;
+      bestMatchDistances = [];
     }
+  }
 
-    if (matchStreak >= REQUIRED_STREAK) {
-      // clearInterval(interval);
-      if (navigator.vibrate) navigator.vibrate(60);
-      alert('Face verified :)');
+  if (matchStreak >= REQUIRED_STREAK) {
+    // clearInterval(interval);
+    if (navigator.vibrate) navigator.vibrate(60);
+    let avgDistance = 0;
+    bestMatchDistances.forEach(distance => (avgDistance += distance));
+    alert('Face verified');
+    console.log(avgDistance / bestMatchDistances.length);
+  }
 
-      // await finalizeAttendance(); // change to my sendAttednance method
-      // stopCamera(video);
-    }
-  }, 120);
+  requestAnimationFrame(startFaceVerification);
 }
 
 function stopCamera(video) {

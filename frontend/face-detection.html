@@ -4,31 +4,58 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Face Detection</title>
-    <style>
-      body {
-        padding: 0;
-        margin: 0;
-        width: 100vw;
-        height: 100vh;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-
-      canvas {
-        position: absolute;
-      }
-
-      video {
-        -webkit-transform: scaleX(-1);
-        transform: scaleX(-1);
-      }
-    </style>
-
-    <script defer src="/utils/face-api.js"></script>
-    <script defer src="/js/face-detection.js" type="module"></script>
   </head>
-  <body>
-    <video id="video" height="720" width="540" muted></video>
-  </body>
+  <body></body>
+  <script src="/utils/face-api.js"></script>
+  <script>
+    Promise.all([
+      faceapi.nets.tinyFaceDetector.loadFromUri('/utils/models'),
+      faceapi.nets.faceLandmark68Net.loadFromUri('/utils/models'),
+      faceapi.nets.faceRecognitionNet.loadFromUri('/utils/models'),
+      faceapi.nets.ssdMobilenetv1.loadFromUri('/utils/models'),
+    ])
+      .then(() => alert('Models loaded.'))
+      .then(sendDescriptors);
+
+    async function sendDescriptors() {
+      const labeledFaceDescriptors = await getLabeledFaceDescriptions();
+      console.log(labeledFaceDescriptors);
+      await fetch('/api/students/enroll', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(labeledFaceDescriptors),
+      });
+      console.log('Bhej diya backend pe');
+    }
+
+    function getLabeledFaceDescriptions() {
+      const labels = ['ali'];
+
+      return Promise.all(
+        labels.map(async label => {
+          const descriptions = [];
+
+          for (let i = 1; i <= 6; i++) {
+            const image = await faceapi.fetchImage(
+              `/utils/labels/${label}/${i}.jpeg`,
+            );
+            const detections = await faceapi
+              .detectSingleFace(image)
+              .withFaceLandmarks()
+              .withFaceDescriptor();
+            if (!detections) {
+              console.warn(`No face detected in ${label}/${i}.jpg`);
+              alert(`No face detected in ${label}/${i}.jpg`);
+              continue;
+            }
+            descriptions.push(detections.descriptor);
+            console.log(`Loaded ${label}/${i}.jpg`);
+          }
+          return new faceapi.LabeledFaceDescriptors(label, descriptions);
+        }),
+      );
+    }
+  </script>
 </html>

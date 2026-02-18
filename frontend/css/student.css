@@ -54,6 +54,7 @@ main {
 
 .camera-wrapper {
   position: relative;
+  margin: 20px;
 }
 
 .camera-wrapper canvas {
