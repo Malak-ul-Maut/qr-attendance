@@ -6,11 +6,12 @@ import os from 'os';
 import selfsigned from 'selfsigned';
 import { fileURLToPath } from 'url';
 
-import { initializeSocket } from './utils/socket-io.js';
 import hostTunnel from './utils/host-tunnel.js';
+import { initializeSocket } from './utils/socket-io.js';
 import authRouter from './routes/auth.routes.js';
 import sessionRouter from './routes/session.routes.js';
 import attendanceRouter from './routes/attendance.routes.js';
+import studentRouter from './routes/students.routes.js';
 
 // ----------------- Server Config -----------------
 const app = express();
@@ -27,6 +28,7 @@ app.use(
 app.use('/api/auth', authRouter);
 app.use('/api/session', sessionRouter);
 app.use('/api/attendance', attendanceRouter);
+app.use('/api/students', studentRouter);
 
 // ------------------ Initialize server ---------------------
 
@@ -48,6 +50,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const FRONTEND_DIR = path.join(__dirname, '../frontend');
+
+// Cache models locally
+app.use(
+  '/utils/models',
+  express.static(path.join(FRONTEND_DIR, 'utils/models'), {
+    maxAge: '365d',
+    immutable: true,
+  }),
+);
+
 app.use(express.static(FRONTEND_DIR));
 
 // If someone hits a route that's not an API (fallback)

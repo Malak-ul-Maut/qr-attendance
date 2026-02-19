@@ -47,16 +47,7 @@ db.serialize(() => {
             startTime DATETIME DEFAULT CURRENT_TIMESTAMP,
             endTime DATETIME,
             status TEXT DEFAULT 'active'
-        );
-
-        db.run(`ALTER TABLE sessions ADD COLUMN year TEXT`,(err) => {
-          if (err && !err.message.includes('duplicate column'))  {
-          console.log(err.message) ;
-          }
-})
-          db.run(`ALTER TABLE sessions ADD COLUMN semester TEXT)
-          
-    `);
+  );`);
 });
 
 export default db;

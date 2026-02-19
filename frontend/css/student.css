@@ -1,5 +1,8 @@
 main {
+  display: flex;
   flex-direction: column;
+  justify-content: center;
+  align-items: center;
   row-gap: 1.5rem;
   margin-top: 8rem;
 }
@@ -47,6 +50,21 @@ main {
   right: 0.4rem;
   z-index: 100;
   transition: all 0.1s ease;
+}
+
+.camera-wrapper {
+  position: relative;
+  margin: 20px;
+}
+
+.camera-wrapper canvas {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  pointer-events: none;
 }
 
 #video {

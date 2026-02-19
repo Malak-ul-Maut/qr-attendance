@@ -10,12 +10,30 @@ const studentCount = document.querySelector('#studentCount');
 let sessionId = null;
 let qrTimer = null;
 
+const currentUser = getCurrentUser();
+console.log('Teacher Section:', currentUser.section);
+
+
 // Display user and subject name
 const userName = document.querySelector('.user-name b');
-userName.textContent = getCurrentUser().name || 'Teacher';
+userName.textContent = currentUser.name || 'Teacher';
 
 const subjectName = document.querySelector('#sub-name');
-subjectName.textContent = getCurrentUser().subName;
+subjectName.textContent = currentUser.subName;
+
+// Display teacher's assigned section
+const sectionDropdown = document.getElementById('section');
+sectionDropdown.innerHTML = '';
+
+if(currentUser.section) {
+ const sections = currentUser.section.split(',');
+ sections.forEach(sec => {
+  const option = document.createElement('option');
+  option.value = sec.trim();
+  option.textContent = sec.trim();
+  sectionDropdown.appendChild(option);
+ });
+}
 
 const logoutBtn = document.querySelector('.logout-btn');
 logoutBtn.addEventListener('click', () => logout());

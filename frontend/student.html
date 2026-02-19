@@ -11,11 +11,9 @@
     <link rel="stylesheet" href="css/student.css" />
 
     <script src="utils/auth-guard.js" type="module"></script>
+    <script src="utils/cache-models.js"></script>
+    <script defer src="utils/face-api.js"></script>
     <script defer src="js/student.js" type="module"></script>
-    <script>
-      console.log("mishthi")
-    </script>
-  
   </head>
 
   <body>
@@ -37,7 +35,10 @@
     <div id="scanner-section" style="display: none">
       <button id="closeScanBtn" type="button">✕</button>
 
-      <video id="video"></video>
+      <div class="camera-wrapper">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="overlay" />
+      </div>
 
       <div class="slider-row">
         <img src="icons/zoom-out.svg" class="slider-icon left" alt="zoom out" />
@@ -47,8 +48,7 @@
           min="1"
           max="5"
           step="0.1"
-          value="1"
-        />
+          value="1" />
         <img src="icons/zoom-in.svg" class="slider-icon right" alt="zoom in" />
       </div>
 
