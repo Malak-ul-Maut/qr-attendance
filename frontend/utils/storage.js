@@ -16,6 +16,7 @@ export function storeUser(data) {
       username: data.username,
       name: data.name,
       subName: data.subjectName,
+      section: data.section
     }),
   );
 }

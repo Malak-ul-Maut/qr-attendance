@@ -47,8 +47,7 @@ db.serialize(() => {
             startTime DATETIME DEFAULT CURRENT_TIMESTAMP,
             endTime DATETIME,
             status TEXT DEFAULT 'active'
-        );
-    `);
+  );`);
 });
 
 export default db;

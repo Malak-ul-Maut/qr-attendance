@@ -24,7 +24,7 @@ router.post('/login', (req, res) => {
         });
       const { name, username, subjectName } = row;
 
-      return res.json({ ok: true, name, username, subjectName });
+      return res.json({ ok: true, name, username, subjectName, section: row.section});
     },
   );
 });
