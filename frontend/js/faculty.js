@@ -10,7 +10,7 @@ const studentCount = document.querySelector('#studentCount');
 let sessionId = null;
 let qrTimer = null;
 
-// Display user and subject name
+// Display username, subject and section
 const userName = document.querySelector('.user-name b');
 userName.textContent = getCurrentUser().name || 'Teacher';
 
