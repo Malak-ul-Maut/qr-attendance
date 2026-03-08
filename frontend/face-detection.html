@@ -19,7 +19,6 @@
 
     async function sendDescriptors() {
       const labeledFaceDescriptors = await getLabeledFaceDescriptions();
-      console.log(labeledFaceDescriptors);
       await fetch('/api/students/enroll', {
         method: 'POST',
         headers: {
@@ -31,13 +30,13 @@
     }
 
     function getLabeledFaceDescriptions() {
-      const labels = ['mishthi'];
+      const labels = ['ali', 'yash'];
 
       return Promise.all(
         labels.map(async label => {
           const descriptions = [];
 
-          for (let i = 1; i <= 3; i++) {
+          for (let i = 1; i <= 6; i++) {
             const image = await faceapi.fetchImage(
               `/utils/labels/${label}/${i}.jpeg`,
             );
@@ -50,12 +49,31 @@
               alert(`No face detected in ${label}/${i}.jpg`);
               continue;
             }
+            if (detections.detection.score < 0.8) continue;
             descriptions.push(detections.descriptor);
-            console.log(`Loaded ${label}/${i}.jpg`);
+            console.log(
+              `Loaded ${label}/${i}.jpg ${detections.detection.score}`,
+            );
           }
-          return new faceapi.LabeledFaceDescriptors(label, descriptions);
+          console.log(descriptions);
+          const centroid = computeCentroid(descriptions);
+          return { label: label, descriptor: Array.from(centroid) };
         }),
       );
+    }
+
+    function computeCentroid(descriptors) {
+      const length = descriptors[0].length;
+      const centroid = new Float32Array(length);
+
+      for (let i = 0; i < length; i++) {
+        let sum = 0;
+        for (const desc of descriptors) {
+          sum += desc[i];
+        }
+        centroid[i] = sum / descriptors.length;
+      }
+      return centroid;
     }
   </script>
 </html>

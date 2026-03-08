@@ -20,6 +20,16 @@ subjectName.textContent = getCurrentUser().subName;
 const logoutBtn = document.querySelector('.logout-btn');
 logoutBtn.addEventListener('click', () => logout());
 
+const sectionDropdown = document.querySelector('#section');
+sectionDropdown.innerHTML = '';
+const sections = getCurrentUser().section.split(',');
+sections.forEach(sec => {
+  const option = document.createElement('option');
+  option.value = sec.trim();
+  option.textContent = sec.trim();
+  sectionDropdown.appendChild(option);
+});
+
 // --------------- Socket initialization -------------
 const socket = io(location.origin);
 

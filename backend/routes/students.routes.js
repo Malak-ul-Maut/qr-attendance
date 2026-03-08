@@ -7,11 +7,11 @@ const router = express.Router();
 router.post('/enroll', (req, res) => {
   const data = req.body;
 
-  data.forEach(({ label, descriptors }) => {
+  data.forEach(({ label, descriptor }) => {
     db.run(
       `
     UPDATE users SET faceDescriptors = ? WHERE username = ?`,
-      [JSON.stringify(descriptors), label],
+      [JSON.stringify(descriptor), label],
     );
   });
 
