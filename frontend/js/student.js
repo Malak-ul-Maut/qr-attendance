@@ -10,7 +10,7 @@ import {
 // Pre-download and cache all models from manifest
 await cacheModelsFromManifest('/utils/models/models-manifest.json');
 
-// Load models - they will now be served from IndexedDB cache via interceptors
+// Load models
 Promise.all([
   faceapi.nets.tinyFaceDetector.loadFromUri('/utils/models'),
   faceapi.nets.faceLandmark68Net.loadFromUri('/utils/models'),
@@ -125,19 +125,82 @@ async function sendAttendance(studentId, token, cameraFingerprint, qrScanner) {
     studentName,
     token,
     cameraFingerprint,
+    isFaceScanned: false,
   });
 
   if (response.ok) {
-    scanResult.textContent = '✔ Attendance marked successfully!';
-    scanResult.style.color = '#2e9c17ff';
+    scanResult.textContent = 'Scanning face...';
     qrScanner.stop();
     stopCamera(video);
-    switchCamera();
+    switchCamera(token, cameraFingerprint);
   } else {
     scanResult.textContent = `⚠︎ Verification failed !!! (${response.error})`;
     scanResult.style.color = '#b81616';
     isProcessing = false;
   }
+}
+
+async function switchCamera(token, cameraFingerprint) {
+  let currentStream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: 'user' },
+  });
+  video.srcObject = currentStream;
+  video.onloadedmetadata = () => {
+    video.play();
+    startFaceVerification(token, cameraFingerprint);
+  };
+}
+
+let matchStreak = 0;
+const REQUIRED_STREAK = 8; // ~1 sec (8 × 120ms)
+async function startFaceVerification(token, cameraFingerprint) {
+  let inputSize = 128;
+  let scoreThreshold = 0.5;
+
+  const result = await faceapi
+    .detectSingleFace(
+      video,
+      new faceapi.TinyFaceDetectorOptions({ inputSize, scoreThreshold }),
+    )
+    .withFaceLandmarks()
+    .withFaceDescriptor();
+
+  if (result) {
+    const dims = faceapi.matchDimensions(canvas, video, true);
+    const resizedResult = faceapi.resizeResults(result, dims);
+    const bestMatch = faceMatcher.findBestMatch(resizedResult.descriptor);
+    const box = resizedResult.detection.box;
+    new faceapi.draw.DrawBox(box, {
+      label: bestMatch.toString(),
+    }).draw(canvas);
+
+    if (bestMatch.distance < 0.5) {
+      matchStreak++;
+    } else {
+      matchStreak = 0;
+    }
+  }
+
+  if (matchStreak >= REQUIRED_STREAK) {
+    if (navigator.vibrate) navigator.vibrate(60);
+
+    const response = await postData('/api/attendance/verify', {
+      studentId,
+      studentName,
+      token,
+      cameraFingerprint,
+      isFaceScanned: true,
+    });
+
+    if (response.ok) {
+      scanResult.textContent = 'Attendance marked successfully!';
+      scanResult.style.color = '#2e9c17ff';
+    }
+
+    return;
+  }
+
+  requestAnimationFrame(startFaceVerification);
 }
 
 function enableZoom(currentStream) {
@@ -173,64 +236,6 @@ function enableZoom(currentStream) {
     zoomSlider.value = parseFloat(zoomSlider.value) + 1;
     zoomSlider.dispatchEvent(new Event('input'));
   });
-}
-
-async function switchCamera() {
-  let currentStream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: 'user' },
-  });
-  video.srcObject = currentStream;
-  video.onloadedmetadata = () => {
-    video.play();
-    startFaceVerification();
-  };
-}
-
-let matchStreak = 0;
-let bestMatchDistances = [];
-const REQUIRED_STREAK = 20; // ~1 sec (8 × 120ms)
-
-async function startFaceVerification() {
-  let inputSize = 128;
-  let scoreThreshold = 0.5;
-
-  const result = await faceapi
-    .detectSingleFace(
-      video,
-      new faceapi.TinyFaceDetectorOptions({ inputSize, scoreThreshold }),
-    )
-    .withFaceLandmarks()
-    .withFaceDescriptor();
-
-  if (result) {
-    const dims = faceapi.matchDimensions(canvas, video, true);
-    const resizedResult = faceapi.resizeResults(result, dims);
-    const bestMatch = faceMatcher.findBestMatch(resizedResult.descriptor);
-    const box = resizedResult.detection.box;
-    new faceapi.draw.DrawBox(box, {
-      label: bestMatch.toString(),
-    }).draw(canvas);
-
-    console.log('Distance: ', bestMatch.distance, 'Streak: ', matchStreak);
-    if (bestMatch.distance < 0.45) {
-      matchStreak++;
-      bestMatchDistances.push(bestMatch.distance);
-    } else {
-      matchStreak = 0;
-      bestMatchDistances = [];
-    }
-  }
-
-  if (matchStreak >= REQUIRED_STREAK) {
-    // clearInterval(interval);
-    if (navigator.vibrate) navigator.vibrate(60);
-    let avgDistance = 0;
-    bestMatchDistances.forEach(distance => (avgDistance += distance));
-    alert('Face verified');
-    console.log(avgDistance / bestMatchDistances.length);
-  }
-
-  requestAnimationFrame(startFaceVerification);
 }
 
 function stopCamera(video) {

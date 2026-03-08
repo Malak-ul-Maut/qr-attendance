@@ -6,26 +6,34 @@ const router = express.Router();
 
 // Verify student scan
 router.post('/verify', (req, res) => {
-  const { studentId, studentName, token, cameraFingerprint } = req.body;
+  const { studentId, studentName, token, cameraFingerprint, isFaceScanned } =
+    req.body;
 
-  if (!utils.activeTokens[token])
+  if (!utils.activeTokens[token] && !isFaceScanned)
     return res
       .status(400)
       .json({ ok: false, error: 'invalid_or_expired_token' });
-  const { sessionId, section } = utils.activeTokens[token];
+
+  let sessionId, section;
+  if (!isFaceScanned) {
+    sessionId = utils.activeTokens[token].sessionId;
+    section = utils.activeTokens[token].section;
+  }
 
   db.get(
     `SELECT * FROM attendance WHERE (studentId = ? OR cameraFingerprint = ?) AND sessionId = ?`,
     [studentId, cameraFingerprint, sessionId],
     (err, row) => {
       if (row) {
-        if (row.studentId === studentId)
+        if (row.studentId === studentId && !isFaceScanned)
           return res.status(400).json({ ok: false, error: 'already_marked' });
-        if (row.cameraFingerprint === cameraFingerprint)
+        if (row.cameraFingerprint === cameraFingerprint && !isFaceScanned)
           return res
             .status(400)
             .json({ ok: false, error: 'duplicate_device_entry' });
       }
+
+      if (!isFaceScanned) return res.json({ ok: true });
 
       db.run(
         `INSERT INTO attendance (studentid, studentName, section, sessionId, cameraFingerprint) VALUES (?, ?, ?, ?, ?)`,
