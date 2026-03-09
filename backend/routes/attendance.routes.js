@@ -6,18 +6,27 @@ const router = express.Router();
 
 // Verify student scan
 router.post('/verify', (req, res) => {
-  const { studentId, studentName, token, cameraFingerprint, isFaceScanned } =
-    req.body;
+  let {
+    studentId,
+    studentName,
+    token,
+    sessionId,
+    section,
+    cameraFingerprint,
+    isFaceScanned,
+  } = req.body;
 
-  if (!utils.activeTokens[token] && !isFaceScanned)
-    return res
-      .status(400)
-      .json({ ok: false, error: 'invalid_or_expired_token' });
-
-  let sessionId, section;
   if (!isFaceScanned) {
-    sessionId = utils.activeTokens[token].sessionId;
-    section = utils.activeTokens[token].section;
+    const tokenData = utils.activeTokens[token];
+    if (!tokenData)
+      return res
+        .status(400)
+        .json({ ok: false, error: 'invalid_or_expired_token' });
+
+    sessionId = tokenData.sessionId;
+    section = tokenData.section;
+
+    return res.json({ ok: true, sessionId, section });
   }
 
   db.get(
@@ -25,15 +34,13 @@ router.post('/verify', (req, res) => {
     [studentId, cameraFingerprint, sessionId],
     (err, row) => {
       if (row) {
-        if (row.studentId === studentId && !isFaceScanned)
+        if (row.studentId === studentId)
           return res.status(400).json({ ok: false, error: 'already_marked' });
-        if (row.cameraFingerprint === cameraFingerprint && !isFaceScanned)
+        if (row.cameraFingerprint === cameraFingerprint)
           return res
             .status(400)
             .json({ ok: false, error: 'duplicate_device_entry' });
       }
-
-      if (!isFaceScanned) return res.json({ ok: true });
 
       db.run(
         `INSERT INTO attendance (studentid, studentName, section, sessionId, cameraFingerprint) VALUES (?, ?, ?, ?, ?)`,
@@ -51,7 +58,6 @@ router.post('/verify', (req, res) => {
           return res.json({
             ok: true,
             message: 'Attendance recorded',
-            sessionId,
           });
         },
       );

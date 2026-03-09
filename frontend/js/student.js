@@ -112,7 +112,7 @@ async function sendAttendance(studentId, token, cameraFingerprint, qrScanner) {
     scanResult.textContent = 'Scanning face...';
     qrScanner.stop();
     stopCamera(video);
-    switchCamera(token, cameraFingerprint);
+    switchCamera(response.sessionId, response.section, cameraFingerprint);
   } else {
     scanResult.textContent = `⚠︎ Verification failed !!! (${response.error})`;
     scanResult.style.color = '#b81616';
@@ -120,14 +120,14 @@ async function sendAttendance(studentId, token, cameraFingerprint, qrScanner) {
   }
 }
 
-async function switchCamera(token, cameraFingerprint) {
+async function switchCamera(sessionId, section, cameraFingerprint) {
   let currentStream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: 'user' },
   });
   video.srcObject = currentStream;
   video.onloadedmetadata = () => {
     video.play();
-    startFaceVerification(token, cameraFingerprint);
+    startFaceVerification(sessionId, section, cameraFingerprint);
   };
 }
 
@@ -137,7 +137,7 @@ const REQUIRED_STREAK = 4;
 let matchStreak = 0;
 let distance;
 
-async function startFaceVerification(token, cameraFingerprint) {
+async function startFaceVerification(sessionId, section, cameraFingerprint) {
   const result = await faceapi
     .detectSingleFace(
       video,
@@ -146,19 +146,26 @@ async function startFaceVerification(token, cameraFingerprint) {
     .withFaceLandmarks()
     .withFaceDescriptor();
 
-  if (!result) return requestAnimationFrame(startFaceVerification);
+  if (!result)
+    return requestAnimationFrame(() =>
+      startFaceVerification(sessionId, section, cameraFingerprint),
+    );
 
   displayOverlay(result);
 
   if (matchStreak < REQUIRED_STREAK) {
     matchStreak = distance < 0.45 ? matchStreak + 1 : 0;
-    return requestAnimationFrame(startFaceVerification);
+    return requestAnimationFrame(() =>
+      startFaceVerification(sessionId, section, cameraFingerprint),
+    );
   }
 
   scanResult.textContent = 'Smile kijiye...';
 
   if (!isSmiling(result.landmarks))
-    return requestAnimationFrame(startFaceVerification);
+    return requestAnimationFrame(() =>
+      startFaceVerification(sessionId, section, cameraFingerprint),
+    );
 
   if (navigator.vibrate) navigator.vibrate(40);
   stopCamera(video);
@@ -167,10 +174,13 @@ async function startFaceVerification(token, cameraFingerprint) {
   const response = await postData('/api/attendance/verify', {
     studentId,
     studentName,
-    token,
+    sessionId,
+    section,
     cameraFingerprint,
     isFaceScanned: true,
   });
+
+  console.log(response);
 
   if (response.ok) {
     if (navigator.vibrate) navigator.vibrate(60);
