@@ -22,9 +22,9 @@ router.post('/login', (req, res) => {
           ok: false,
           error: 'invallid_credentials',
         });
-      const { name, username, subjectName } = row;
+      const { name, username, subjectName, section } = row;
 
-      return res.json({ ok: true, name, username, subjectName });
+      return res.json({ ok: true, name, username, subjectName, section });
     },
   );
 });

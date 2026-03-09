@@ -6,13 +6,28 @@ const router = express.Router();
 
 // Verify student scan
 router.post('/verify', (req, res) => {
-  const { studentId, studentName, token, cameraFingerprint } = req.body;
+  let {
+    studentId,
+    studentName,
+    token,
+    sessionId,
+    section,
+    cameraFingerprint,
+    isFaceScanned,
+  } = req.body;
 
-  if (!utils.activeTokens[token])
-    return res
-      .status(400)
-      .json({ ok: false, error: 'invalid_or_expired_token' });
-  const { sessionId, section } = utils.activeTokens[token];
+  if (!isFaceScanned) {
+    const tokenData = utils.activeTokens[token];
+    if (!tokenData)
+      return res
+        .status(400)
+        .json({ ok: false, error: 'invalid_or_expired_token' });
+
+    sessionId = tokenData.sessionId;
+    section = tokenData.section;
+
+    return res.json({ ok: true, sessionId, section });
+  }
 
   db.get(
     `SELECT * FROM attendance WHERE (studentId = ? OR cameraFingerprint = ?) AND sessionId = ?`,
@@ -43,7 +58,6 @@ router.post('/verify', (req, res) => {
           return res.json({
             ok: true,
             message: 'Attendance recorded',
-            sessionId,
           });
         },
       );

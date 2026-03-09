@@ -38,6 +38,11 @@ router.post('/finalize', (req, res) => {
   sessions[sessionId].active = false;
   const placeholders = keepStudentIds.map(() => '?').join(','); // '?,?,?,?,....,?'
 
+  db.run(
+    `UPDATE sessions SET endTime = datetime('now'), status = 'ended' WHERE sessionId = ?`,
+    [sessionId],
+  );
+
   if (keepStudentIds.length === 0) {
     utils.teacherSockets.forEach(sock =>
       sock.emit('session_finalized', { sessionId }),
@@ -55,11 +60,6 @@ router.post('/finalize', (req, res) => {
         keptCount: keepStudentIds.length,
       });
     },
-  );
-
-  db.run(
-    `UPDATE sessions SET endTime = datetime('now'), status = 'ended' WHERE sessionId = ?`,
-    [sessionId],
   );
 });
 

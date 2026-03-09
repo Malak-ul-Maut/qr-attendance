@@ -10,7 +10,7 @@ const studentCount = document.querySelector('#studentCount');
 let sessionId = null;
 let qrTimer = null;
 
-// Display user and subject name
+// Display username, subject and section
 const userName = document.querySelector('.user-name b');
 userName.textContent = getCurrentUser().name || 'Teacher';
 
@@ -19,6 +19,16 @@ subjectName.textContent = getCurrentUser().subName;
 
 const logoutBtn = document.querySelector('.logout-btn');
 logoutBtn.addEventListener('click', () => logout());
+
+const sectionDropdown = document.querySelector('#section');
+sectionDropdown.innerHTML = '';
+const sections = getCurrentUser().section.split(',');
+sections.forEach(sec => {
+  const option = document.createElement('option');
+  option.value = sec.trim();
+  option.textContent = sec.trim();
+  sectionDropdown.appendChild(option);
+});
 
 // --------------- Socket initialization -------------
 const socket = io(location.origin);
