@@ -109,6 +109,10 @@ canvas {
   background-color: #e1e4e8;
 }
 
+#add-manually-btn {
+  color: white;
+}
+
 .toggle-fullscreen-btn {
   background-color: rgba(0, 0, 0, 0.205);
   opacity: 0.5;
@@ -146,4 +150,9 @@ canvas {
   border-left: 4px solid #4caf50;
   border-bottom: 0.8px solid gray;
   border-radius: 4px;
+}
+
+.strike {
+  text-decoration: line-through;
+  opacity: 0.8;
 }

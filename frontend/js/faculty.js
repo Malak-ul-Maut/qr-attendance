@@ -49,11 +49,16 @@ socket.on('attendance_update', data => {
   checkBox.checked = true;
   checkBox.dataset.id = data.studentId;
 
+  checkBox.addEventListener('change', () => {
+    span.classList.toggle('strike', !checkBox.checked);
+    updatePresentCount();
+  });
+
   li.appendChild(span);
   li.appendChild(checkBox);
   studentList.appendChild(li);
   li.scrollIntoView();
-  studentCount.textContent = `Present: ${studentList.children.length}`;
+  updatePresentCount();
 });
 
 // Start session
@@ -136,4 +141,12 @@ function clearAttendanceUI() {
   afterStart.style.display = 'none';
   beforeStart.style.display = 'flex';
   clearTimeout(qrTimer);
+}
+
+function updatePresentCount() {
+  const checkedStudents = document.querySelectorAll(
+    '#studentList input[type="checkbox"]:checked',
+  ).length;
+
+  studentCount.textContent = `Present: ${checkedStudents}`;
 }

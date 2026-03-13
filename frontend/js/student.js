@@ -180,8 +180,6 @@ async function startFaceVerification(sessionId, section, cameraFingerprint) {
     isFaceScanned: true,
   });
 
-  console.log(response);
-
   if (response.ok) {
     if (navigator.vibrate) navigator.vibrate(60);
     scanResult.textContent = 'Attendance marked successfully!';
