@@ -167,7 +167,6 @@ async function startFaceVerification(sessionId, section, cameraFingerprint) {
       startFaceVerification(sessionId, section, cameraFingerprint),
     );
 
-  if (navigator.vibrate) navigator.vibrate(40);
   stopCamera(video);
   scanResult.textContent = 'Submitting attendance...';
 

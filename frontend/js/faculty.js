@@ -7,6 +7,9 @@ const canvas = document.querySelector('canvas');
 const liveSection = document.querySelector('.live-section');
 const studentList = document.querySelector('#studentList');
 const studentCount = document.querySelector('#studentCount');
+const addManuallyBtn = document.querySelector('#add-manually-btn');
+const dialog = document.querySelector('#manual-attendance-dialog');
+const addSelectedBtn = document.querySelector('#add-selected-btn');
 let sessionId = null;
 let qrTimer = null;
 
@@ -38,7 +41,11 @@ socket.on('connect', () => {
 });
 
 // Dynamically generate html for attendance list
+const markedStudents = new Set();
+
 socket.on('attendance_update', data => {
+  markedStudents.add(data.studentId);
+
   const li = document.createElement('li');
   const span = document.createElement('span');
   span.textContent = `${data.studentName} (${data.time})`;
@@ -81,7 +88,49 @@ startBtn.addEventListener('click', async () => {
   renderQR(response);
 });
 
+addManuallyBtn.addEventListener('click', async () => {
+  const section = document.querySelector('#section').value;
+
+  const res = await fetch(`/api/students/${section}`);
+  const students = await res.json();
+
+  console.log(students);
+
+  const unmarkedStudents = students.filter(
+    s => !markedStudents.has(s.username),
+  );
+  console.log(unmarkedStudents);
+
+  showManualPopup(unmarkedStudents);
+});
+
+addSelectedBtn.addEventListener('click', async () => {
+  const section = document.querySelector('#section').value;
+  const selected = document.querySelectorAll(
+    '#manual-attendance-list input:checked',
+  );
+
+  const students = [];
+
+  selected.forEach(cb => {
+    students.push({
+      studentId: cb.value,
+      studentName: cb.dataset.name,
+      section,
+    });
+  });
+
+  await postData('/api/attendance/manual', {
+    sessionId: sessionId,
+    students: students,
+    section,
+  });
+
+  dialog.close();
+});
+
 // Submit attendance and end session
+
 const submitBtn = document.querySelector('#submit-attendance-btn');
 
 submitBtn.addEventListener('click', async () => {
@@ -99,6 +148,7 @@ submitBtn.addEventListener('click', async () => {
   if (!response.ok) return console.error('Finalize returned error:', data);
 
   alert('✔ Attendance submitted successfully');
+  if (document.fullscreenElement) toggleFullScreen();
   clearAttendanceUI();
 });
 
@@ -149,4 +199,27 @@ function updatePresentCount() {
   ).length;
 
   studentCount.textContent = `Present: ${checkedStudents}`;
+}
+
+function showManualPopup(students) {
+  const container = document.querySelector('#manual-attendance-list');
+  container.innerHTML = '';
+
+  students.forEach(student => {
+    const li = document.createElement('li');
+    const span = document.createElement('span');
+    span.textContent = student.name;
+    span.dataset.id = student.username;
+
+    const checkBox = document.createElement('input');
+    checkBox.type = 'checkbox';
+    checkBox.value = student.username;
+    checkBox.dataset.name = student.name;
+
+    li.appendChild(span);
+    li.appendChild(checkBox);
+    container.appendChild(li);
+  });
+
+  dialog.showModal();
 }

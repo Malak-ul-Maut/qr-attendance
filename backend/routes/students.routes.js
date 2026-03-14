@@ -31,4 +31,15 @@ router.get('/descriptors', (req, res) => {
   );
 });
 
+router.get('/:section', (req, res) => {
+  const section = req.params.section;
+  db.all(
+    'SELECT username, name FROM users WHERE role="student" AND section=?',
+    [section],
+    (err, rows) => {
+      res.json(rows);
+    },
+  );
+});
+
 export default router;
