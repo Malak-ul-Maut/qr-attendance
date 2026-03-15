@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Faculty</title>
+  <link rel="stylesheet" href="css/general.css" />
+  <link rel="stylesheet" href="css/admin.css" />
+</head>
+<body>
+  <main class="management-page">
+    <section class="top-bar">
+      <h1>Faculty</h1>
+      <button id="showFacultyFormBtn">+ Add Faculty</button>
+    </section>
+
+    <section class="summary-box">
+      <h2>Total Faculty: <span id="totalFaculty">0</span></h2>
+    </section>
+
+    <section id="facultyFormSection" style="display: none;">
+      <h3>Add Faculty</h3>
+      <form id="facultyForm">
+        <input type="text" id="facultyName" placeholder="Name" required />
+        <input type="text" id="facultyUsername" placeholder="Username" required />
+        <input type="text" id="facultyPassword" placeholder="Password" required />
+        <input type="text" id="facultySubject" placeholder="Subject Name" required />
+        <button type="submit">Save Faculty</button>
+      </form>
+    </section>
+
+    <section>
+      <table border="1" cellpadding="10" cellspacing="0" width="100%">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Username</th>
+            <th>Subject</th>
+          </tr>
+        </thead>
+        <tbody id="facultyTableBody"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script>
+    const showFacultyFormBtn = document.getElementById('showFacultyFormBtn');
+    const facultyFormSection = document.getElementById('facultyFormSection');
+    const facultyForm = document.getElementById('facultyForm');
+    const facultyTableBody = document.getElementById('facultyTableBody');
+    const totalFaculty = document.getElementById('totalFaculty');
+
+    showFacultyFormBtn.addEventListener('click', () => {
+      facultyFormSection.style.display =
+        facultyFormSection.style.display === 'none' ? 'block' : 'none';
+    });
+
+    async function loadFaculty() {
+      const response = await fetch('/api/admin/faculty');
+      const data = await response.json();
+
+      if (!data.ok) {
+        console.error(data.error);
+        return;
+      }
+
+      totalFaculty.textContent = data.faculty.length;
+      facultyTableBody.innerHTML = '';
+
+      data.faculty.forEach(faculty => {
+        facultyTableBody.innerHTML += `
+          <tr>
+            <td>${faculty.name}</td>
+            <td>${faculty.username}</td>
+            <td>${faculty.subjectName || ''}</td>
+          </tr>
+        `;
+      });
+    }
+
+    facultyForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const payload = {
+        name: document.getElementById('facultyName').value,
+        username: document.getElementById('facultyUsername').value,
+        password: document.getElementById('facultyPassword').value,
+        subjectName: document.getElementById('facultySubject').value
+      };
+
+      const response = await fetch('/api/admin/add-faculty', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      alert(data.message || data.error);
+
+      if (data.ok) {
+        facultyForm.reset();
+        loadFaculty();
+      }
+    });
+
+    loadFaculty();
+  </script>
+</body>
+</html>

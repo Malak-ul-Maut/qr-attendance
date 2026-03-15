@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Students</title>
+  <link rel="stylesheet" href="css/general.css" />
+  <link rel="stylesheet" href="css/admin.css" />
+  <script src="utils/auth-guard.js" type="module"></script>
+</head>
+<body>
+  <main class="management-page">
+    <section class="top-bar">
+      <h1>Students</h1>
+      <button id="showStudentFormBtn" type="button">+ Add Student</button>
+    </section>
+
+    <section class="summary-box">
+      <h2>Total Students: <span id="totalStudents">0</span></h2>
+    </section>
+
+    <section id="studentFormSection" style="display: none;">
+      <h3>Add Student</h3>
+      <form id="studentForm">
+        <input type="text" id="studentName" placeholder="Name" required />
+        <input type="text" id="studentUsername" placeholder="Username" required />
+        <input type="text" id="studentPassword" placeholder="Password" required />
+        <input type="text" id="studentSection" placeholder="Section" required />
+        <button type="submit">Save Student</button>
+      </form>
+    </section>
+
+    <section>
+      <table border="1" cellpadding="10" cellspacing="0" width="100%">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Username</th>
+            <th>Section</th>
+          </tr>
+        </thead>
+        <tbody id="studentTableBody"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script>
+  const showStudentFormBtn = document.getElementById('showStudentFormBtn');
+  const studentFormSection = document.getElementById('studentFormSection');
+  const studentForm = document.getElementById('studentForm');
+  const studentTableBody = document.getElementById('studentTableBody');
+  const totalStudents = document.getElementById('totalStudents');
+
+  showStudentFormBtn.addEventListener('click', () => {
+    studentFormSection.style.display =
+      studentFormSection.style.display === 'none' ? 'block' : 'none';
+  });
+
+  async function loadStudents() {
+    try {
+      const response = await fetch('/api/admin/students');
+      const data = await response.json();
+
+      console.log('Students response:', data);
+
+      if (!data.ok) {
+        alert(data.error || 'Failed to load students');
+        return;
+      }
+
+      totalStudents.textContent = data.students.length;
+      studentTableBody.innerHTML = '';
+
+      data.students.forEach(student => {
+        studentTableBody.innerHTML += `
+          <tr>
+            <td>${student.name}</td>
+            <td>${student.username}</td>
+            <td>${student.section || ''}</td>
+          </tr>
+        `;
+      });
+    } catch (error) {
+      console.error('Load students error:', error);
+      alert('Could not load students');
+    }
+  }
+
+  studentForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const payload = {
+      name: document.getElementById('studentName').value.trim(),
+      username: document.getElementById('studentUsername').value.trim(),
+      password: document.getElementById('studentPassword').value.trim(),
+      section: document.getElementById('studentSection').value.trim()
+    };
+
+    try {
+      const response = await fetch('/api/admin/add-student', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      console.log('Add student response:', data);
+
+      alert(data.message || data.error);
+
+      if (data.ok) {
+        studentForm.reset();
+        studentFormSection.style.display = 'none';
+        loadStudents();
+      }
+    } catch (error) {
+      console.error('Add student error:', error);
+      alert('Could not upload students');
+    }
+  });
+
+  loadStudents();
+</script>
+</body>
+</html>

@@ -30,13 +30,13 @@
     }
 
     function getLabeledFaceDescriptions() {
-      const labels = ['ali', 'yash'];
+      const labels = ['mishthi','deepanshi'];
 
       return Promise.all(
         labels.map(async label => {
           const descriptions = [];
 
-          for (let i = 1; i <= 6; i++) {
+          for (let i = 1; i <= 5; i++) {
             const image = await faceapi.fetchImage(
               `/utils/labels/${label}/${i}.jpeg`,
             );

@@ -28,21 +28,17 @@
     </header>
 
     <nav class="sidebar">
-      <div class="sidebar-content">
-        <img src="icons/home.svg" alt="Home" />
-        <div>Home</div>
-      </div>
-      <div class="sidebar-content">
+      <a class="sidebar-content" href="students.html">
         <img src="icons/student.svg" alt="Students" />
         <div>Students</div>
-      </div>
-      <div class="sidebar-content">
+      </a>
+      <a class="sidebar-content" href="faculties.html">
         <img src="icons/teacher.svg" alt="Faculty" />
-        <div>Faculty</div>
-      </div>
+        <div>Faculties</div>
+      </a>
       <div class="sidebar-content">
         <img src="icons/courses.svg" alt="Courses" />
-        <div>Courses</div>
+        <div>Branch</div>
       </div>
       <div class="sidebar-content logout-btn">
         <img src="icons/logout-black.svg" alt="Logout" />
@@ -52,24 +48,25 @@
 
     <main>
       <section class="home-cards">
-        <div class="link-card">
+        <a href="students.html" class="link-card">
           <p class="sub-title">Students</p>
-          <p class="title">1240</p>
-        </div>
+          <p class="title" id="studentCount">0</p>
+        </a>
+
+
+        <a href="faculties.html" class="link-card">
+          <p class="sub-title">Faculties</p>
+          <p class="title" id="facultyCount">0</p>
+        </a>
 
         <div class="link-card">
-          <p class="sub-title">Faculty</p>
-          <p class="title">75</p>
-        </div>
-
-        <div class="link-card">
-          <p class="sub-title">Courses</p>
+          <p class="sub-title">Branch</p>
           <p class="title">58</p>
         </div>
 
         <div class="link-card">
           <p class="sub-title">Live sessions</p>
-          <p class="title">12</p>
+          <p class="title" id="liveSessionCount">0</p>
         </div>
       </section>
 
@@ -87,17 +84,28 @@
     </main>
 
     <script type="module">
-      import { getCurrentUser, logout } from '/utils/storage.js';
+  import { getCurrentUser, logout } from '/utils/storage.js';
 
-      document.querySelector('.user-name b').textContent =
-        getCurrentUser().name || 'Admin';
+  document.querySelector('.user-name b').textContent =
+    getCurrentUser().name || 'Admin';
 
-      document
-        .querySelector('.logout-btn')
-        .addEventListener('click', () => logout());
-    </script>
-    <script>
-      console.log("ahad");
-    </script>
+  document.querySelector('.logout-btn').addEventListener('click', () => logout());
+
+  async function getStats() {
+    const response = await fetch('/api/admin/stats');
+    const data = await response.json();
+
+    if (!data.ok) {
+      console.error(data.error);
+      return;
+    }
+
+    document.getElementById('studentCount').textContent = data.stats.students;
+    document.getElementById('facultyCount').textContent = data.stats.faculty;
+    document.getElementById('liveSessionCount').textContent = data.stats.liveSessions;
+  }
+
+  getStats();
+</script>
   </body>
 </html>
