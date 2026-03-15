@@ -24,3 +24,14 @@ button:active {
   opacity: 0.6;
   transform: scale(0.98);
 }
+
+.button-secondary {
+  color: #24292f;
+  background-color: #f6f8fa;
+  border: 1px solid #d0d7de;
+  transition: all 0.15s ease;
+}
+.button-secondary:hover {
+  background-color: #e1e4e8;
+  color: black;
+}

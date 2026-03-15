@@ -1,17 +1,27 @@
 import { Server } from 'socket.io';
 import utils from './in-memory-db.js';
 
+let io;
 export function initializeSocket(server) {
-  const io = new Server(server, {
+  io = new Server(server, {
     cors: { origin: '*', methods: ['GET', 'POST'] },
   });
 
   io.on('connection', socket => {
-    socket.on('register_teacher', () => utils.teacherSockets.push(socket));
+    socket.on('join_session', sessionId => {
+      socket.join(sessionId);
+    });
+
     socket.on('disconnect', () => {
-      utils.teacherSockets = utils.teacherSockets.filter(
-        s => s.id !== socket.id,
-      );
+      console.log('Disconnected');
     });
   });
+  return io;
+}
+
+export function getIO() {
+  if (!io) {
+    throw new Error('Socket.io not initialized');
+  }
+  return io;
 }

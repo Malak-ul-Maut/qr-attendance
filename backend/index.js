@@ -12,6 +12,8 @@ import authRouter from './routes/auth.routes.js';
 import sessionRouter from './routes/session.routes.js';
 import attendanceRouter from './routes/attendance.routes.js';
 import studentRouter from './routes/students.routes.js';
+import facultyRouter from './routes/faculty.routes.js';
+import adminRouter from './routes/admin.routes.js';
 
 // ----------------- Server Config -----------------
 const app = express();
@@ -29,6 +31,8 @@ app.use('/api/auth', authRouter);
 app.use('/api/session', sessionRouter);
 app.use('/api/attendance', attendanceRouter);
 app.use('/api/students', studentRouter);
+app.use('/api/faculty', facultyRouter);
+app.use('/api/admin', adminRouter);
 
 // ------------------ Initialize server ---------------------
 
@@ -43,7 +47,7 @@ const options = {
 };
 const server = https.createServer(options, app);
 
-initializeSocket(server); // Initialize Socket.io server
+const io = initializeSocket(server); // Initialize Socket.io server
 
 // Serve frontend
 const __filename = fileURLToPath(import.meta.url);

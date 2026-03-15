@@ -1,7 +1,10 @@
 main {
-  display: flex;
-  margin-left: 4rem;
+  margin-left: 6rem;
   margin-top: 6rem;
+}
+
+.homepage {
+  display: flex;
 }
 
 .home-cards {
@@ -47,4 +50,12 @@ ul {
   font-weight: 600;
   opacity: 0.8;
   margin-bottom: 12px;
+}
+
+.modal {
+  background: white;
+  padding: 20px;
+  width: 300px;
+  margin: 150px auto;
+  border-radius: 10px;
 }

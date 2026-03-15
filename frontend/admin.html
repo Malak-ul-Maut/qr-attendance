@@ -4,10 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin Portal</title>
+    <link
+      href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css"
+      rel="stylesheet" />
     <link rel="stylesheet" href="css/general.css" />
     <link rel="stylesheet" href="css/header.css" />
     <link rel="stylesheet" href="css/sidebar.css" />
     <link rel="stylesheet" href="css/card.css" />
+    <link rel="stylesheet" href="css/button.css" />
     <link rel="stylesheet" href="css/admin.css" />
     <script src="utils/auth-guard.js" type="module"></script>
   </head>
@@ -18,8 +22,7 @@
         <img
           style="cursor: pointer"
           src="icons/hamburger-menu.svg"
-          alt="Menu"
-        />
+          alt="Menu" />
       </div>
       <div class="middle-section">Admin Dashboard</div>
       <div class="right-section">
@@ -32,17 +35,17 @@
         <img src="icons/home.svg" alt="Home" />
         <div>Home</div>
       </div>
-      <div class="sidebar-content">
+      <div class="sidebar-content student-nav">
         <img src="icons/student.svg" alt="Students" />
         <div>Students</div>
       </div>
-      <div class="sidebar-content">
+      <div class="sidebar-content faculty-nav">
         <img src="icons/teacher.svg" alt="Faculty" />
         <div>Faculty</div>
       </div>
       <div class="sidebar-content">
         <img src="icons/courses.svg" alt="Courses" />
-        <div>Courses</div>
+        <div>Attendance</div>
       </div>
       <div class="sidebar-content logout-btn">
         <img src="icons/logout-black.svg" alt="Logout" />
@@ -51,53 +54,121 @@
     </nav>
 
     <main>
-      <section class="home-cards">
-        <div class="link-card">
-          <p class="sub-title">Students</p>
-          <p class="title">1240</p>
-        </div>
+      <section class="homepage">
+        <section class="home-cards">
+          <div class="link-card">
+            <p class="sub-title">Students</p>
+            <p class="title" id="studentCount"></p>
+          </div>
 
-        <div class="link-card">
-          <p class="sub-title">Faculty</p>
-          <p class="title">75</p>
-        </div>
+          <div class="link-card">
+            <p class="sub-title">Faculty</p>
+            <p class="title" id="facultyCount"></p>
+          </div>
 
-        <div class="link-card">
-          <p class="sub-title">Courses</p>
-          <p class="title">58</p>
-        </div>
+          <div class="link-card">
+            <p class="sub-title">Attendance</p>
+            <p class="title">58</p>
+          </div>
 
-        <div class="link-card">
-          <p class="sub-title">Live sessions</p>
-          <p class="title">12</p>
-        </div>
+          <div class="link-card">
+            <p class="sub-title">Live sessions</p>
+            <p class="title" id="liveSessionCount"></p>
+          </div>
+        </section>
+
+        <section class="activities">
+          <p>Activities</p>
+          <div>
+            <!-- Recent activities will be listed here -->
+            <ul>
+              <li>✔️ Attendance finalised for CSE101, 10:22 AM</li>
+              <li>➕ Student added: Yash Sharma</li>
+              <li>🕒 Session started for DBMS, Faculty: Mukesh Rathor</li>
+            </ul>
+          </div>
+        </section>
       </section>
 
-      <section class="activities">
-        <p>Activities</p>
-        <div>
-          <!-- Recent activities will be listed here -->
-          <ul>
-            <li>✔️ Attendance finalised for CSE101, 10:22 AM</li>
-            <li>➕ Student added: Yash Sharma</li>
-            <li>🕒 Session started for DBMS, Faculty: Mukesh Rathor</li>
-          </ul>
-        </div>
+      <section class="students" style="display: none">
+        <h2>Students</h2>
+        <button id="addStudentBtn">+ Add Student</button>
+        <div id="studentsTable"></div>
+
+        <dialog id="studentModal" class="modal">
+          <h3>Add Student</h3>
+
+          <form method="dialog">
+            <input type="text" id="studentName" placeholder="Name" required />
+            <input
+              type="text"
+              id="studentUsername"
+              placeholder="Username"
+              required />
+            <input
+              type="text"
+              id="studentPassword"
+              placeholder="Password"
+              required />
+            <input
+              type="text"
+              id="studentSection"
+              placeholder="Section"
+              required />
+            <div>
+              <button id="saveStudentBtn" type="submit">Save student</button>
+              <button id="closeStudentModalBtn" class="button-secondary">
+                Cancel
+              </button>
+            </div>
+          </form>
+        </dialog>
       </section>
+
+      <section class="faculty">
+        <h2>Faculty</h2>
+        <button id="addFacultyBtn">Add Faculty</button>
+        <div id="facultyTable"></div>
+
+        <dialog id="facultyModal" class="modal">
+          <h3>Add Faculty</h3>
+
+          <form method="dialog">
+            <input type="text" id="facultyName" placeholder="Name" required />
+            <input
+              type="text"
+              id="facultyUsername"
+              placeholder="Username"
+              required />
+            <input
+              type="text"
+              id="facultyPassword"
+              placeholder="Password"
+              required />
+            <input
+              type="text"
+              id="facultySubject"
+              placeholder="Subject Name"
+              required />
+            <input
+              type="text"
+              id="facultySection"
+              placeholder="Section"
+              required />
+            <div>
+              <button id="saveFacultyBtn">Save</button>
+              <button id="closeFacultyModalBtn" class="button-secondary">
+                Cancel
+              </button>
+            </div>
+          </form>
+        </dialog>
+      </section>
+
+      <section class="attendance"></section>
     </main>
 
-    <script type="module">
-      import { getCurrentUser, logout } from '/utils/storage.js';
-
-      document.querySelector('.user-name b').textContent =
-        getCurrentUser().name || 'Admin';
-
-      document
-        .querySelector('.logout-btn')
-        .addEventListener('click', () => logout());
-    </script>
-    <script>
-      console.log("Deepanshi");
-    </script>
+    <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
+    <script type="module" src="js/admin.js"></script>
   </body>
 </html>

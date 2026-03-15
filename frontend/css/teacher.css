@@ -99,16 +99,6 @@ canvas {
   color: #555;
   display: inline-block;
 }
-.white-btn {
-  color: #24292f;
-  background-color: #f6f8fa;
-  border: 1px solid #d0d7de;
-  transition: all 0.15s ease;
-}
-.white-btn:hover {
-  background-color: #e1e4e8;
-  color: black;
-}
 
 .toggle-fullscreen-btn {
   background-color: rgba(0, 0, 0, 0.205);

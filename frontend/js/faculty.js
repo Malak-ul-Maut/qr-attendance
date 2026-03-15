@@ -37,7 +37,7 @@ sections.forEach(sec => {
 const socket = io(location.origin);
 
 socket.on('connect', () => {
-  socket.emit('register_teacher');
+  socket.emit('register_teacher', sessionId);
 });
 
 // Dynamically generate html for attendance list
@@ -80,6 +80,7 @@ startBtn.addEventListener('click', async () => {
 
   const response = await postData('/api/session/start', { section, teacherId });
   sessionId = response.sessionId;
+  socket.emit('join_session', sessionId);
 
   beforeStart.style.display = 'none';
   afterStart.style.display = 'flex';

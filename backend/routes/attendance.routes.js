@@ -1,6 +1,7 @@
+import express from 'express';
 import db from '../utils/db.js';
 import utils from '../utils/in-memory-db.js';
-import express from 'express';
+import { getIO } from '../utils/socket-io.js';
 
 const router = express.Router();
 
@@ -57,15 +58,14 @@ router.post('/verify', (req, res) => {
         `INSERT INTO attendance (studentId, studentName, section, timestamp, sessionId, cameraFingerprint) VALUES (?, ?, ?, ?, ?, ?)`,
         [studentId, studentName, section, date, sessionId, cameraFingerprint],
         () => {
-          utils.teacherSockets.forEach(sock =>
-            sock.emit('attendance_update', {
-              studentId,
-              studentName,
-              section,
-              sessionId,
-              time: currentDate.toLocaleTimeString(),
-            }),
-          );
+          const io = getIO();
+          io.to(sessionId).emit('attendance_update', {
+            studentId,
+            studentName,
+            section,
+            sessionId,
+            time: currentDate.toLocaleTimeString(),
+          });
           return res.json({
             ok: true,
             message: 'Attendance recorded',
@@ -92,16 +92,14 @@ router.post('/manual', (req, res) => {
             'INSERT INTO attendance(studentId, studentName, section, sessionId, timestamp) VALUES(?,?,?,?,?)',
             [student.studentId, student.studentName, section, sessionId, date],
           );
-
-          utils.teacherSockets.forEach(sock =>
-            sock.emit('attendance_update', {
-              studentId: student.studentId,
-              studentName: student.studentName,
-              section,
-              sessionId,
-              time: currentDate.toLocaleTimeString(),
-            }),
-          );
+          const io = getIO();
+          io.to(sessionId).emit('attendance_update', {
+            studentId: student.studentId,
+            studentName: student.studentName,
+            section,
+            sessionId,
+            time: currentDate.toLocaleTimeString(),
+          });
         }
       },
     );
