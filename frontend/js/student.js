@@ -26,7 +26,7 @@ let descriptor = await loadDescriptors(studentId);
 if (!descriptor) {
   const res = await fetch(`/api/students/descriptors?id=${studentId}`);
   const data = await res.json();
-  await saveDescriptors(studentId, JSON.parse(data));
+  await saveDescriptors(studentId, data);
   console.log('cached face descriptors');
   descriptor = await loadDescriptors(studentId);
 }

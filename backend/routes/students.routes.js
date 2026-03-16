@@ -12,6 +12,19 @@ router.get('/', (req, res) => {
   );
 });
 
+router.get('/descriptors', (req, res) => {
+  const id = req.query.id;
+
+  db.get(
+    `SELECT faceDescriptors FROM users WHERE username = ?`,
+    [id],
+    (err, row) => {
+      if (!row) return res.status(404).json({ ok: false, error: 'not_found' });
+      return res.json(JSON.parse(row.faceDescriptors));
+    },
+  );
+});
+
 router.get('/:section', (req, res) => {
   const section = req.params.section;
   db.all(
@@ -39,14 +52,6 @@ router.post('/', (req, res) => {
   );
 });
 
-router.delete('/:studentId', (req, res) => {
-  const username = req.params.studentId;
-  db.run(`DELETE FROM users WHERE username = ?`, [username], () => {
-    return res.json({ success: true });
-  });
-});
-
-// User login
 router.post('/enroll', (req, res) => {
   const data = req.body;
 
@@ -61,17 +66,11 @@ router.post('/enroll', (req, res) => {
   return res.json({ ok: true });
 });
 
-router.get('/descriptors', (req, res) => {
-  const id = req.query.id;
-  db.get(
-    `SELECT faceDescriptors FROM users WHERE username = ?`,
-    [id],
-    (err, row) => {
-      if (err) return res.status(500).json({ ok: false, error: err });
-      if (!row) return res.status(404).json({ ok: false, error: 'not_found' });
-      return res.json(row.faceDescriptors);
-    },
-  );
+router.delete('/:studentId', (req, res) => {
+  const username = req.params.studentId;
+  db.run(`DELETE FROM users WHERE username = ?`, [username], () => {
+    return res.json({ success: true });
+  });
 });
 
 export default router;
