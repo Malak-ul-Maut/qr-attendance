@@ -21,6 +21,7 @@ main {
 .link-card {
   width: 12rem;
   padding: 2rem 0px;
+  cursor: pointer;
 }
 .title {
   padding-top: 0.4rem;

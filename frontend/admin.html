@@ -31,7 +31,7 @@
     </header>
 
     <nav class="sidebar">
-      <div class="sidebar-content">
+      <div class="sidebar-content" onclick="location.reload()">
         <img src="icons/home.svg" alt="Home" />
         <div>Home</div>
       </div>
@@ -56,12 +56,12 @@
     <main>
       <section class="homepage">
         <section class="home-cards">
-          <div class="link-card">
+          <div class="link-card student-link-card">
             <p class="sub-title">Students</p>
             <p class="title" id="studentCount"></p>
           </div>
 
-          <div class="link-card">
+          <div class="link-card faculty-link-card">
             <p class="sub-title">Faculty</p>
             <p class="title" id="facultyCount"></p>
           </div>
@@ -125,7 +125,7 @@
         </dialog>
       </section>
 
-      <section class="faculty">
+      <section class="faculty" style="display: none">
         <h2>Faculty</h2>
         <button id="addFacultyBtn">Add Faculty</button>
         <div id="facultyTable"></div>

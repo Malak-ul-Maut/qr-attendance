@@ -5,7 +5,7 @@ const router = express.Router();
 
 router.get('/', (req, res) => {
   db.all(
-    `SELECT username, name, section FROM users WHERE role='student'`,
+    `SELECT username, name, section, password FROM users WHERE role='student'`,
     (err, rows) => {
       return res.json(rows);
     },
@@ -64,6 +64,23 @@ router.post('/enroll', (req, res) => {
   });
 
   return res.json({ ok: true });
+});
+
+router.put('/:username', (req, res) => {
+  const { username } = req.params;
+  const { name, section, password } = req.body;
+
+  db.run(
+    `
+    UPDATE users
+    SET name=?, section=?, password=?
+    WHERE username=?
+  `,
+    [name, section, password, username],
+    () => {
+      return res.json({ success: true });
+    },
+  );
 });
 
 router.delete('/:studentId', (req, res) => {
