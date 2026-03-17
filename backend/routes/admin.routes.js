@@ -10,6 +10,7 @@ router.get('/stats', (req, res) => {
     students: 0,
     faculty: 0,
     liveSessions: 0,
+    attendance: 0,
   };
 
   db.get(
@@ -27,10 +28,17 @@ router.get('/stats', (req, res) => {
             (err, sessionRow) => {
               stats.liveSessions = sessionRow.count;
 
-              return res.json({
-                ok: true,
-                stats,
-              });
+              db.get(
+                `SELECT COUNT(*) AS count FROM attendance`,
+                (err, attendanceRow) => {
+                  stats.attendance = attendanceRow.count;
+
+                  return res.json({
+                    ok: true,
+                    stats,
+                  });
+                },
+              );
             },
           );
         },

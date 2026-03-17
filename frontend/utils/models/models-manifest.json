@@ -5,5 +5,8 @@
   "/utils/models/face_landmark_68_model-shard1",
   "/utils/models/face_recognition_model-weights_manifest.json",
   "/utils/models/face_recognition_model-shard1",
-  "/utils/models/face_recognition_model-shard2"
+  "/utils/models/face_recognition_model-shard2",
+  "/utils/models/ssd_mobilenetv1_model-weights_manifest.json",
+  "/utils/models/ssd_mobilenetv1_model-shard1",
+  "/utils/models/ssd_mobilenetv1_model-shard2"
 ]

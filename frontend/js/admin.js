@@ -5,6 +5,7 @@ let editingId = null;
 
 // ==================== Initialize Dashboard ====================
 initializeDashboard();
+await loadModels();
 
 async function initializeDashboard() {
   document.querySelector('.user-name b').textContent =
@@ -22,6 +23,8 @@ async function initializeDashboard() {
   document.getElementById('facultyCount').textContent = data.stats.faculty;
   document.getElementById('liveSessionCount').textContent =
     data.stats.liveSessions;
+  document.getElementById('attendanceCount').textContent =
+    data.stats.attendance;
 
   // Setup section managers
   setupSectionManager({
@@ -151,6 +154,8 @@ async function loadEntities(config) {
 }
 
 async function saveEntity(config) {
+  await loadModels();
+
   const data = {};
 
   config.fields.forEach(field => {
@@ -161,6 +166,34 @@ async function saveEntity(config) {
     }
     data[field.fieldName] = value;
   });
+
+  const files = document.getElementById('faceImages').files;
+
+  if (files.length === 0 && !editingId) {
+    alert('Upload at least one face image');
+    return;
+  }
+
+  document.getElementById('faceStatus').textContent = 'Processing faces...';
+
+  const descriptors = await getDescriptorsFromImages(files);
+
+  if (descriptors.length === 0) {
+    if (editingId) return;
+    alert('No valid faces detected');
+    return;
+  }
+
+  if (descriptors.length < 3) {
+    alert('Upload at least 3 images for better accuracy');
+  }
+
+  const centroid = computeCentroid(descriptors);
+
+  data.faceDescriptor = JSON.stringify(Array.from(centroid));
+
+  document.getElementById('faceStatus').textContent =
+    `Processed ${descriptors.length} images`;
 
   let method = 'POST';
   let url = config.apiEndpoint;
@@ -224,6 +257,67 @@ function clearFormFields(config) {
 
   document.querySelector(`#${config.modalId} h3`).textContent =
     `Add ${config.entityName}`;
+}
+
+async function getDescriptorsFromImages(files) {
+  const descriptors = [];
+
+  for (let file of files) {
+    const img = await faceapi.bufferToImage(file);
+
+    const detection = await faceapi
+      .detectSingleFace(img)
+      .withFaceLandmarks()
+      .withFaceDescriptor();
+
+    if (!detection) {
+      console.warn('No face detected in image');
+      continue;
+    }
+
+    if (detection.detection.score < 0.7) {
+      console.warn('Low confidence face skipped');
+      continue;
+    }
+
+    descriptors.push(detection.descriptor);
+
+    console.log('Face added:', detection.detection.score);
+  }
+  console.log(descriptors);
+  return descriptors;
+}
+
+function computeCentroid(descriptors) {
+  const length = descriptors[0].length;
+  const centroid = new Float32Array(length);
+
+  for (let i = 0; i < length; i++) {
+    let sum = 0;
+    for (const desc of descriptors) {
+      sum += desc[i];
+    }
+    centroid[i] = sum / descriptors.length;
+  }
+
+  return centroid;
+}
+
+async function loadModels() {
+  const isModelsLoaded = localStorage.getItem('isModelsLoaded');
+
+  // Pre-download and cache all models from manifest
+  if (!isModelsLoaded) {
+    await cacheModelsFromManifest('/utils/models/models-manifest.json');
+    localStorage.setItem('isModelsLoaded', true);
+  }
+
+  // Load models
+  Promise.all([
+    faceapi.nets.ssdMobilenetv1.loadFromUri('/utils/models'),
+    faceapi.nets.faceLandmark68Net.loadFromUri('/utils/models'),
+    faceapi.nets.faceRecognitionNet.loadFromUri('/utils/models'),
+  ]).then(() => console.log('models loaded'));
 }
 
 // ==================== Global Functions for Onclick Handlers ====================

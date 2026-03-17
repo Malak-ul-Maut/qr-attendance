@@ -14,6 +14,8 @@
     <link rel="stylesheet" href="css/button.css" />
     <link rel="stylesheet" href="css/admin.css" />
     <script src="utils/auth-guard.js" type="module"></script>
+    <script src="utils/cache-models.js"></script>
+    <script src="/utils/face-api.js"></script>
   </head>
 
   <body>
@@ -68,7 +70,7 @@
 
           <div class="link-card">
             <p class="sub-title">Attendance</p>
-            <p class="title">58</p>
+            <p class="title" id="attendanceCount">58</p>
           </div>
 
           <div class="link-card">
@@ -115,6 +117,9 @@
               id="studentSection"
               placeholder="Section"
               required />
+            <input type="file" id="faceImages" multiple accept="image/*" />
+            <p id="faceStatus">No images uploaded</p>
+            <canvas id="previewCanvas" style="display: none"></canvas>
             <div>
               <button id="saveStudentBtn" type="submit">Save student</button>
               <button id="closeStudentModalBtn" class="button-secondary">

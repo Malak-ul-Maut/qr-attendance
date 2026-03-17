@@ -37,46 +37,32 @@ router.get('/:section', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { studentId, name, section } = req.body;
+  const { username, name, section, password, faceDescriptor } = req.body;
 
   db.run(
     `
     INSERT INTO users
-    (username, name, section, role)
-    VALUES (?, ?, ?, 'student')
+    (username, name, section, password, faceDescriptor, role)
+    VALUES (?, ?, ?, ?, ?, 'student')
   `,
-    [studentId, name, section],
+    [username, name, section, password, faceDescriptor],
     () => {
       return res.json({ success: true });
     },
   );
 });
 
-router.post('/enroll', (req, res) => {
-  const data = req.body;
-
-  data.forEach(({ label, descriptor }) => {
-    db.run(
-      `
-    UPDATE users SET faceDescriptors = ? WHERE username = ?`,
-      [JSON.stringify(descriptor), label],
-    );
-  });
-
-  return res.json({ ok: true });
-});
-
 router.put('/:username', (req, res) => {
   const { username } = req.params;
-  const { name, section, password } = req.body;
+  const { name, section, password, faceDescriptor } = req.body;
 
   db.run(
     `
     UPDATE users
-    SET name=?, section=?, password=?
+    SET name=?, section=?, password=?, faceDescriptor=?
     WHERE username=?
   `,
-    [name, section, password, username],
+    [name, section, password, faceDescriptor, username],
     () => {
       return res.json({ success: true });
     },
