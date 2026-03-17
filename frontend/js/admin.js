@@ -5,7 +5,6 @@ let editingId = null;
 
 // ==================== Initialize Dashboard ====================
 initializeDashboard();
-await loadModels();
 
 async function initializeDashboard() {
   document.querySelector('.user-name b').textContent =
@@ -38,6 +37,7 @@ async function initializeDashboard() {
     closeBtnId: 'closeStudentModalBtn',
     apiEndpoint: '/api/students',
     entityName: 'Student',
+    needsFaceRecognition: true,
     fields: [
       { id: 'studentName', fieldName: 'name' },
       {
@@ -64,6 +64,7 @@ async function initializeDashboard() {
     closeBtnId: 'closeFacultyModalBtn',
     apiEndpoint: '/api/faculty',
     entityName: 'Faculty',
+    needsFaceRecognition: false,
     fields: [
       { id: 'facultyUsername', fieldName: 'username' },
       { id: 'facultyName', fieldName: 'name' },
@@ -79,42 +80,30 @@ async function initializeDashboard() {
 }
 
 // ==================== Generic Section Manager ====================
+function showSection(config) {
+  // Hide all sections
+  document.querySelector('.homepage').style.display = 'none';
+  document.querySelector('.students').style.display = 'none';
+  document.querySelector('.faculty').style.display = 'none';
+  document.querySelector('.attendance').style.display = 'none';
+
+  currentConfig = config;
+
+  // Show current section
+  document.querySelector(config.sectionSelector).style.display = 'block';
+  loadEntities(config);
+}
+
 function setupSectionManager(config) {
   const nav = document.querySelector(config.navSelector);
   const linkCard = document.querySelector(config.linkCardSelector);
-  const section = document.querySelector(config.sectionSelector);
   const modal = document.getElementById(config.modalId);
   const addBtn = document.getElementById(config.addBtnId);
   const saveBtn = document.getElementById(config.saveBtnId);
   const closeBtn = modal.querySelector(`[id="${config.closeBtnId}"]`);
 
-  nav.addEventListener('click', () => {
-    // Hide all sections
-    document.querySelector('.homepage').style.display = 'none';
-    document.querySelector('.students').style.display = 'none';
-    document.querySelector('.faculty').style.display = 'none';
-    document.querySelector('.attendance').style.display = 'none';
-
-    currentConfig = config;
-
-    // Show current section
-    section.style.display = 'block';
-    loadEntities(config);
-  });
-
-  linkCard.addEventListener('click', () => {
-    // Hide all sections
-    document.querySelector('.homepage').style.display = 'none';
-    document.querySelector('.students').style.display = 'none';
-    document.querySelector('.faculty').style.display = 'none';
-    document.querySelector('.attendance').style.display = 'none';
-
-    currentConfig = config;
-
-    // Show current section
-    section.style.display = 'block';
-    loadEntities(config);
-  });
+  nav.addEventListener('click', () => showSection(config));
+  linkCard.addEventListener('click', () => showSection(config));
 
   addBtn.onclick = () => {
     editingId = null;
@@ -154,8 +143,6 @@ async function loadEntities(config) {
 }
 
 async function saveEntity(config) {
-  await loadModels();
-
   const data = {};
 
   config.fields.forEach(field => {
@@ -167,33 +154,38 @@ async function saveEntity(config) {
     data[field.fieldName] = value;
   });
 
-  const files = document.getElementById('faceImages').files;
+  // Only process face recognition for students
+  if (config.needsFaceRecognition) {
+    await loadModels();
 
-  if (files.length === 0 && !editingId) {
-    alert('Upload at least one face image');
-    return;
+    const files = document.getElementById('faceImages').files;
+
+    if (files.length === 0 && !editingId) {
+      alert('Upload at least one face image');
+      return;
+    }
+
+    document.getElementById('faceStatus').textContent = 'Processing faces...';
+
+    const descriptors = await getDescriptorsFromImages(files);
+
+    if (descriptors.length === 0 && !editingId) {
+      alert('No valid faces detected');
+      return;
+    }
+
+    if (descriptors.length > 0 && descriptors.length < 3) {
+      alert('Upload at least 3 images for better accuracy');
+    }
+
+    // Only compute centroid if there are descriptors
+    if (descriptors.length > 0) {
+      const centroid = computeCentroid(descriptors);
+      data.faceDescriptor = JSON.stringify(Array.from(centroid));
+      document.getElementById('faceStatus').textContent =
+        `Processed ${descriptors.length} images`;
+    }
   }
-
-  document.getElementById('faceStatus').textContent = 'Processing faces...';
-
-  const descriptors = await getDescriptorsFromImages(files);
-
-  if (descriptors.length === 0) {
-    if (editingId) return;
-    alert('No valid faces detected');
-    return;
-  }
-
-  if (descriptors.length < 3) {
-    alert('Upload at least 3 images for better accuracy');
-  }
-
-  const centroid = computeCentroid(descriptors);
-
-  data.faceDescriptor = JSON.stringify(Array.from(centroid));
-
-  document.getElementById('faceStatus').textContent =
-    `Processed ${descriptors.length} images`;
 
   let method = 'POST';
   let url = config.apiEndpoint;
@@ -289,6 +281,10 @@ async function getDescriptorsFromImages(files) {
 }
 
 function computeCentroid(descriptors) {
+  if (!descriptors || descriptors.length === 0) {
+    throw new Error('No face descriptors provided');
+  }
+
   const length = descriptors[0].length;
   const centroid = new Float32Array(length);
 
