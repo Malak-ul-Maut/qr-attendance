@@ -12,6 +12,7 @@
       faceapi.nets.tinyFaceDetector.loadFromUri('/utils/models'),
       faceapi.nets.faceLandmark68Net.loadFromUri('/utils/models'),
       faceapi.nets.faceRecognitionNet.loadFromUri('/utils/models'),
+      faceapi.nets.ssdMobilenetv1.loadFromUri('/utils/models'),
     ])
       .then(() => alert('Models loaded.'))
       .then(sendDescriptors);

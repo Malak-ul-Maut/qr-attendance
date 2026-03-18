@@ -101,27 +101,30 @@
           <h3>Add Student</h3>
 
           <form method="dialog">
-            <input type="text" id="studentName" placeholder="Name" required />
-            <input
-              type="text"
-              id="studentUsername"
-              placeholder="Username"
-              required />
-            <input
-              type="text"
-              id="studentPassword"
-              placeholder="Password"
-              required />
-            <input
-              type="text"
-              id="studentSection"
-              placeholder="Section"
-              required />
+            <div>
+              Name:
+              <input type="text" id="studentName" required />
+            </div>
+
+            <div>
+              Username:
+              <input type="text" id="studentUsername" required />
+            </div>
+
+            <div>
+              Password:
+              <input type="text" id="studentPassword" />
+            </div>
+
+            <div>
+              Section:
+              <input type="text" id="studentSection" required />
+            </div>
+
             <input type="file" id="faceImages" multiple accept="image/*" />
             <p id="faceStatus">No images uploaded</p>
-            <canvas id="previewCanvas" style="display: none"></canvas>
             <div>
-              <button id="saveStudentBtn" type="submit">Save student</button>
+              <button id="saveStudentBtn" type="button">Save student</button>
               <button id="closeStudentModalBtn" class="button-secondary">
                 Cancel
               </button>
@@ -132,34 +135,38 @@
 
       <section class="faculty" style="display: none">
         <h2>Faculty</h2>
-        <button id="addFacultyBtn">Add Faculty</button>
+        <button id="addFacultyBtn">+ Add Faculty</button>
         <div id="facultyTable"></div>
 
         <dialog id="facultyModal" class="modal">
           <h3>Add Faculty</h3>
 
           <form method="dialog">
-            <input type="text" id="facultyName" placeholder="Name" required />
-            <input
-              type="text"
-              id="facultyUsername"
-              placeholder="Username"
-              required />
-            <input
-              type="text"
-              id="facultyPassword"
-              placeholder="Password"
-              required />
-            <input
-              type="text"
-              id="facultySubject"
-              placeholder="Subject Name"
-              required />
-            <input
-              type="text"
-              id="facultySection"
-              placeholder="Section"
-              required />
+            <div>
+              Name:
+              <input type="text" id="facultyName" required />
+            </div>
+
+            <div>
+              Username:
+              <input type="text" id="facultyUsername" required />
+            </div>
+
+            <div>
+              Password:
+              <input type="text" id="facultyPassword" required />
+            </div>
+
+            <div>
+              Subject:
+              <input type="text" id="facultySubject" required />
+            </div>
+
+            <div>
+              Section:
+              <input type="text" id="facultySection" required />
+            </div>
+
             <div>
               <button id="saveFacultyBtn">Save</button>
               <button id="closeFacultyModalBtn" class="button-secondary">

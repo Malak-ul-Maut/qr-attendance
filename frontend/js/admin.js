@@ -136,8 +136,19 @@ async function loadEntities(config) {
          <button onclick="window.deleteEntity('${entity[config.usernameField]}', '${config.apiEndpoint}', '${config.entityName}')" class="button-secondary">Delete</button>`,
       ),
     ]),
+    style: {
+      td: {
+        border: '1px solid #ccc',
+      },
+      table: {
+        'font-size': '18px',
+      },
+    },
+    width: '70%',
+    height: '500px',
     search: true,
     pagination: { limit: 15 },
+    fixedHeader: true,
     sort: true,
   }).render(document.getElementById(config.tableId));
 }
@@ -148,7 +159,6 @@ async function saveEntity(config) {
   config.fields.forEach(field => {
     const value = document.getElementById(field.id).value;
     if (!value) {
-      alert(`Please fill in ${field.placeholder}`);
       throw new Error(`Missing required field: ${field.placeholder}`);
     }
     data[field.fieldName] = value;
@@ -182,8 +192,6 @@ async function saveEntity(config) {
     if (descriptors.length > 0) {
       const centroid = computeCentroid(descriptors);
       data.faceDescriptor = JSON.stringify(Array.from(centroid));
-      document.getElementById('faceStatus').textContent =
-        `Processed ${descriptors.length} images`;
     }
   }
 
@@ -202,9 +210,11 @@ async function saveEntity(config) {
   });
 
   if (response.ok) {
-    editingId = null;
-    document.getElementById(config.modalId).close();
-    location.reload();
+    setTimeout(() => {
+      editingId = null;
+      document.getElementById(config.modalId).close();
+      location.reload();
+    }, 2000);
   } else {
     alert('Error saving entity');
   }
@@ -254,8 +264,16 @@ function clearFormFields(config) {
 async function getDescriptorsFromImages(files) {
   const descriptors = [];
 
-  for (let file of files) {
-    const img = await faceapi.bufferToImage(file);
+  const saveBtn = document.getElementById('saveStudentBtn');
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Processing...';
+
+  const faceStatus = document.getElementById('faceStatus');
+
+  for (let i = 0; i < files.length; i++) {
+    faceStatus.textContent = `Processing image ${i + 1} of ${files.length}...`;
+
+    const img = await faceapi.bufferToImage(files[i]);
 
     const detection = await faceapi
       .detectSingleFace(img)
@@ -276,7 +294,10 @@ async function getDescriptorsFromImages(files) {
 
     console.log('Face added:', detection.detection.score);
   }
-  console.log(descriptors);
+
+  faceStatus.textContent = 'Saved successfully ✅';
+  saveBtn.disabled = false;
+  saveBtn.textContent = 'Save';
   return descriptors;
 }
 
@@ -300,16 +321,10 @@ function computeCentroid(descriptors) {
 }
 
 async function loadModels() {
-  const isModelsLoaded = localStorage.getItem('isModelsLoaded');
-
-  // Pre-download and cache all models from manifest
-  if (!isModelsLoaded) {
-    await cacheModelsFromManifest('/utils/models/models-manifest.json');
-    localStorage.setItem('isModelsLoaded', true);
-  }
+  await cacheModelsFromManifest('/utils/models/models-manifest.json');
 
   // Load models
-  Promise.all([
+  await Promise.all([
     faceapi.nets.ssdMobilenetv1.loadFromUri('/utils/models'),
     faceapi.nets.faceLandmark68Net.loadFromUri('/utils/models'),
     faceapi.nets.faceRecognitionNet.loadFromUri('/utils/models'),

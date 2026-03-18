@@ -1,6 +1,7 @@
 main {
   margin-left: 6rem;
-  margin-top: 6rem;
+  margin-top: 4rem;
+  max-height: 50vh;
 }
 
 .homepage {
@@ -60,3 +61,61 @@ ul {
   margin: 150px auto;
   border-radius: 10px;
 }
+
+section h2 {
+  font-size: 2rem;
+  font-weight: 800;
+  opacity: 0.8;
+  display: inline-block;
+}
+
+#studentModal p {
+  display: inline-block;
+}
+
+#studentModal input,
+#facultyModal input {
+  font-size: 0.8rem;
+  font-weight: 500;
+  border-radius: 0.4rem;
+  margin-bottom: 0.2rem;
+  padding: 0.2rem 0.4rem;
+}
+
+#studentModal div,
+#facultyModal div {
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+#addStudentBtn,
+#addFacultyBtn {
+  margin-left: 2rem;
+}
+
+/* button {
+  color: white;
+  font-size: 14px;
+  font-weight: 550;
+  cursor: pointer;
+  width: max-content;
+  height: 40px;
+  
+  margin-top: 8px;
+  border-radius: 0.8rem;
+  border: none;
+  
+  opacity: 0.9;
+  transition:
+    opacity 0.15s,
+    transform 0.1s,
+    background-color 0.1s;
+}
+button:hover {
+  box-shadow: 0 2px 4px gray;
+  background-color: hsl(223, 46%, 23%);
+}
+button:active {
+  opacity: 0.6;
+  transform: scale(0.98);
+} */
