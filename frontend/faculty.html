@@ -47,9 +47,17 @@
 
     <section id="beforeStart">
       <div id="sub-name"></div>
-      <div class="select-section">
-        <label for="section">Select section:</label>
-        <select id="section"></select>
+      <div>Date: <input type="date" id="date" /></div>
+      <div>
+        <label for="session-type">Session type:</label>
+        <select id="session-type">
+          <option value="regular">Regular</option>
+          <option value="arranged">Arranged</option>
+        </select>
+      </div>
+      <div>
+        <label for="slots">Select slot:</label>
+        <select id="slots"></select>
       </div>
       <button id="startSessionBtn" type="button">Start session</button>
     </section>

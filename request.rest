@@ -1,0 +1,95 @@
+POST https://localhost:4000/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "amolsir",
+  "password": "password",
+  "role": "faculty"
+}
+###
+
+GET https://localhost:4000/api/session/slots?date=2026-12-07&faculty_id=1
+
+
+
+###
+
+POST https://localhost:4000/api/session/start
+Content-Type: application/json
+
+{
+  "section": "B",
+  "teacherId": "amolsir"
+}
+
+###
+
+POST https://localhost:4000/api/session/token
+Content-Type: application/json
+
+{
+  "sessionId": "sess_jxgigf4s118"
+}
+
+###
+
+POST https://localhost:4000/api/session/finalize
+Content-Type: application/json
+
+{
+  "sessionId": "sess_jxgigf4s118",
+  "keepStudentIds": ["ali", "yash"]
+}
+
+###
+
+POST https://localhost:4000/api/attendance/verify
+Content-Type: application/json
+
+{
+  "studentId": "ali",
+  "studentName": "Ahad Ali",
+  "token": "x3fo66i5ly",
+  "cameraFingerprint": "akdha3dakhisrw74t87t7tatfa87eth8"
+}
+
+
+###
+
+POST https://localhost:4000/api/students/enroll
+Content-Type: application/json
+
+[{
+  "label": "aarav",
+  "descriptor": "223"
+},{
+  "label": "rohil",
+  "descriptor": "609"
+}]
+
+###
+
+GET https://localhost:4000/api/students/descriptors?id=ali
+
+###
+GET https://localhost:4000/api/students/A
+
+###
+
+POST https://localhost:4000/api/attendance/manual
+Content-Type: application/json
+
+{
+  "sessionId": "sess_f36qsfuhmaw",
+  "students": [{
+    "studentId": "ali",
+    "studentName": "Ahad Ali"
+  },{
+    "studentId": "yash",
+    "studentName": "Yash Sharma"
+  }]
+}
+
+###
+
+GET https://localhost:4000/api/admin/stats

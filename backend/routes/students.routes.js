@@ -1,5 +1,6 @@
 import express from 'express';
 import db from '../utils/db.js';
+import db2 from '../utils/test-db.js';
 
 const router = express.Router();
 
@@ -25,13 +26,25 @@ router.get('/descriptors', (req, res) => {
   );
 });
 
-router.get('/:section', (req, res) => {
-  const section = req.params.section;
-  db.all(
-    'SELECT username, name FROM users WHERE role="student" AND section=?',
-    [section],
+router.get('/:sessionCode', (req, res) => {
+  const sessionCode = req.params.sessionCode;
+
+  db2.all(
+    `
+    SELECT DISTINCT users.*
+    FROM sessions
+    JOIN timetable ON timetable.id = sessions.timetable_id
+    JOIN students ON students.class_id = timetable.class_id
+    JOIN users ON users.id = students.user_id
+    WHERE sessions.session_code = ?`,
+    [sessionCode],
     (err, rows) => {
-      res.json(rows);
+      if (err) {
+        console.error(err);
+        return res.status(500).json({ ok: false });
+      }
+
+      return res.json(rows);
     },
   );
 });

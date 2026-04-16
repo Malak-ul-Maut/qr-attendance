@@ -10,7 +10,7 @@ const studentCount = document.querySelector('#studentCount');
 const addManuallyBtn = document.querySelector('#add-manually-btn');
 const dialog = document.querySelector('#manual-attendance-dialog');
 const addSelectedBtn = document.querySelector('#add-selected-btn');
-let sessionId = null;
+let sessionCode = null;
 let qrTimer = null;
 
 // Display username, subject and section
@@ -23,21 +23,38 @@ subjectName.textContent = getCurrentUser().subName;
 const logoutBtn = document.querySelector('.logout-btn');
 logoutBtn.addEventListener('click', () => logout());
 
-const sectionDropdown = document.querySelector('#section');
-sectionDropdown.innerHTML = '';
-const sections = getCurrentUser().section.split(',');
-sections.forEach(sec => {
-  const option = document.createElement('option');
-  option.value = sec.trim();
-  option.textContent = sec.trim();
-  sectionDropdown.appendChild(option);
+// const sectionDropdown = document.querySelector('#section');
+// sectionDropdown.innerHTML = '';
+// const sections = getCurrentUser().section.split(',');
+// sections.forEach(sec => {
+//   const option = document.createElement('option');
+//   option.value = sec.trim();
+//   option.textContent = sec.trim();
+//   sectionDropdown.appendChild(option);
+// });
+
+const dateElement = document.querySelector('#date');
+const slotsDropdown = document.querySelector('#slots');
+dateElement.addEventListener('change', async event => {
+  slotsDropdown.innerHTML = '';
+  const res = await fetch(
+    `/api/session/slots?date=${event.target.value}&faculty_id=1`,
+  );
+  const slotsList = await res.json();
+
+  slotsList.forEach(slot => {
+    const option = document.createElement('option');
+    option.value = slot.id;
+    option.textContent = `${slot.label}: ${slot.start_time} - ${slot.end_time}`;
+    slotsDropdown.appendChild(option);
+  });
 });
 
 // --------------- Socket initialization -------------
 const socket = io(location.origin);
 
 socket.on('connect', () => {
-  socket.emit('register_teacher', sessionId);
+  socket.emit('register_teacher', sessionCode);
 });
 
 // Dynamically generate html for attendance list
@@ -72,15 +89,22 @@ socket.on('attendance_update', data => {
 const startBtn = document.querySelector('#startSessionBtn');
 
 startBtn.addEventListener('click', async () => {
-  const section = document.querySelector('#section').value;
-  const teacherId = getCurrentUser().username;
+  // const section = document.querySelector('#section').value;
+  const slotId = document.querySelector('#slots').value;
+  const date = document.querySelector('#date').value;
+  const facultyId = getCurrentUser().username;
 
   const toggleFullScreenBtn = document.querySelector('.toggle-fullscreen-btn');
   toggleFullScreenBtn.addEventListener('click', () => toggleFullScreen());
 
-  const response = await postData('/api/session/start', { section, teacherId });
-  sessionId = response.sessionId;
-  socket.emit('join_session', sessionId);
+  const response = await postData('/api/session/start', {
+    date,
+    slotId,
+    facultyId: 1,
+  });
+
+  sessionCode = response.sessionCode;
+  socket.emit('join_session', sessionCode);
 
   beforeStart.style.display = 'none';
   afterStart.style.display = 'flex';
@@ -90,23 +114,17 @@ startBtn.addEventListener('click', async () => {
 });
 
 addManuallyBtn.addEventListener('click', async () => {
-  const section = document.querySelector('#section').value;
-
-  const res = await fetch(`/api/students/${section}`);
+  const res = await fetch(`/api/students/${sessionCode}`);
   const students = await res.json();
 
-  console.log(students);
-
   const unmarkedStudents = students.filter(
-    s => !markedStudents.has(s.username),
+    s => !markedStudents.has(String(s.id)),
   );
-  console.log(unmarkedStudents);
 
   showManualPopup(unmarkedStudents);
 });
 
 addSelectedBtn.addEventListener('click', async () => {
-  const section = document.querySelector('#section').value;
   const selected = document.querySelectorAll(
     '#manual-attendance-list input:checked',
   );
@@ -115,16 +133,14 @@ addSelectedBtn.addEventListener('click', async () => {
 
   selected.forEach(cb => {
     students.push({
-      studentId: cb.value,
-      studentName: cb.dataset.name,
-      section,
+      id: cb.value,
+      name: cb.dataset.name,
     });
   });
 
   await postData('/api/attendance/manual', {
-    sessionId: sessionId,
-    students: students,
-    section,
+    sessionCode,
+    students,
   });
 
   dialog.close();
@@ -165,7 +181,10 @@ function renderQR(data) {
   QRCode.toCanvas(canvas, data.token, options);
 
   qrTimer = setTimeout(async () => {
-    const tokenData = await postData('/api/session/token', { sessionId });
+    const tokenData = await postData('/api/session/token', {
+      sessionCode,
+    });
+
     if (!tokenData.ok) return console.warn('Token refresh failed:', tokenData);
 
     renderQR(tokenData);
@@ -210,11 +229,11 @@ function showManualPopup(students) {
     const li = document.createElement('li');
     const span = document.createElement('span');
     span.textContent = student.name;
-    span.dataset.id = student.username;
+    span.dataset.id = student.id;
 
     const checkBox = document.createElement('input');
     checkBox.type = 'checkbox';
-    checkBox.value = student.username;
+    checkBox.value = student.id;
     checkBox.dataset.name = student.name;
 
     li.appendChild(span);

@@ -1,5 +1,6 @@
 import express from 'express';
 import db from '../utils/db.js';
+import db2 from '../utils/test-db.js';
 import utils from '../utils/in-memory-db.js';
 import { getIO } from '../utils/socket-io.js';
 
@@ -78,34 +79,52 @@ router.post('/verify', (req, res) => {
 
 // Manual attendance by faculty
 router.post('/manual', (req, res) => {
-  const { sessionId, students, section } = req.body;
+  const { sessionCode, students } = req.body;
   const currentDate = new Date();
   const date = currentDate.toLocaleString();
 
   students.forEach(student => {
-    db.get(
-      'SELECT * FROM attendance WHERE studentId=? AND sessionId=?',
-      [student.studentId, sessionId],
-      (err, row) => {
-        if (!row) {
-          db.run(
-            'INSERT INTO attendance(studentId, studentName, section, sessionId, timestamp) VALUES(?,?,?,?,?)',
-            [student.studentId, student.studentName, section, sessionId, date],
-          );
-          const io = getIO();
-          io.to(sessionId).emit('attendance_update', {
-            studentId: student.studentId,
-            studentName: student.studentName,
-            section,
-            sessionId,
-            time: currentDate.toLocaleTimeString(),
-          });
+    db2.get(
+      'SELECT id FROM sessions WHERE session_code = ?',
+      [sessionCode],
+      (err, session) => {
+        if (err) {
+          console.error(err);
+          return res.status(500).json({ ok: false });
         }
+        if (!session) {
+          return res
+            .status(404)
+            .json({ ok: false, message: 'Session not found' });
+        }
+
+        const sessionId = session.id;
+
+        const stmt = db2.prepare(`
+          INSERT OR IGNORE INTO attendance (session_id, student_id, status, timestamp)
+          VALUES (?, ?, 'present', ?)
+        `);
+
+        students.forEach(student => {
+          stmt.run(sessionId, student.id, date, function () {
+            if (this.changes > 0) {
+              const io = getIO();
+              io.to(sessionCode).emit('attendance_update', {
+                studentId: student.id,
+                studentName: student.name,
+                sessionCode,
+                time: date,
+              });
+            }
+          });
+        });
+
+        stmt.finalize();
+
+        res.json({ ok: true });
       },
     );
   });
-
-  res.json({ success: true });
 });
 
 export default router;

@@ -8,8 +8,8 @@ export function initializeSocket(server) {
   });
 
   io.on('connection', socket => {
-    socket.on('join_session', sessionId => {
-      socket.join(sessionId);
+    socket.on('join_session', sessionCode => {
+      socket.join(sessionCode);
     });
 
     socket.on('disconnect', () => {
