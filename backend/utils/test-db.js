@@ -167,22 +167,22 @@ const db = new sqlite3.Database(
 //   `);
 // });
 
-db.all(
-  `
-  SELECT 
-  students.id,
-  students.roll_number,
-  students.class_id
-  FROM timetable
-  JOIN students ON students.class_id = timetable.class_id
-  WHERE timetable.day = ?
-  AND timetable.faculty_id = ?;
-  `,
-  ['Monday', 1],
-  (err, rows) => {
-    if (err) console.error(err);
-    else console.log(rows);
-  },
-);
+// db.all(
+//   `
+//   SELECT
+//   students.id,
+//   students.roll_number,
+//   students.class_id
+//   FROM timetable
+//   JOIN students ON students.class_id = timetable.class_id
+//   WHERE timetable.day = ?
+//   AND timetable.faculty_id = ?;
+//   `,
+//   ['Monday', 1],
+//   (err, rows) => {
+//     if (err) console.error(err);
+//     else console.log(rows);
+//   },
+// );
 
 export default db;
