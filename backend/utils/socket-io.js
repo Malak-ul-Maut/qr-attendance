@@ -1,5 +1,4 @@
 import { Server } from 'socket.io';
-import utils from './in-memory-db.js';
 
 let io;
 export function initializeSocket(server) {

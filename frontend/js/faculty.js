@@ -23,16 +23,6 @@ subjectName.textContent = getCurrentUser().subName;
 const logoutBtn = document.querySelector('.logout-btn');
 logoutBtn.addEventListener('click', () => logout());
 
-// const sectionDropdown = document.querySelector('#section');
-// sectionDropdown.innerHTML = '';
-// const sections = getCurrentUser().section.split(',');
-// sections.forEach(sec => {
-//   const option = document.createElement('option');
-//   option.value = sec.trim();
-//   option.textContent = sec.trim();
-//   sectionDropdown.appendChild(option);
-// });
-
 const dateElement = document.querySelector('#date');
 const slotsDropdown = document.querySelector('#slots');
 dateElement.addEventListener('change', async event => {
@@ -159,11 +149,11 @@ submitBtn.addEventListener('click', async () => {
   });
 
   const response = await postData('/api/session/finalize', {
-    sessionId,
+    sessionCode,
     keepStudentIds,
   });
   if (!response.ok) return console.error('Finalize returned error:', data);
-
+  11111111111111111111111111111;
   alert('✔ Attendance submitted successfully');
   if (document.fullscreenElement) toggleFullScreen();
   clearAttendanceUI();

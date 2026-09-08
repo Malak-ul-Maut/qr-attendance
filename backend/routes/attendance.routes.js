@@ -34,7 +34,7 @@ router.post('/verify', (req, res) => {
       (err, row) => {
         if (!row) return res.json({ ok: false, error: 'not_your_section' });
 
-        sessionId = tokenData.sessionId;
+        sessionId = tokenData.sessionCode;
         section = tokenData.section;
 
         return res.json({ ok: true, sessionId, section });
@@ -110,7 +110,7 @@ router.post('/manual', (req, res) => {
             if (this.changes > 0) {
               const io = getIO();
               io.to(sessionCode).emit('attendance_update', {
-                studentId: student.id,
+                studentId: student.username,
                 studentName: student.name,
                 sessionCode,
                 time: date,

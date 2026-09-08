@@ -170,6 +170,7 @@ async function startFaceVerification(sessionId, section, cameraFingerprint) {
   stopCamera(video);
   scanResult.textContent = 'Submitting attendance...';
 
+  console.log(sessionId);
   const response = await postData('/api/attendance/verify', {
     studentId,
     studentName,

@@ -17,11 +17,11 @@ router.get('/descriptors', (req, res) => {
   const id = req.query.id;
 
   db.get(
-    `SELECT faceDescriptors FROM users WHERE username = ?`,
+    `SELECT faceDescriptor FROM users WHERE username = ?`,
     [id],
     (err, row) => {
       if (!row) return res.status(404).json({ ok: false, error: 'not_found' });
-      return res.json(JSON.parse(row.faceDescriptors));
+      return res.json(JSON.parse(row.faceDescriptor));
     },
   );
 });

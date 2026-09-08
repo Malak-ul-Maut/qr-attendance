@@ -74,8 +74,11 @@ router.post('/start', (req, res) => {
   db2.all(
     `
     SELECT 
-    timetable.id
+    timetable.id,
+    sections.name AS section
     FROM timetable
+    JOIN classes ON classes.id = timetable.class_id
+    JOIN sections ON sections.id = classes.section_id
     WHERE timetable.day = ?
     AND timetable.slot_id = ? 
     AND timetable.faculty_id = ?;
@@ -94,11 +97,11 @@ router.post('/start', (req, res) => {
           [sessionCode, id, date, facultyId],
         );
       });
+
+      let token = createSessionToken(sessionCode, 3, rows[0]?.section);
+      return res.json({ ok: true, sessionCode, token });
     },
   );
-
-  let token = createSessionToken(sessionCode, 3);
-  return res.json({ ok: true, sessionCode, token });
 });
 
 // Issue a fresh token for an existing sessionId
@@ -107,7 +110,12 @@ router.post('/token', (req, res) => {
 
   db2.get(
     `
-    SELECT * FROM sessions WHERE session_code = ?`,
+    SELECT sessions.*, sections.label AS section
+    FROM sessions
+    JOIN timetable ON timetable.id = sessions.timetable_id
+    JOIN classes ON classes.id = timetable.class_id
+    JOIN sections ON sections.id = classes.section_id
+    WHERE session_code = ?`,
     [sessionCode],
     (err, row) => {
       if (!row)
@@ -115,7 +123,7 @@ router.post('/token', (req, res) => {
 
       if (row.end_time !== null)
         return res.status(400).json({ ok: false, error: 'session_ended' });
-      let token = createSessionToken(sessionCode, 3);
+      let token = createSessionToken(sessionCode, 3, row.section);
       return res.json({ ok: true, token });
     },
   );
@@ -123,25 +131,24 @@ router.post('/token', (req, res) => {
 
 // Finalize attendance
 router.post('/finalize', (req, res) => {
-  const { sessionId, keepStudentIds } = req.body;
-  sessions[sessionId].active = false;
+  const { sessionCode, keepStudentIds } = req.body;
   const placeholders = keepStudentIds.map(() => '?').join(','); // '?,?,?,?,....,?'
-
+  console.log(sessionCode, keepStudentIds);
   db.run(
     `UPDATE sessions SET endTime = datetime('now'), status = 'ended' WHERE sessionId = ?`,
-    [sessionId],
+    [sessionCode],
   );
 
   if (keepStudentIds.length === 0) {
     utils.teacherSockets.forEach(sock =>
-      sock.emit('session_finalized', { sessionId }),
+      sock.emit('session_finalized', { sessionCode }),
     );
     return res.json({ ok: true, message: 'Finalized (no students kept)' });
   }
 
   db.run(
     `UPDATE attendance SET removed = 0 WHERE sessionId = ? AND studentId IN (${placeholders})`,
-    [sessionId, ...keepStudentIds],
+    [sessionCode, ...keepStudentIds],
     () => {
       return res.json({
         ok: true,
@@ -152,10 +159,10 @@ router.post('/finalize', (req, res) => {
   );
 });
 
-function createSessionToken(sessionCode, expiresInSeconds) {
+function createSessionToken(sessionCode, expiresInSeconds, section) {
   const token = Math.random().toString(36).slice(2);
   const expiresAt = Date.now() + expiresInSeconds * 1000;
-  utils.activeTokens[token] = { sessionCode, expiresAt };
+  utils.activeTokens[token] = { sessionCode, section, expiresAt };
 
   setTimeout(() => delete utils.activeTokens[token], expiresInSeconds * 1000);
   return token;
