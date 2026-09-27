@@ -14,6 +14,7 @@ import attendanceRouter from './routes/attendance.routes.js';
 import studentRouter from './routes/students.routes.js';
 import facultyRouter from './routes/faculty.routes.js';
 import adminRouter from './routes/admin.routes.js';
+import cctvRouter from './routes/cctv.routes.js';
 
 // ----------------- Server Config -----------------
 const app = express();
@@ -22,7 +23,7 @@ app.use(express.json());
 app.use(
   cors({
     origin: '*',
-    methods: ['GET', 'POST'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   }),
 );
@@ -33,6 +34,7 @@ app.use('/api/attendance', attendanceRouter);
 app.use('/api/students', studentRouter);
 app.use('/api/faculty', facultyRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/attendance/cctv', cctvRouter);
 
 // ------------------ Initialize server ---------------------
 

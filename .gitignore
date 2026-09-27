@@ -1,2 +1,13 @@
-node_modules
+# Dependencies and Python-generated files
 # .env
+node_modules
+venv/
+.venv/
+__pycache__/
+
+# Face-recognition data and generated output
+backend/gallery/
+backend/models
+backend/cache/
+backend/outputs/
+backend/*.avi

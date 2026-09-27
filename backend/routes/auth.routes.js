@@ -1,5 +1,5 @@
 import express from 'express';
-import db from '../utils/db.js';
+import db from '../utils/test-db.js';
 
 const router = express.Router();
 
@@ -7,7 +7,20 @@ const router = express.Router();
 router.post('/login', (req, res) => {
   const { username, password, role } = req.body;
   db.get(
-    `SELECT * FROM users WHERE username = ? AND password = ? AND role = ?`,
+    `
+    SELECT 
+    users.id, 
+    users.name AS user_name, 
+    users.username, 
+    users.role, 
+    users.password,
+    subjects.name AS subject_name
+    FROM users
+    JOIN faculty
+    ON faculty.user_id = users.id
+    JOIN subjects
+    ON subjects.id = faculty.subject_id
+    WHERE users.username = ? AND users.password = ? AND users.role = ?`,
     [username, password, role],
     (err, row) => {
       if (err) {
@@ -22,9 +35,13 @@ router.post('/login', (req, res) => {
           ok: false,
           error: 'invallid_credentials',
         });
-      const { name, username, subjectName, section } = row;
 
-      return res.json({ ok: true, name, username, subjectName, section });
+      return res.json({
+        ok: true,
+        name: row.user_name,
+        username: row.username,
+        subjectName: row.subject_name,
+      });
     },
   );
 });

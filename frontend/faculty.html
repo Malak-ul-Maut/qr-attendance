@@ -59,6 +59,17 @@
         <label for="slots">Select slot:</label>
         <select id="slots"></select>
       </div>
+      <div>
+        <label for="attendance-method">Attendance method:</label>
+        <select id="attendance-method">
+          <option value="qr">QR Code</option>
+          <option value="cctv">CCTV</option>
+        </select>
+      </div>
+      <div id="class-selection" style="display: none">
+        <label for="classes">Classes:</label>
+        <div id="classes"></div>
+      </div>
       <button id="startSessionBtn" type="button">Start session</button>
     </section>
 

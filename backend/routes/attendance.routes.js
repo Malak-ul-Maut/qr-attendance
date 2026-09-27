@@ -77,54 +77,95 @@ router.post('/verify', (req, res) => {
   );
 });
 
-// Manual attendance by faculty
-router.post('/manual', (req, res) => {
-  const { sessionCode, students } = req.body;
-  const currentDate = new Date();
-  const date = currentDate.toLocaleString();
+// Manual attendance by faculty.
+// Resolve each student to the session row whose timetable class matches the student.
+router.post('/manual', async (req, res) => {
+  const { sessionCode, students = [] } = req.body;
+  const timestamp = new Date().toLocaleString();
 
-  students.forEach(student => {
-    db2.get(
-      'SELECT id FROM sessions WHERE session_code = ?',
+  if (!sessionCode) {
+    return res.status(400).json({ ok: false, error: 'missing_session_code' });
+  }
+
+  try {
+    const sessionRows = await allDb2(
+      `
+      SELECT sessions.id AS session_id, timetable.class_id
+      FROM sessions
+      JOIN timetable ON timetable.id = sessions.timetable_id
+      WHERE sessions.session_code = ?
+      `,
       [sessionCode],
-      (err, session) => {
-        if (err) {
-          console.error(err);
-          return res.status(500).json({ ok: false });
-        }
-        if (!session) {
-          return res
-            .status(404)
-            .json({ ok: false, message: 'Session not found' });
-        }
+    );
 
-        const sessionId = session.id;
+    if (sessionRows.length === 0) {
+      return res.status(404).json({ ok: false, error: 'session_not_found' });
+    }
 
-        const stmt = db2.prepare(`
-          INSERT OR IGNORE INTO attendance (session_id, student_id, status, timestamp)
-          VALUES (?, ?, 'present', ?)
-        `);
+    const io = getIO();
+    let added = 0;
 
-        students.forEach(student => {
-          stmt.run(sessionId, student.id, date, function () {
-            if (this.changes > 0) {
-              const io = getIO();
-              io.to(sessionCode).emit('attendance_update', {
-                studentId: student.username,
-                studentName: student.name,
-                sessionCode,
-                time: date,
-              });
-            }
-          });
+    for (const student of students) {
+      const dbStudent = await getDb2(
+        `SELECT id, class_id FROM students WHERE id = ?`,
+        [student.id],
+      );
+      if (!dbStudent) continue;
+
+      const session = sessionRows.find(
+        row => row.class_id === dbStudent.class_id,
+      );
+      if (!session) continue;
+
+      const changes = await insertAttendance(
+        session.session_id,
+        dbStudent.id,
+        timestamp,
+      );
+
+      if (changes > 0) {
+        added++;
+        io.to(sessionCode).emit('attendance_update', {
+          studentId: dbStudent.id,
+          studentName: student.name,
+          sessionCode,
+          time: timestamp,
+          method: 'manual',
         });
+      }
+    }
 
-        stmt.finalize();
+    return res.json({ ok: true, added });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ ok: false, error: 'database_error' });
+  }
+});
 
-        res.json({ ok: true });
+function allDb2(sql, params) {
+  return new Promise((resolve, reject) => {
+    db2.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows)));
+  });
+}
+
+function getDb2(sql, params) {
+  return new Promise((resolve, reject) => {
+    db2.get(sql, params, (err, row) => (err ? reject(err) : resolve(row)));
+  });
+}
+
+function insertAttendance(sessionId, studentId, timestamp) {
+  return new Promise((resolve, reject) => {
+    db2.run(
+      `INSERT OR IGNORE INTO attendance (session_id, student_id, status, timestamp)
+       VALUES (?, ?, 'present', ?)`,
+      [sessionId, studentId, timestamp],
+      function (err) {
+        if (err) return reject(err);
+        resolve(this.changes);
       },
     );
   });
-});
+}
 
 export default router;
