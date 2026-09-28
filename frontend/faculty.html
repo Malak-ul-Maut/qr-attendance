@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="css/header.css" />
     <link rel="stylesheet" href="css/sidebar.css" />
     <link rel="stylesheet" href="css/button.css" />
-    <link rel="stylesheet" href="css/teacher.css" />
+    <link rel="stylesheet" href="css/faculty.css" />
 
     <script src="/utils/auth-guard.js" type="module"></script>
   </head>
@@ -85,12 +85,29 @@
         <div>
           <p id="studentCount">Present: 0</p>
           <button id="add-manually-btn" type="button">Add Manually</button>
+          <button id="viewCctvResultBtn" type="button">View CCTV Result</button>
           <button
             id="submit-attendance-btn"
             class="button-secondary"
             type="button">
             Submit
           </button>
+          <div
+            id="cctvResultModal"
+            class="modal hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cctvResultTitle">
+            <div class="modal-content">
+              <button
+                id="closeCctvResult"
+                type="button"
+                aria-label="Close CCTV result">
+                ×
+              </button>
+              <img id="cctvResultImage" src="" alt="CCTV attendance result" />
+            </div>
+          </div>
         </div>
 
         <dialog id="manual-attendance-dialog">

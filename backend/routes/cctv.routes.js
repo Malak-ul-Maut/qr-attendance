@@ -17,8 +17,7 @@ const RECOGNIZE_SCRIPT =
 const TEST_CLIP =
   process.env.CCTV_TEST_CLIP || path.resolve(__dirname, '../f310.avi');
 const ANNOTATED_DIR =
-  process.env.CCTV_ANNOTATED_DIR ||
-  path.resolve(__dirname, '../outputs/annotated');
+  process.env.CCTV_ANNOTATED_DIR || path.resolve(__dirname, '../results');
 const RECOGNIZE_TIMEOUT_MS = Number(
   process.env.CCTV_RECOGNIZE_TIMEOUT_MS || 60_000,
 );
@@ -57,10 +56,7 @@ router.post('/run', async (req, res) => {
     );
     const rosterPath = path.join(tempDir, 'roster.json');
     const resultPath = path.join(tempDir, 'result.json');
-    const annotatedPath = path.join(
-      ANNOTATED_DIR,
-      `${sessionCode}-${Date.now()}.jpg`,
-    );
+    const annotatedPath = path.join(ANNOTATED_DIR, `${sessionCode}.jpg`);
 
     await fs.writeFile(rosterPath, JSON.stringify(roster, null, 2), 'utf8');
 

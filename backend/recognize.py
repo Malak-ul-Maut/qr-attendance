@@ -300,15 +300,15 @@ def load_cached_roi(video_path):
 
 # ---------------------------------------------------------------- attendance
 def process_frame(model, tracker, crop, gallery, identity_map, present, attempts_used, track_identity,
-                  track_boxes, args, frame_index):
+                  track_boxes, track_best_scores, args, frame_index):
     """
     Feed one frame's detected faces through the tracker. For any track not yet resolved, spend up
     to --max-attempts recognition attempts (skipping frames that fail the free quality pre-checks)
     until it matches a gallery student above --threshold, or the budget runs out.
 
     `present` (student_id -> record), `attempts_used` (track_id -> count), `track_identity`
-    (track_id -> student_id, or None once given up on), and `track_boxes` (track_id -> last known
-    bbox, for the final annotated image) are all updated in place.
+    (track_id -> student_id, or None once given up on), `track_boxes` (track_id -> last known
+    bbox), and `track_best_scores` (track_id -> best trusted similarity) are updated in place.
     Returns [(record, face), ...] for students newly marked present THIS frame.
     """
     gallery_embeddings, gallery_names = gallery
@@ -340,6 +340,7 @@ def process_frame(model, tracker, crop, gallery, identity_map, present, attempts
             continue  # AdaFace itself is not confident in this crop; the attempt still counted, but ignore the result
 
         name, score = nearest_gallery_match(face.normed_embedding, gallery_embeddings, gallery_names)
+        track_best_scores[track_id] = max(track_best_scores.get(track_id, float("-inf")), score)
         if score < args.threshold:
             continue  # no match on this attempt - track stays open for another try on a later frame
 
@@ -366,7 +367,7 @@ def save_debug_snapshot(debug_dir, crop, face, record):
     save_image(debug_dir / f"{record['student_id']}.jpg", snapshot)
 
 
-def save_aggregate_annotation(out_path, canvas, track_boxes, track_identity, present, identity_map):
+def save_aggregate_annotation(out_path, canvas, track_boxes, track_identity, track_best_scores, present, identity_map):
     """
     One final image summarising the whole clip: every track's LAST known box, drawn on `canvas`
     (the most recent frame read). Green + name + similarity for a track that resolved to a
@@ -378,7 +379,7 @@ def save_aggregate_annotation(out_path, canvas, track_boxes, track_identity, pre
     scale = max(0.6, image_height / 900)
     box_thickness = max(2, round(2 * scale))
     font_size = max(0.4, 0.5 * scale)
-    text_thickness = max(1, round(1.4 * scale))
+    text_thickness = max(1, round(1.3 * scale))
     padding = max(2, round(2 * scale))
     gap = max(2, round(4 * scale))
     font = cv2.FONT_HERSHEY_SIMPLEX
@@ -396,6 +397,8 @@ def save_aggregate_annotation(out_path, canvas, track_boxes, track_identity, pre
             record = by_student_id.get(student_id)
             color = (0, 200, 0)
             label = f"{record.get('name').split()[0]} {record['best_score']:.3f}" if record else str(student_id)
+        if student_id is None and track_id in track_best_scores:
+            label = f"{label} {track_best_scores[track_id]:.3f}"
         cv2.rectangle(annotated, (x1, y1), (x2, y2), color, box_thickness)
 
         label_padding = min(padding, max(0, (image_width - 1) // 2))
@@ -434,14 +437,14 @@ def parse_args():
                         help="roster JSON from the backend; omit to use gallery folder names as identities directly")
     parser.add_argument("--class-id", default=None,
                         help="keys the embeddings cache so different classes never share one cache file")
-    parser.add_argument("--json-out", default=str(HERE / "outputs" / "result.json"))
-    parser.add_argument("--annotated-out", default="backend/outputs/result.jpg",
-                        help="save one final annotated image here (last frame, every track's box, green=matched/red=unmatched); omit to skip")
+    parser.add_argument("--json-out", default=str(HERE / "results" / "result.json"))
+    parser.add_argument("--annotated-out", default=None,
+                        help="save one final annotated image here (last frame, every track's box, green=matched/red=unmatched); omit to skip. Already saved by cctv.routes.js")
     parser.add_argument("--threshold", type=float, default=0.26,
                         help="similarity needed for ONE recognition attempt to count as a match - set this from calibrate.py's report, not this default")
     parser.add_argument("--max-attempts", type=int, default=5,
                         help="recognition attempts allowed per track before giving up on it")
-    parser.add_argument("--every", type=int, default=, help="process every Nth frame")
+    parser.add_argument("--every", type=int, default=72, help="process every Nth frame")
     parser.add_argument("--duration", type=float, default=10,
                         help="stop after this many seconds of video time, regardless of who has been found - the real scan budget. Always set this for a live/RTSP source; for a recorded file, omitting it just falls back to the file's own length")
     parser.add_argument("--det-size", default="1920x1080")
@@ -502,7 +505,7 @@ def main():
          f"from t={args.start:.1f}s" + (f" to t={end_time:.1f}s" if end_time else " to end of source"))
 
     tracker = Tracker()
-    present, attempts_used, track_identity, track_boxes = {}, {}, {}, {}
+    present, attempts_used, track_identity, track_boxes, track_best_scores = {}, {}, {}, {}, {}
     started = time.perf_counter()
     frame_no, processed, last_crop = 0, 0, None
 
@@ -525,7 +528,7 @@ def main():
         crop = frame[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w]
         last_crop = crop
         newly_present = process_frame(model, tracker, crop, gallery, identity_map, present, attempts_used,
-                                      track_identity, track_boxes, args, frame_no)
+                                      track_identity, track_boxes, track_best_scores, args, frame_no)
         for record, face in newly_present:
             print(f"  frame {frame_no} (t={t:.1f}s): "
                  f"{record.get('name') or record['student_id']} present (score {record['best_score']:.2f})")
@@ -548,7 +551,7 @@ def main():
 
     if args.annotated_out and last_crop is not None:
         out_path = save_aggregate_annotation(args.annotated_out, last_crop, track_boxes, track_identity,
-                                             present, identity_map)
+                                             track_best_scores, present, identity_map)
         result["annotated_image"] = str(out_path)
         print(f"  annotated image: {out_path}")
 

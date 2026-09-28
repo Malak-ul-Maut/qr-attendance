@@ -9,5 +9,5 @@ __pycache__/
 backend/gallery/
 backend/models
 backend/cache/
-backend/outputs/
+backend/results/
 backend/*.avi

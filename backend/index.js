@@ -68,6 +68,8 @@ app.use(
 
 app.use(express.static(FRONTEND_DIR));
 
+app.use('/results', express.static(path.join(__dirname, 'results')));
+
 // If someone hits a route that's not an API (fallback)
 app.get(/^\/(?!api).*/, (req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, 'homepage.html'));

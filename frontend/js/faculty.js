@@ -187,6 +187,24 @@ async function runCCTV() {
   studentCount.textContent = `Present: ${response.presentStudents.length}`;
 }
 
+const cctvResultModal = document.getElementById('cctvResultModal');
+
+document.getElementById('viewCctvResultBtn').addEventListener('click', () => {
+  document.getElementById('cctvResultImage').src =
+    `/results/${sessionCode}.jpg`;
+  cctvResultModal.classList.remove('hidden');
+});
+
+document.getElementById('closeCctvResult').addEventListener('click', () => {
+  cctvResultModal.classList.add('hidden');
+});
+
+cctvResultModal.addEventListener('click', event => {
+  if (event.target === cctvResultModal) {
+    cctvResultModal.classList.add('hidden');
+  }
+});
+
 addManuallyBtn.addEventListener('click', async () => {
   const res = await fetch(`/api/students/${sessionCode}`);
   const students = await res.json();
