@@ -1,6 +1,6 @@
 import express from 'express';
 import utils from '../utils/in-memory-db.js';
-import db from '../utils/test-db.js';
+import db from '../utils/db.js';
 import { getIO } from '../utils/socket-io.js';
 
 // --------------- Session Routes ----------------
@@ -128,16 +128,21 @@ router.post('/start', (req, res) => {
 
   if (method === 'cctv' && Array.isArray(classIds) && classIds.length > 0) {
     const placeholders = classIds.map(() => '?').join(', ');
-    classFilter = `AND timetable.room_id IN (${placeholders})`;
+    classFilter = `AND EXISTS (
+      SELECT 1
+      FROM classes selected_class
+      WHERE selected_class.room_id = timetable.room_id
+        AND selected_class.id IN (${placeholders})
+    )`;
     params.push(...classIds);
   }
 
   db.all(
     `
-    SELECT 
-      timetable.id, 
-      timetable.room_id, 
-      sections.label AS section
+    SELECT
+      timetable.id,
+      timetable.room_id,
+      MIN(sections.label) AS section
     FROM timetable
     JOIN classes ON classes.room_id = timetable.room_id
     JOIN sections ON sections.id = classes.section_id
@@ -147,6 +152,7 @@ router.post('/start', (req, res) => {
       AND timetable.slot_id = ? 
       AND users.username = ? 
       ${classFilter}
+    GROUP BY timetable.id, timetable.room_id
     ORDER BY timetable.id;
     `,
     params,
@@ -160,13 +166,14 @@ router.post('/start', (req, res) => {
         return res.status(404).json({ ok: false, error: 'no_timetable_entry' });
       }
 
+      const startTime = new Date().toLocaleTimeString();
       let completed = 0;
       let failed = false;
 
       rows.forEach(row => {
         db.run(
-          `INSERT INTO sessions (session_code, timetable_id, date, start_time) VALUES (?, ?, ?, datetime('now'))`,
-          [sessionCode, row.id, date],
+          `INSERT INTO sessions (session_code, timetable_id, date, start_time) VALUES (?, ?, ?, ?)`,
+          [sessionCode, row.id, date, startTime],
           insertErr => {
             if (insertErr && !failed) {
               failed = true;
@@ -227,23 +234,68 @@ router.post('/token', (req, res) => {
 
 // Finalize attendance and close every session row belonging to this session code.
 router.post('/finalize', (req, res) => {
-  const { sessionCode } = req.body;
+  const { sessionCode, presentStudentIds } = req.body;
 
   if (!sessionCode) {
     return res.status(400).json({ ok: false, error: 'missing_session_code' });
   }
+  if (!Array.isArray(presentStudentIds)) {
+    return res
+      .status(400)
+      .json({ ok: false, error: 'invalid_present_student_ids' });
+  }
+
+  const checkedStudentIds = [...new Set(presentStudentIds.map(Number))];
+  if (checkedStudentIds.some(id => !Number.isSafeInteger(id) || id <= 0)) {
+    return res
+      .status(400)
+      .json({ ok: false, error: 'invalid_present_student_ids' });
+  }
+  const studentIdPlaceholders = checkedStudentIds.length
+    ? checkedStudentIds.map(() => '?').join(', ')
+    : 'NULL';
 
   db.run(
-    `UPDATE sessions SET end_time = datetime('now') WHERE session_code = ?`,
-    [sessionCode],
-    function (err) {
+    `
+    INSERT INTO attendance (session_id, student_id, status, timestamp)
+    SELECT
+      sessions.id,
+      students.id,
+      CASE
+        WHEN students.id IN (${studentIdPlaceholders})
+          THEN 'present'
+        ELSE 'absent'
+      END,
+      ?
+    FROM sessions
+    JOIN timetable ON timetable.id = sessions.timetable_id
+    JOIN classes ON classes.room_id = timetable.room_id
+    JOIN students ON students.class_id = classes.id
+    WHERE sessions.session_code = ?
+    ON CONFLICT(session_id, student_id) DO UPDATE SET
+      status = excluded.status,
+      timestamp = excluded.timestamp
+    `,
+    [...checkedStudentIds, new Date().toLocaleString(), sessionCode],
+    err => {
       if (err) {
         console.error(err);
         return res.status(500).json({ ok: false, error: 'database_error' });
       }
 
-      getIO().to(sessionCode).emit('session_finalized', { sessionCode });
-      return res.json({ ok: true, message: 'Finalized' });
+      db.run(
+        `UPDATE sessions SET end_time = ? WHERE session_code = ?`,
+        [new Date().toLocaleTimeString(), sessionCode],
+        updateErr => {
+          if (updateErr) {
+            console.error(updateErr);
+            return res.status(500).json({ ok: false, error: 'database_error' });
+          }
+
+          getIO().to(sessionCode).emit('session_finalized', { sessionCode });
+          return res.json({ ok: true, message: 'Finalized' });
+        },
+      );
     },
   );
 });

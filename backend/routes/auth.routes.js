@@ -1,5 +1,5 @@
 import express from 'express';
-import db from '../utils/test-db.js';
+import db from '../utils/db.js';
 
 const router = express.Router();
 
@@ -16,9 +16,9 @@ router.post('/login', (req, res) => {
     users.password,
     subjects.name AS subject_name
     FROM users
-    JOIN faculty
+    LEFT JOIN faculty
     ON faculty.user_id = users.id
-    JOIN subjects
+    LEFT JOIN subjects
     ON subjects.id = faculty.subject_id
     WHERE users.username = ? AND users.password = ? AND users.role = ?`,
     [username, password, role],

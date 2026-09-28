@@ -11,6 +11,7 @@ const addManuallyBtn = document.querySelector('#add-manually-btn');
 const dialog = document.querySelector('#manual-attendance-dialog');
 const addSelectedBtn = document.querySelector('#add-selected-btn');
 const startBtn = document.querySelector('#startSessionBtn');
+const viewCctvResultBtn = document.querySelector('#viewCctvResultBtn');
 const methodDropdown = document.querySelector('#attendance-method');
 const classSelection = document.querySelector('#class-selection');
 const classesPara = document.querySelector('#classes');
@@ -138,6 +139,7 @@ startBtn.addEventListener('click', async () => {
   if (!slotId) return alert('Please select a slot.');
 
   startBtn.disabled = true;
+  viewCctvResultBtn.disabled = true;
 
   try {
     const response = await postData('/api/session/start', {
@@ -184,23 +186,67 @@ async function runCCTV() {
     return;
   }
 
-  studentCount.textContent = `Present: ${response.presentStudents.length}`;
+  const presentStudentIds = new Set(
+    response.presentStudents.map(student => String(student.student_id)),
+  );
+
+  response.students.forEach(student => {
+    const studentId = String(student.id);
+    markedStudents.add(studentId);
+
+    const li = document.createElement('li');
+    const span = document.createElement('span');
+    span.textContent = student.name;
+    span.dataset.id = studentId;
+
+    const checkBox = document.createElement('input');
+    checkBox.type = 'checkbox';
+    checkBox.checked = presentStudentIds.has(studentId);
+    checkBox.dataset.id = studentId;
+    checkBox.addEventListener('change', () => {
+      span.classList.toggle('strike', !checkBox.checked);
+      updatePresentCount();
+    });
+    span.classList.toggle('strike', !checkBox.checked);
+
+    li.appendChild(span);
+    li.appendChild(checkBox);
+    studentList.appendChild(li);
+  });
+
+  updatePresentCount();
+  viewCctvResultBtn.disabled = false;
 }
 
 const cctvResultModal = document.getElementById('cctvResultModal');
 
-document.getElementById('viewCctvResultBtn').addEventListener('click', () => {
+viewCctvResultBtn.addEventListener('click', () => {
   document.getElementById('cctvResultImage').src =
     `/results/${sessionCode}.jpg`;
   cctvResultModal.classList.remove('hidden');
+  cctvResultModal.requestFullscreen?.().catch(() => {});
 });
 
-document.getElementById('closeCctvResult').addEventListener('click', () => {
+function closeCctvResult() {
   cctvResultModal.classList.add('hidden');
+  if (document.fullscreenElement === cctvResultModal) {
+    document.exitFullscreen();
+  }
+}
+
+cctvResultModal.addEventListener('click', closeCctvResult);
+
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && !cctvResultModal.classList.contains('hidden')) {
+    closeCctvResult();
+  }
 });
 
-cctvResultModal.addEventListener('click', event => {
-  if (event.target === cctvResultModal) {
+document.addEventListener('fullscreenchange', () => {
+  if (
+    !cctvResultModal.classList.contains('hidden') &&
+    document.fullscreenElement !== cctvResultModal
+  ) {
     cctvResultModal.classList.add('hidden');
   }
 });
@@ -243,15 +289,15 @@ document
   .querySelector('#submit-attendance-btn')
   .addEventListener('click', async () => {
     const students = studentList.querySelectorAll('input[type=checkbox]');
-    const keepStudentIds = [];
+    const presentStudentIds = [];
 
     students.forEach(student => {
-      if (student.checked) keepStudentIds.push(student.dataset.id);
+      if (student.checked) presentStudentIds.push(student.dataset.id);
     });
 
     const response = await postData('/api/session/finalize', {
       sessionCode,
-      keepStudentIds,
+      presentStudentIds,
     });
 
     if (!response.ok)
