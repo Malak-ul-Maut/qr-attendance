@@ -11,7 +11,6 @@ const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Configure these with environment variables when the Python project is elsewhere.
 const RECOGNIZE_SCRIPT =
   process.env.CCTV_RECOGNIZE_SCRIPT ||
   path.resolve(__dirname, '../recognize.py');
@@ -20,13 +19,8 @@ const TEST_CLIP =
 const ANNOTATED_DIR =
   process.env.CCTV_ANNOTATED_DIR ||
   path.resolve(__dirname, '../outputs/annotated');
-// How long recognize.py is allowed to scan before we give up on the request, in milliseconds.
-// This is the wall-clock counterpart of recognize.py's --duration (video-time) flag below.
 const RECOGNIZE_TIMEOUT_MS = Number(
   process.env.CCTV_RECOGNIZE_TIMEOUT_MS || 60_000,
-);
-const RECOGNIZE_DURATION_SECONDS = Number(
-  process.env.CCTV_RECOGNIZE_DURATION_SECONDS || 30,
 );
 
 // Run the current CCTV recognizer against the selected class.
@@ -52,11 +46,10 @@ router.post('/run', async (req, res) => {
         .json({ ok: false, error: 'class_has_no_students' });
     }
 
-    // TODO: once `students.face_gallery_folder` exists, use it and drop this fallback.
     const roster = allStudents.map(student => ({
       student_id: student.id,
       name: student.name,
-      gallery_folder: student.roll_number,
+      gallery_folder: `${student.id}_${student.username}_${student.roll_number}`,
     }));
 
     const tempDir = await fs.mkdtemp(
@@ -64,7 +57,6 @@ router.post('/run', async (req, res) => {
     );
     const rosterPath = path.join(tempDir, 'roster.json');
     const resultPath = path.join(tempDir, 'result.json');
-    await fs.mkdir(ANNOTATED_DIR, { recursive: true });
     const annotatedPath = path.join(
       ANNOTATED_DIR,
       `${sessionCode}-${Date.now()}.jpg`,
@@ -87,20 +79,14 @@ router.post('/run', async (req, res) => {
       resultPath,
       '--annotated-out',
       annotatedPath,
-      // The real scan budget - see recognize.py's docstring on why "keep going until everyone's
-      // present" isn't a workable stopping rule when a class will always have absentees.
-      '--duration',
-      String(RECOGNIZE_DURATION_SECONDS),
     ];
 
     const result = await runPython(args, RECOGNIZE_TIMEOUT_MS);
+    console.log(result);
     const output = JSON.parse(await fs.readFile(resultPath, 'utf8'));
     console.log(output);
 
-    // Whoever recognize.py found IS the roster for this session - classes.room_id already
-    // scoped it to exactly the students sharing this room, so nothing further to filter here.
     const present = output.present_students || [];
-
     const timestamp = new Date().toLocaleString();
     const io = getIO();
 
@@ -165,8 +151,6 @@ function getSessionContext(sessionCode) {
 // Everyone whose class shares this room (classes.room_id) - covers a solo class and a combined
 // lecture the same way, since a solo class is just a room with one class in it.
 function getStudentsForRoom(roomId) {
-  // TODO: once `students.face_gallery_folder` exists, select it and drop the roll_number
-  // fallback in the roster-building step below.
   return new Promise((resolve, reject) => {
     db.all(
       `

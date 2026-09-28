@@ -370,25 +370,55 @@ def save_aggregate_annotation(out_path, canvas, track_boxes, track_identity, pre
     """
     One final image summarising the whole clip: every track's LAST known box, drawn on `canvas`
     (the most recent frame read). Green + name + similarity for a track that resolved to a
-    student; red + "unmatched" for a track that used up its attempts without matching anyone.
-    Tracks still mid-attempt when the clip ended (never confirmed, never given up) are skipped -
-    there is nothing conclusive to report for them yet.
+    student; red + "unmatched" for a track that used up its attempts without matching anyone;
+    red + "unknown" for a track that was still unresolved when the clip ended.
     """
     annotated = canvas.copy()
+    image_height, image_width = annotated.shape[:2]
+    scale = max(0.6, image_height / 900)
+    box_thickness = max(2, round(2 * scale))
+    font_size = max(0.4, 0.5 * scale)
+    text_thickness = max(1, round(1.4 * scale))
+    padding = max(2, round(2 * scale))
+    gap = max(2, round(4 * scale))
+    font = cv2.FONT_HERSHEY_SIMPLEX
     by_student_id = {v["student_id"]: v for v in present.values()}
     for track_id, box in track_boxes.items():
-        if track_id not in track_identity:
-            continue  # still undecided when the clip ended - not a green or red verdict either way
-        student_id = track_identity[track_id]
         x1, y1, x2, y2 = (int(v) for v in box)
-        if student_id is None:
+        if track_id not in track_identity:
+            student_id = None
+            color, label = (0, 0, 220), "unknown"
+        elif track_identity[track_id] is None:
+            student_id = None
             color, label = (0, 0, 220), "unmatched"
         else:
+            student_id = track_identity[track_id]
             record = by_student_id.get(student_id)
             color = (0, 200, 0)
-            label = f"{record.get('name') or student_id} {record['best_score']:.2f}" if record else str(student_id)
-        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
-        cv2.putText(annotated, label, (x1, max(0, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2, cv2.LINE_AA)
+            label = f"{record.get('name').split()[0]} {record['best_score']:.3f}" if record else str(student_id)
+        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, box_thickness)
+
+        label_padding = min(padding, max(0, (image_width - 1) // 2))
+        label_font_size = font_size
+        (text_width, text_height), baseline = cv2.getTextSize(label, font, label_font_size, text_thickness)
+        available_text_width = max(1, image_width - label_padding * 2)
+        if text_width > available_text_width:
+            label_font_size *= available_text_width / text_width
+            (text_width, text_height), baseline = cv2.getTextSize(label, font, label_font_size, text_thickness)
+        label_width = text_width + label_padding * 2
+        label_height = text_height + baseline + label_padding * 2
+        label_x = min(max(0, x1), max(0, image_width - label_width))
+        if y1 - label_height - gap >= 0:
+            label_top = y1 - label_height - gap
+        else:
+            label_top = min(y2 + gap, max(0, image_height - label_height))
+        label_baseline = label_top + label_padding + text_height
+
+        cv2.rectangle(annotated, (label_x, label_top),
+                      (min(image_width - 1, label_x + label_width), min(image_height - 1, label_top + label_height)),
+                      color, -1)
+        cv2.putText(annotated, label, (label_x + label_padding, label_baseline), font, label_font_size,
+                    (255, 255, 255), text_thickness, cv2.LINE_AA)
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     save_image(out_path, annotated)
@@ -405,29 +435,23 @@ def parse_args():
     parser.add_argument("--class-id", default=None,
                         help="keys the embeddings cache so different classes never share one cache file")
     parser.add_argument("--json-out", default=str(HERE / "outputs" / "result.json"))
-    parser.add_argument("--annotated-out", default=None,
-                        help="save one final annotated image here (last frame, every track's box, "
-                             "green=matched/red=unmatched); omit to skip")
+    parser.add_argument("--annotated-out", default="backend/outputs/result.jpg",
+                        help="save one final annotated image here (last frame, every track's box, green=matched/red=unmatched); omit to skip")
     parser.add_argument("--threshold", type=float, default=0.26,
-                        help="similarity needed for ONE recognition attempt to count as a match - "
-                             "set this from calibrate.py's report, not this default")
+                        help="similarity needed for ONE recognition attempt to count as a match - set this from calibrate.py's report, not this default")
     parser.add_argument("--max-attempts", type=int, default=5,
                         help="recognition attempts allowed per track before giving up on it")
-    parser.add_argument("--every", type=int, default=36, help="process every Nth frame")
-    parser.add_argument("--duration", type=float, default=20,
-                        help="stop after this many seconds of video time, regardless of who has been "
-                             "found - the real scan budget. Always set this for a live/RTSP source; "
-                             "for a recorded file, omitting it just falls back to the file's own length")
+    parser.add_argument("--every", type=int, default=, help="process every Nth frame")
+    parser.add_argument("--duration", type=float, default=10,
+                        help="stop after this many seconds of video time, regardless of who has been found - the real scan budget. Always set this for a live/RTSP source; for a recorded file, omitting it just falls back to the file's own length")
     parser.add_argument("--det-size", default="1920x1080")
     parser.add_argument("--det-thresh", type=float, default=0.3)
     parser.add_argument("--min-face", type=int, default=0,
                         help="skip faces shorter than this (px) on either side - free, no attempt spent")
     parser.add_argument("--min-sharpness", type=float, default=0.0,
-                        help="skip blurry crops below this Laplacian-variance score - free, no attempt spent; "
-                             "tune on your own footage")
+                        help="skip blurry crops below this Laplacian-variance score - free, no attempt spent; tune on your own footage")
     parser.add_argument("--min-norm", type=float, default=0.0,
-                        help="ignore a recognition attempt if AdaFace's own quality score is below this "
-                             "(the attempt still counts against --max-attempts); 0 = disabled until calibrated")
+                        help="ignore a recognition attempt if AdaFace's own quality score is below this (the attempt still counts against --max-attempts); 0 = disabled until calibrated")
     parser.add_argument("--start", type=float, default=0.0, help="seconds into the clip to start at")
     parser.add_argument("--debug-dir", default=None, help="save a snapshot of each newly-confirmed match here")
     return parser.parse_args()
