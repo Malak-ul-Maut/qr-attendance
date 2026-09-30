@@ -1,83 +1,269 @@
-main {
-  width: 26vw;
-  border: none;
-  border-radius: 1.2rem;
-  background-color: var(--bg);
-  margin-top: 16vh;
-  padding: 1.5rem 2rem;
+/* ==========================================================================
+   Login page — header, centered auth card, form fields
+   ========================================================================== */
 
+body {
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
-  row-gap: 1rem;
-  justify-self: center;
-  align-items: center;
+}
 
+/* ---- Header ----
+   A trimmed copy of the homepage header (brand mark + theme toggle) so this
+   page doesn't need to import homepage.css just for two components. If you'd
+   rather share one file, these two blocks can move into a common stylesheet
+   later without any markup changes. */
+.site-header {
+  padding-block: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-header-bg);
+  backdrop-filter: blur(8px);
+  transition: background-color 0.25s ease, border-color 0.25s ease;
+}
+
+.site-header .bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.brand .mark {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+}
+
+.brand .wordmark {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 500;
+}
+
+.brand .wordmark span {
+  color: var(--color-accent);
+}
+
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  transition: background-color 0.25s ease, border-color 0.25s ease;
+}
+
+.theme-toggle button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.theme-toggle button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.theme-toggle button:hover {
+  color: var(--color-ink);
+}
+
+.theme-toggle button[aria-pressed='true'] {
+  background: var(--color-accent-soft);
+  color: var(--color-primary);
+}
+
+/* ---- Auth shell / card ---- */
+main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5) var(--space-3);
+}
+
+.back-link {
+  align-self: flex-start;
+  margin: 0 auto var(--space-4);
+  max-width: 400px;
+  width: 100%;
+  font-size: 0.88rem;
+  color: var(--color-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.back-link svg {
+  width: 14px;
+  height: 14px;
+}
+
+.back-link:hover {
+  color: var(--color-primary);
+}
+
+.auth-card {
   position: relative;
-  box-shadow:
-    0px 4px 4px #00000030,
-    0px 12px 12px #00000015;
+  width: 100%;
+  max-width: 400px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-5) var(--space-4) var(--space-4);
+  transition: background-color 0.25s ease, border-color 0.25s ease;
+}
+
+/* QR finder-corner accents, echoing the hero graphic on the homepage */
+.auth-card::before,
+.auth-card::after {
+  content: "";
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border: 3px solid var(--color-primary);
+  border-radius: 4px;
+  opacity: 0.5;
+}
+
+.auth-card::before {
+  top: 14px;
+  left: 14px;
+  border-right: none;
+  border-bottom: none;
+}
+
+.auth-card::after {
+  bottom: 14px;
+  right: 14px;
+  border-left: none;
+  border-top: none;
+}
+
+.auth-head {
+  text-align: center;
+  margin-bottom: var(--space-4);
 }
 
 .qr-logo {
-  width: 4rem;
-}
-.signInMsg {
-  font-weight: 600;
-  font-size: 1.5rem;
-  opacity: 0.8;
-  display: block;
+  width: 48px;
+  height: 48px;
+  margin-inline: auto;
+  margin-bottom: var(--space-2);
 }
 
-input {
+.auth-head h1 {
+  font-size: 1.5rem;
+}
+
+.signInMsg {
+  margin-top: var(--space-1);
   font-size: 0.9rem;
-  font-weight: 500;
-  opacity: 0.9;
-  width: 90%;
-  border-style: none;
-  border-radius: 0.6rem;
-  background-color: hsl(203, 23%, 89%);
-  padding: 0.8rem 1.2rem;
+  color: var(--color-muted);
+  min-height: 1.2em;
+}
+
+/* ---- Fields ---- */
+.field {
+  display: block;
+  margin-bottom: var(--space-3);
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-ink-soft);
+}
+
+.field input {
+  width: 100%;
+  padding: 0.75rem 0.9rem;
+  font: inherit;
+  font-size: 0.96rem;
+  color: var(--color-ink);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.2s ease, background-color 0.25s ease;
+}
+
+.field input::placeholder {
+  color: var(--color-muted);
+}
+
+.field input:focus-visible {
+  outline: none;
+  border-color: var(--color-primary);
+  background: var(--color-surface);
+}
+
+.field-password {
+  position: relative;
+}
+
+.field-password input {
+  padding-right: 2.6rem;
 }
 
 .view-password-icon {
   position: absolute;
-  right: 3rem;
-  top: 61%;
-
-  width: 1.4rem;
-  opacity: 0.6;
+  right: 12px;
+  bottom: 14px;
+  width: 18px;
+  height: 18px;
   cursor: pointer;
+  opacity: 0.65;
+  transition: opacity 0.2s ease;
 }
 
-.forgot-password-link {
-  align-self: self-end;
-  color: royalblue;
-  margin: 0;
-}
-.forgot-password-link:hover {
-  cursor: pointer;
-  text-decoration: underline;
+.view-password-icon:hover {
+  opacity: 1;
 }
 
-#loginBtn {
-  color: white;
-  background-color: hsl(220, 20%, 6%);
-  width: 100%;
-  margin-top: 8px;
-  border: 0.8px solid rgba(31, 35, 40, 0.15);
-  border-radius: 0.8rem;
+.row-end {
+  display: flex;
+  justify-content: flex-end;
+  margin: -0.4rem 0 var(--space-3);
+  font-size: 0.85rem;
 }
+
 #login-msg {
-  font-size: 1rem;
-  font-weight: 500;
-  opacity: 0.8;
+  min-height: 1.2em;
+  margin-top: var(--space-3);
+  font-size: 0.86rem;
   text-align: center;
-  margin: 0;
+  color: #C4453A; /* every message from the login handler is an error */
 }
 
-/*----------- Stylings for mobile view ------------*/
-@media (max-width: 480px) {
-  main {
-    width: 70vw;
+#login-msg[data-tone='error'] {
+  color: #C4453A;
+}
+
+#login-msg[data-tone='success'] {
+  color: var(--color-accent);
+}
+
+@media (max-width: 460px) {
+  .auth-card {
+    padding: var(--space-4) var(--space-3) var(--space-3);
   }
 }

@@ -1,178 +1,334 @@
+/* ==========================================================================
+   Faculty dashboard — session setup, live session, student list, dialog
+   ========================================================================== */
+
+.app-shell {
+  display: flex;
+}
+
+.app-content {
+  flex: 1;
+  min-width: 0;
+  margin-left: var(--sidebar-width);
+  padding: var(--space-5) var(--space-4);
+  transition: margin-left 0.25s ease;
+}
+
+@media (min-width: 761px) {
+  body.sidebar-collapsed .app-content {
+    margin-left: var(--sidebar-width-collapsed);
+  }
+}
+
+@media (max-width: 760px) {
+  .app-content {
+    margin-left: 0;
+  }
+}
+
+/* ---- Before start: session setup form ---- */
 #beforeStart {
+  max-width: 480px;
+  margin-inline: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
-  margin-top: 10rem;
-  padding: 2rem 2rem;
-  border-radius: 1rem;
-  align-items: center;
-  justify-self: center;
-  background-image: linear-gradient(to bottom, var(--highlight), var(--bg));
-  box-shadow:
-    0px 4px 4px #00000030,
-    0px 12px 12px #00000015;
+  gap: var(--space-3);
+  transition: background-color 0.25s ease, border-color 0.25s ease;
 }
+
+#beforeStart h2 {
+  font-size: 1.35rem;
+}
+
 #sub-name {
-  font-size: 3rem;
-  font-weight: 800;
-  color: var(--text);
-  margin-bottom: 1rem;
-  opacity: 0.8;
+  font-size: 0.92rem;
+  color: var(--color-muted);
+  margin-top: calc(var(--space-1) * -1);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
 }
-.select-section {
-  font-size: 1.5rem;
-  font-weight: 700;
-  opacity: 0.8;
-  margin-top: 20px;
+
+#sub-name:empty {
+  display: none;
+  padding-bottom: 0;
+  border-bottom: none;
 }
-select {
-  font-size: 1.2rem;
+
+#beforeStart label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.85rem;
   font-weight: 600;
-  opacity: 0.8;
-  padding: 0.5rem 1rem;
-  margin-left: 0.6rem;
-  border-radius: 0.5rem;
-  border: 2px solid #918e8e;
-}
-#startSessionBtn {
-  color: white;
-  margin-top: 16px;
+  color: var(--color-ink-soft);
 }
 
+#beforeStart input,
+#beforeStart select {
+  width: 100%;
+  padding: 0.65rem 0.8rem;
+  font: inherit;
+  font-size: 0.94rem;
+  color: var(--color-ink);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.2s ease, background-color 0.25s ease;
+}
+
+#beforeStart input:focus-visible,
+#beforeStart select:focus-visible {
+  outline: none;
+  border-color: var(--color-primary);
+  background: var(--color-surface);
+}
+
+#classes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 0.4rem;
+}
+
+#classes p {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.84rem;
+  color: var(--color-ink-soft);
+}
+
+/* ---- After start: live session ---- */
 #afterStart {
-  display: none; /* Dynamically changed to 'flex' by JS */
-  justify-content: space-evenly;
-  padding-top: 6rem;
-  padding-left: 5rem;
-}
-.afterStart-fs {
-  padding: 0 !important;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-start;
 }
 
-canvas {
-  border-radius: 1rem;
-  width: 35% !important;
-  padding: 1rem;
-  background-color: white;
-  box-shadow:
-    0px 0.5rem 0.5rem #0000006b,
-    0px 1rem 1rem #00000031;
-}
-.canvas-fs {
-  width: 50% !important;
+#afterStart canvas {
+  width: min(100%, 360px);
+  max-width: min(100%, 360px);
+  height: auto !important; /* QRCode.toCanvas() sets an inline pixel height */
+  aspect-ratio: 1 / 1;
+  background: var(--color-ink);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
 }
 
 .live-section {
-  background-color: var(--bg-light);
-  width: 40%;
-  max-height: calc(100vh - 8rem);
-  border-radius: 1rem;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  align-items: center;
   position: relative;
-  box-shadow:
-    0px 0.5rem 0.5rem #0000006b,
-    0px 1rem 1rem #00000031;
-}
-.live-section-fs {
-  max-height: 100vh !important;
+  flex: 1;
+  min-width: 260px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-4);
+  transition: background-color 0.25s ease, border-color 0.25s ease;
 }
 
 .live-section-heading {
-  font-size: 2.5rem;
-  font-weight: 800;
-  opacity: 0.8;
-  margin: 1rem auto;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
 }
-.live-section div {
-  width: 100%;
+
+.live-section > div {
   display: flex;
-  justify-content: center;
-  column-gap: 1rem;
   align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
 }
+
 #studentCount {
-  font-size: 1.5rem;
   font-weight: 600;
-  margin: 0;
-  color: #555;
-  display: inline-block;
+  font-size: 0.85rem;
+  color: var(--color-primary);
+  background: var(--color-accent-soft);
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  margin-right: auto;
 }
 
 .toggle-fullscreen-btn {
-  background-color: rgba(0, 0, 0, 0.205);
-  opacity: 0.5;
-  max-width: 2rem;
-  height: 2rem;
-  border-radius: 1rem;
   position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
-  z-index: 1;
+  top: var(--space-3);
+  right: var(--space-3);
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
+  color: var(--color-muted);
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
-.toggle-fullscreen-btn:hover {
-  opacity: 1;
+
+.toggle-fullscreen-btn:hover,
+.toggle-fullscreen-btn:focus-visible {
+  background: var(--color-accent-soft);
+  color: var(--color-primary);
 }
+
 .toggle-fullscreen-icon {
-  width: 1.2rem;
   position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
-  transform: translateX(-30%) translateY(30%);
+  top: calc(var(--space-3) + 8px);
+  right: calc(var(--space-3) + 8px);
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+  filter: var(--icon-filter);
 }
 
 #studentList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 340px;
   overflow-y: auto;
-  margin-right: 1rem;
-}
-#studentList li {
-  font-size: 1.2rem;
-  font-weight: 600;
-  color: #2e7d32;
-  padding: 0.3rem 2rem;
-  opacity: 0.9;
-  background-color: #e8f5e9;
-  border-left: 4px solid #4caf50;
-  border-bottom: 0.8px solid gray;
-  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
+#studentList li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  color: var(--color-ink);
+}
+
+#studentList li .tag {
+  font-size: 0.74rem;
+  color: var(--color-muted);
+}
+
+#studentList:empty::after,
+#classes:empty::after {
+  content: 'No one has checked in yet.';
+  display: block;
+  padding: var(--space-3);
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-sm);
+}
+
+#classes:empty::after {
+  content: 'Pick a slot to see its classes.';
+}
+
+/* Unticked student: js/faculty.js toggles .strike on the name */
+#studentList li span.strike {
+  text-decoration: line-through;
+  color: var(--color-muted);
+}
+
+#studentList input[type='checkbox'],
+#manual-attendance-list input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+/* ---- Manual attendance dialog ---- */
 #manual-attendance-dialog {
-  padding: 1.8rem;
-  border-radius: 16px;
-  box-shadow:
-    0px 4px 4px #00000030,
-    0px 12px 12px #00000015;
-  background-image: linear-gradient(to bottom, var(--highlight), var(--bg));
+  width: min(90vw, 380px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card-hover);
+  padding: var(--space-4);
+  color: var(--color-ink);
+  background: var(--color-surface);
+}
+
+#manual-attendance-dialog::backdrop {
+  background: rgba(10, 12, 20, 0.5);
+}
+
+#manual-attendance-dialog h3 {
+  font-size: 1.1rem;
+  margin-bottom: var(--space-3);
+}
+
+#manual-attendance-list {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 #manual-attendance-list li {
-  font-size: 1rem;
-  font-weight: 600;
-  opacity: 0.8;
-  margin-bottom: 0.3rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--radius-sm);
 }
 
-#closeDialog {
-  color: #24292f;
-  background-color: #f6f8fa;
-  border: 1px solid #d0d7de;
-  transition: all 0.15s ease;
-}
-#closeDialog:hover {
-  background-color: #e1e4e8;
-  color: black;
+#manual-attendance-list li:hover {
+  background: var(--color-accent-soft);
 }
 
-.strike {
-  text-decoration: line-through;
-  opacity: 0.8;
+#manual-attendance-dialog form {
+  display: flex;
+  flex-direction: column;
 }
 
-input[type='checkbox'] {
-  height: 16px;
-  width: 16px;
-  clip-path: circle(60%);
+.dialog-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.dialog-actions button {
+  flex: 1;
+  width: auto;
+}
+
+/* ---- Fullscreen (toggleFullScreen() in js/faculty.js) ----
+   Styled with :fullscreen rather than the .afterStart-fs / .canvas-fs /
+   .live-section-fs classes the script adds, because the script only removes
+   those when its own button is clicked, not when the user leaves with Esc. */
+#afterStart:fullscreen {
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-5);
+  padding: var(--space-4);
+  overflow: auto;
+  background: var(--color-bg);
+}
+
+#afterStart:fullscreen canvas {
+  width: min(70vh, 90vw) !important;
+  max-width: none;
+}
+
+#afterStart:fullscreen .live-section {
+  flex: 0 1 420px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+#afterStart:fullscreen #studentList {
+  max-height: 50vh;
 }

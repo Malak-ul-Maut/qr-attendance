@@ -1,27 +1,173 @@
+/* ==========================================================================
+   General — design tokens, resets, base typography
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=Inter:wght@400;500;600;700&display=swap');
+
 :root {
-  --bg-dark: hsl(195 21% 89%);
-  --bg: hsl(195 40% 94%);
-  --bg-light: hsl(195 100% 100%);
-  --text: hsl(196 72% 4%);
-  --text-muted: hsl(194 14% 27%);
-  --highlight: hsl(195 100% 99%);
-  --border: hsl(195 8% 49%);
-  --border-muted: hsl(195 11% 61%);
-  --primary: hsl(190 100% 13%);
-  --secondary: hsl(15 63% 28%);
+  /* Color */
+  --color-bg: #F5F6F9;
+  --color-surface: #FFFFFF;
+  --color-ink: #12172B;
+  --color-ink-soft: #414868;
+  --color-muted: #6B7086;
+  --color-primary: #1F2B6C;
+  --color-primary-soft: #3B4B9E;
+  --color-accent: #0E9C87;
+  --color-accent-soft: #E4F5F1;
+  --color-border: #E2E5EE;
+  --color-border-strong: #C9CEDE;
+
+  /* Type */
+  --font-display: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* Scale */
+  --space-1: 0.4rem;
+  --space-2: 0.8rem;
+  --space-3: 1.2rem;
+  --space-4: 2rem;
+  --space-5: 3.2rem;
+  --space-6: 5.2rem;
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+
+  --shadow-card: 0 1px 2px rgba(18, 23, 43, 0.04), 0 8px 24px -12px rgba(18, 23, 43, 0.12);
+  --shadow-card-hover: 0 4px 8px rgba(18, 23, 43, 0.06), 0 16px 32px -12px rgba(18, 23, 43, 0.18);
+
+  --color-header-bg: rgba(245, 246, 249, 0.86);
+
+  --max-width: 1180px;
+}
+
+/* ---- Dark theme ----
+   Two ways in: the OS/browser preference (system mode, the default), or an
+   explicit choice stored as data-theme on <html> (light/dark override).
+   System mode is "no data-theme attribute at all" — see homepage.js. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --color-bg: #10131F;
+    --color-surface: #171B2C;
+    --color-ink: #E8E9F3;
+    --color-ink-soft: #B7BBD0;
+    --color-muted: #8A8FA8;
+    --color-primary: #7C8CEB;
+    --color-primary-soft: #97A4F0;
+    --color-accent: #2DD9C2;
+    --color-accent-soft: #113330;
+    --color-border: #262B40;
+    --color-border-strong: #383F5C;
+
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px -12px rgba(0, 0, 0, 0.45);
+    --shadow-card-hover: 0 4px 8px rgba(0, 0, 0, 0.3), 0 16px 32px -12px rgba(0, 0, 0, 0.55);
+
+    --color-header-bg: rgba(16, 19, 31, 0.86);
+
+    /* Flips dark line-icon images (menu, logout, etc.) so they stay visible
+       against dark surfaces — see the "icon images" selectors in
+       header.css/sidebar.css/card.css/loginpage.css/student.css/teacher.css.
+       Inline SVG (the brand mark, card chevrons, etc.) already reads
+       var(--color-*) directly and doesn't need this. */
+    --icon-filter: invert(1) brightness(1.1);
+  }
+}
+
+:root[data-theme='dark'] {
+  --color-bg: #10131F;
+  --color-surface: #171B2C;
+  --color-ink: #E8E9F3;
+  --color-ink-soft: #B7BBD0;
+  --color-muted: #8A8FA8;
+  --color-primary: #7C8CEB;
+  --color-primary-soft: #97A4F0;
+  --color-accent: #2DD9C2;
+  --color-accent-soft: #113330;
+  --color-border: #262B40;
+  --color-border-strong: #383F5C;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px -12px rgba(0, 0, 0, 0.45);
+  --shadow-card-hover: 0 4px 8px rgba(0, 0, 0, 0.3), 0 16px 32px -12px rgba(0, 0, 0, 0.55);
+
+  --color-header-bg: rgba(16, 19, 31, 0.86);
+  --icon-filter: invert(1) brightness(1.1);
+}
+
+:root {
+  --icon-filter: none;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  font-family: 'Roboto', Arial, sans-serif;
   margin: 0;
-  padding: 0;
-  background: linear-gradient(45deg, #ffe43777 0%, #537fe77a 100%);
-  height: 90vh;
-  align-items: center;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
 
-@media (max-width: 540px) {
-  body {
-    height: calc(100vh - 10rem);
+img {
+  max-width: 100%;
+  display: block;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  color: var(--color-ink);
+  margin: 0;
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+}
+
+.container {
+  max-width: var(--max-width);
+  margin-inline: auto;
+  padding-inline: var(--space-4);
+}
+
+/* Visible keyboard focus everywhere */
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .container {
+    padding-inline: var(--space-3);
   }
 }

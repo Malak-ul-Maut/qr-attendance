@@ -441,7 +441,7 @@ def parse_args():
                         help="similarity needed for ONE recognition attempt to count as a match - set this from calibrate.py's report, not this default")
     parser.add_argument("--max-attempts", type=int, default=5,
                         help="recognition attempts allowed per track before giving up on it")
-    parser.add_argument("--every", type=int, default=, help="process every Nth frame")
+    parser.add_argument("--every", type=int, default=36, help="process every Nth frame")
     parser.add_argument("--duration", type=float, default=10,
                         help="stop after this many seconds of video time, regardless of who has been found - the real scan budget. Always set this for a live/RTSP source; for a recorded file, omitting it just falls back to the file's own length")
     parser.add_argument("--det-size", default="1920x1080")
