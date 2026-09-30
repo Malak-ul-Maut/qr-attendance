@@ -384,7 +384,20 @@ def save_aggregate_annotation(out_path, canvas, track_boxes, track_identity, tra
     gap = max(2, round(4 * scale))
     font = cv2.FONT_HERSHEY_SIMPLEX
     by_student_id = {v["student_id"]: v for v in present.values()}
+    best_track_by_student = {}
+    for track_id, student_id in track_identity.items():
+        if student_id is None or track_id not in track_boxes:
+            continue
+        box = track_boxes[track_id]
+        area = max(0, box[2] - box[0]) * max(0, box[3] - box[1])
+        rank = (track_best_scores.get(track_id, float("-inf")), area)
+        if student_id not in best_track_by_student or rank > best_track_by_student[student_id][0]:
+            best_track_by_student[student_id] = (rank, track_id)
+
     for track_id, box in track_boxes.items():
+        student_id = track_identity.get(track_id)
+        if student_id is not None and best_track_by_student[student_id][1] != track_id:
+            continue
         x1, y1, x2, y2 = (int(v) for v in box)
         if track_id not in track_identity:
             student_id = None

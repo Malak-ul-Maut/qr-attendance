@@ -18,6 +18,7 @@ const classesPara = document.querySelector('#classes');
 
 let sessionCode = null;
 let qrTimer = null;
+let cctvAbsentStudents = [];
 const classIds = [];
 
 const currentUser = getCurrentUser();
@@ -162,6 +163,7 @@ startBtn.addEventListener('click', async () => {
 
     beforeStart.style.display = 'none';
     afterStart.style.display = 'flex';
+    viewCctvResultBtn.hidden = method !== 'cctv';
 
     if (method === 'qr') {
       canvas.style.display = '';
@@ -189,19 +191,25 @@ async function runCCTV() {
   const presentStudentIds = new Set(
     response.presentStudents.map(student => String(student.student_id)),
   );
+  const cctvTime = new Date().toLocaleTimeString();
+  cctvAbsentStudents = response.students.filter(
+    student => !presentStudentIds.has(String(student.id)),
+  );
 
   response.students.forEach(student => {
     const studentId = String(student.id);
+    if (!presentStudentIds.has(studentId)) return;
+
     markedStudents.add(studentId);
 
     const li = document.createElement('li');
     const span = document.createElement('span');
-    span.textContent = student.name;
+    span.textContent = `${student.name} (${cctvTime})`;
     span.dataset.id = studentId;
 
     const checkBox = document.createElement('input');
     checkBox.type = 'checkbox';
-    checkBox.checked = presentStudentIds.has(studentId);
+    checkBox.checked = true;
     checkBox.dataset.id = studentId;
     checkBox.addEventListener('change', () => {
       span.classList.toggle('strike', !checkBox.checked);
@@ -259,7 +267,23 @@ addManuallyBtn.addEventListener('click', async () => {
     s => !markedStudents.has(String(s.id)),
   );
 
-  showManualPopup(unmarkedStudents);
+  const attendanceCheckboxes = new Map(
+    [...studentList.querySelectorAll('input[type="checkbox"]')].map(
+      checkbox => [checkbox.dataset.id, checkbox],
+    ),
+  );
+  const availableStudents = new Map(
+    unmarkedStudents.map(student => [String(student.id), student]),
+  );
+
+  cctvAbsentStudents.forEach(student => {
+    const checkbox = attendanceCheckboxes.get(String(student.id));
+    if (!checkbox?.checked) {
+      availableStudents.set(String(student.id), student);
+    }
+  });
+
+  showManualPopup([...availableStudents.values()]);
 });
 
 addSelectedBtn.addEventListener('click', async () => {
@@ -276,11 +300,26 @@ addSelectedBtn.addEventListener('click', async () => {
     });
   });
 
-  await postData('/api/attendance/manual', {
+  const response = await postData('/api/attendance/manual', {
     sessionCode,
     students,
   });
 
+  if (!response?.ok) {
+    console.error('Manual attendance returned error:', response);
+    return;
+  }
+
+  students.forEach(student => {
+    const checkbox = [
+      ...studentList.querySelectorAll('input[type="checkbox"]'),
+    ].find(item => item.dataset.id === String(student.id));
+    if (!checkbox) return;
+
+    checkbox.checked = true;
+    checkbox.previousElementSibling?.classList.remove('strike');
+  });
+  updatePresentCount();
   dialog.close();
 });
 
@@ -340,6 +379,7 @@ function clearAttendanceUI() {
   studentCount.textContent = 'Present: 0';
   studentList.textContent = '';
   markedStudents.clear();
+  cctvAbsentStudents = [];
   afterStart.style.display = 'none';
   beforeStart.style.display = 'flex';
   clearTimeout(qrTimer);

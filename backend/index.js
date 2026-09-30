@@ -19,7 +19,7 @@ import cctvRouter from './routes/cctv.routes.js';
 // ----------------- Server Config -----------------
 const app = express();
 
-app.use(express.json());
+app.use(express.json({ limit: '35mb' }));
 app.use(
   cors({
     origin: '*',

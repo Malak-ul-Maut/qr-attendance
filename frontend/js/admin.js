@@ -2,6 +2,7 @@ import { getCurrentUser, logout } from '/utils/storage.js';
 
 let currentConfig = null;
 let editingId = null;
+let studentMetadata = null;
 
 // ==================== Initialize Dashboard ====================
 initializeDashboard();
@@ -38,20 +39,20 @@ async function initializeDashboard() {
     apiEndpoint: '/api/students',
     entityName: 'Student',
     needsFaceRecognition: true,
+    studentForm: true,
     fields: [
       { id: 'studentName', fieldName: 'name' },
-      {
-        id: 'studentUsername',
-        fieldName: 'username',
-      },
-      {
-        id: 'studentPassword',
-        fieldName: 'password',
-      },
-      { id: 'studentSection', fieldName: 'section' },
+      { id: 'studentUsername', fieldName: 'username' },
+      { id: 'studentPassword', fieldName: 'password' },
+      { id: 'studentRollNumber', fieldName: 'rollNumber' },
+      { id: 'studentCourse', fieldName: 'courseId' },
+      { id: 'studentBranch', fieldName: 'branchId' },
+      { id: 'studentSemester', fieldName: 'semester' },
+      { id: 'studentClass', fieldName: 'classId' },
     ],
     usernameField: 'username',
   });
+  initializeStudentForm();
 
   setupSectionManager({
     navSelector: '.faculty-nav',
@@ -108,6 +109,7 @@ function setupSectionManager(config) {
   addBtn.onclick = () => {
     editingId = null;
     clearFormFields(config);
+    if (config.studentForm) updateMatchingClasses();
     modal.showModal();
   };
 
@@ -159,10 +161,25 @@ async function saveEntity(config) {
   config.fields.forEach(field => {
     const value = document.getElementById(field.id).value;
     if (!value) {
-      throw new Error(`Missing required field: ${field.placeholder}`);
+      throw new Error(`Missing required field: ${field.fieldName}`);
     }
     data[field.fieldName] = value;
   });
+
+  if (config.studentForm && data.username !== editingId) {
+    data.username = data.username.trim();
+    const usernameStatus = document.getElementById('studentUsernameStatus');
+    usernameStatus.textContent = 'Checking username...';
+    const availability = await fetch(
+      `${config.apiEndpoint}/username-available?username=${encodeURIComponent(data.username)}`,
+    ).then(response => response.json());
+    if (!availability.available) {
+      usernameStatus.textContent = 'Username is already in use';
+      alert('Choose a username that is not already in use');
+      return;
+    }
+    usernameStatus.textContent = 'Username is available';
+  }
 
   // Only process face recognition for students
   if (config.needsFaceRecognition) {
@@ -203,11 +220,18 @@ async function saveEntity(config) {
     url = `${config.apiEndpoint}/${editingId}`;
   }
 
-  const response = await fetch(url, {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
+  let requestBody = JSON.stringify(data);
+  const headers = { 'Content-Type': 'application/json' };
+  if (config.studentForm && method === 'POST') {
+    data.faceImages = await Promise.all(
+      Array.from(document.getElementById('faceImages').files, file =>
+        readImageDataUrl(file),
+      ),
+    );
+    requestBody = JSON.stringify(data);
+  }
+
+  const response = await fetch(url, { method, headers, body: requestBody });
 
   if (response.ok) {
     setTimeout(() => {
@@ -216,8 +240,88 @@ async function saveEntity(config) {
       location.reload();
     }, 2000);
   } else {
-    alert('Error saving entity');
+    const result = await response.json().catch(() => ({}));
+    alert(
+      result.error === 'username_taken'
+        ? 'Username is already in use'
+        : 'Error saving entity',
+    );
   }
+}
+
+function readImageDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve({ dataUrl: reader.result });
+    reader.onerror = () => reject(new Error(`Could not read ${file.name}`));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function initializeStudentForm() {
+  const response = await fetch('/api/students/meta');
+  if (!response.ok) throw new Error('Could not load student options');
+  studentMetadata = await response.json();
+  populateSelect('studentCourse', studentMetadata.courses, 'Select course');
+  populateSelect('studentBranch', studentMetadata.branches, 'Select branch');
+
+  for (const id of ['studentCourse', 'studentBranch', 'studentSemester']) {
+    document
+      .getElementById(id)
+      .addEventListener('change', updateMatchingClasses);
+  }
+  document
+    .getElementById('studentUsername')
+    .addEventListener('blur', checkStudentUsername);
+}
+
+function populateSelect(id, options, placeholder) {
+  const select = document.getElementById(id);
+  select.replaceChildren(new Option(placeholder, ''));
+  options.forEach(option => select.add(new Option(option.label, option.id)));
+}
+
+function updateMatchingClasses() {
+  if (!studentMetadata) return;
+  const courseId = document.getElementById('studentCourse').value;
+  const branchId = document.getElementById('studentBranch').value;
+  const semester = Number(document.getElementById('studentSemester').value);
+  const matching = studentMetadata.classes.filter(
+    item =>
+      String(item.course_id) === courseId &&
+      String(item.branch_id) === branchId &&
+      item.semester === semester,
+  );
+  const placeholder =
+    courseId && branchId && semester
+      ? 'Select class'
+      : 'Select course, branch, and semester first';
+  populateSelect(
+    'studentClass',
+    matching.map(item => ({
+      id: item.id,
+      label: `Class ${item.id} - ${item.section}`,
+    })),
+    placeholder,
+  );
+  document.getElementById('studentClass').disabled = matching.length === 0;
+}
+
+async function checkStudentUsername() {
+  const input = document.getElementById('studentUsername');
+  const username = input.value.trim();
+  const status = document.getElementById('studentUsernameStatus');
+  if (!username) {
+    status.textContent = '';
+    return;
+  }
+  const response = await fetch(
+    `/api/students/username-available?username=${encodeURIComponent(username)}`,
+  );
+  const result = await response.json();
+  status.textContent = result.available
+    ? 'Username is available'
+    : 'Username is already in use';
 }
 
 function editEntity(encodedEntity) {
@@ -231,9 +335,19 @@ function editEntity(encodedEntity) {
     `Edit ${config.entityName}`;
 
   // Prefill form fields
-  config.fields.forEach(field => {
-    document.getElementById(field.id).value = entity[field.fieldName] || '';
-  });
+  if (config.studentForm) {
+    config.fields
+      .filter(field => field.id !== 'studentClass')
+      .forEach(field => {
+        document.getElementById(field.id).value = entity[field.fieldName] || '';
+      });
+    updateMatchingClasses();
+    document.getElementById('studentClass').value = entity.classId || '';
+  } else {
+    config.fields.forEach(field => {
+      document.getElementById(field.id).value = entity[field.fieldName] || '';
+    });
+  }
 
   modal.showModal();
 }
@@ -259,6 +373,12 @@ function clearFormFields(config) {
 
   document.querySelector(`#${config.modalId} h3`).textContent =
     `Add ${config.entityName}`;
+  if (config.studentForm) {
+    document.getElementById('studentPassword').value = 'password';
+    document.getElementById('studentUsernameStatus').textContent = '';
+    document.getElementById('faceImages').value = '';
+    document.getElementById('faceStatus').textContent = 'No images uploaded';
+  }
 }
 
 async function getDescriptorsFromImages(files) {

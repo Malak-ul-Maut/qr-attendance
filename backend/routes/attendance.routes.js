@@ -102,7 +102,7 @@ router.post('/verify', async (req, res) => {
 // Resolve each student to the session row whose timetable class matches the student.
 router.post('/manual', async (req, res) => {
   const { sessionCode, students = [] } = req.body;
-  const timestamp = new Date().toLocaleString();
+  const time = new Date().toLocaleTimeString();
 
   if (!sessionCode) {
     return res.status(400).json({ ok: false, error: 'missing_session_code' });
@@ -144,7 +144,7 @@ router.post('/manual', async (req, res) => {
         studentId: dbStudent.id,
         studentName: student.name,
         sessionCode,
-        time: timestamp,
+        time,
         method: 'manual',
       });
     }

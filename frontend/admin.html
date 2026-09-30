@@ -102,23 +102,62 @@
 
           <form method="dialog">
             <div>
-              Name:
+              <label for="studentName">Name:</label>
               <input type="text" id="studentName" required />
             </div>
 
             <div>
-              Username:
+              <label for="studentUsername">Username:</label>
               <input type="text" id="studentUsername" required />
+              <small id="studentUsernameStatus" aria-live="polite"></small>
             </div>
 
             <div>
-              Password:
-              <input type="text" id="studentPassword" />
+              <label for="studentPassword">Password:</label>
+              <input
+                type="password"
+                id="studentPassword"
+                value="password"
+                required />
             </div>
 
             <div>
-              Section:
-              <input type="text" id="studentSection" required />
+              <label for="studentRollNumber">Roll number:</label>
+              <input type="text" id="studentRollNumber" required />
+            </div>
+
+            <div>
+              <label for="studentCourse">Course:</label>
+              <select id="studentCourse" required>
+                <option value="">Select course</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="studentBranch">Branch:</label>
+              <select id="studentBranch" required>
+                <option value="">Select branch</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="studentSemester">Semester:</label>
+              <input
+                type="number"
+                id="studentSemester"
+                min="1"
+                max="8"
+                step="1"
+                required />
+            </div>
+
+            <div>
+              <label for="studentClass">Class:</label>
+              <select id="studentClass" required disabled>
+                <option value="">
+                  Select course, branch, and semester first
+                </option>
+              </select>
             </div>
 
             <input type="file" id="faceImages" multiple accept="image/*" />

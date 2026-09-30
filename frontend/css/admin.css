@@ -57,8 +57,10 @@ ul {
 .modal {
   background: white;
   padding: 20px;
-  width: 300px;
-  margin: 150px auto;
+  width: min(380px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  margin: auto;
   border-radius: 10px;
 }
 
@@ -74,12 +76,27 @@ section h2 {
 }
 
 #studentModal input,
+#studentModal select,
 #facultyModal input {
+  box-sizing: border-box;
+  width: 100%;
   font-size: 0.8rem;
   font-weight: 500;
   border-radius: 0.4rem;
   margin-bottom: 0.2rem;
   padding: 0.2rem 0.4rem;
+}
+
+#studentModal label {
+  display: block;
+  margin-bottom: 0.15rem;
+}
+
+#studentUsernameStatus {
+  display: block;
+  min-height: 1em;
+  margin-bottom: 0.35rem;
+  font-size: 0.75rem;
 }
 
 #studentModal div,
