@@ -3,11 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Student Attendance</title>
+    <title>Student | Attendance System</title>
     <link rel="icon" href="icons/qr-code.png" />
-    <link rel="stylesheet" href="css/general.css" />
-    <link rel="stylesheet" href="css/header.css" />
-    <link rel="stylesheet" href="css/card.css" />
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/components.css" />
+    <link rel="stylesheet" href="css/shell.css" />
     <link rel="stylesheet" href="css/student.css" />
 
     <script src="utils/auth-guard.js" type="module"></script>
@@ -17,60 +17,86 @@
   </head>
 
   <body>
-    <header>
-      <div class="left-section">
-        <img src="icons/hamburger-menu.svg" alt="Menu" />
-      </div>
+    <a class="skip-link" href="#main">Skip to content</a>
 
-      <div class="middle-section">
-        <span class="user-name"> <b></b></span>
-      </div>
-
-      <div class="right-section logout-btn">
-        <img src="icons/logout.svg" alt="Logout" />
-        <div>Log out</div>
-      </div>
+    <header class="app-header">
+      <a class="brand" href="student.html"><img src="icons/mit-logo.png" alt="MIT" /></a>
+      <span class="user-name">Hi, <b></b></span>
+      <button class="btn btn-secondary logout-btn" type="button">Log out</button>
     </header>
 
-    <div id="scanner-section" style="display: none">
-      <button id="closeScanBtn" type="button">✕</button>
+    <nav class="app-nav" aria-label="Student sections">
+      <button class="nav-item" type="button" data-view="home" aria-current="page"><img src="icons/home.svg" alt="" />Home</button>
+      <button class="nav-item" type="button" data-view="subjects"><img src="icons/courses.svg" alt="" />Subjects</button>
+      <button class="nav-item" type="button" data-view="history"><img src="icons/history.svg" alt="" />History</button>
+    </nav>
 
-      <div class="camera-wrapper">
-        <video id="video" autoplay playsinline muted></video>
-        <canvas id="overlay" />
-      </div>
+    <main id="main" class="app-main">
+      <!-- Home -->
+      <section id="view-home" class="view">
+        <h1 class="student-greeting">Welcome back</h1>
+        <p class="student-sub">Scan the QR code your teacher shows in class.</p>
 
-      <div class="slider-row">
-        <img src="icons/zoom-out.svg" class="slider-icon left" alt="zoom out" />
-        <input
-          id="zoom-slider"
-          type="range"
-          min="1"
-          max="5"
-          step="0.1"
-          value="1" />
-        <img src="icons/zoom-in.svg" class="slider-icon right" alt="zoom in" />
-      </div>
+        <div class="card summary">
+          <div class="ring" id="overallRing"><span id="overallPct">--%</span></div>
+          <div>
+            <h2>Overall attendance</h2>
+            <p id="overallNote">Your percentage will appear here once attendance data is connected.</p>
+          </div>
+        </div>
 
-      <p id="scan-result"></p>
-    </div>
+        <button id="markAttendanceCard" class="btn btn-primary mark-btn" type="button">
+          <img src="icons/generate-qr.svg" alt="" /><span>Mark attendance</span>
+        </button>
+      </section>
 
-    <main>
-      <div id="markAttendanceCard" class="link-card">
-        <img src="icons/generate-qr.svg" />
-        <p>Mark attendance</p>
-      </div>
+      <!-- Subjects -->
+      <section id="view-subjects" class="view" hidden>
+        <h1 class="section-title">Subjects</h1>
+        <ul id="subjectList" class="list"></ul>
+        <div id="subjectEmpty" class="card empty"><strong>No subjects yet</strong>Subject-wise attendance will show here.</div>
+      </section>
 
-      <div class="link-card">
-        <img src="icons/courses.svg" />
-        <p>Subjects</p>
-      </div>
-
-      <div class="link-card">
-        <img src="icons/history.svg" />
-        <p>History</p>
-      </div>
+      <!-- History -->
+      <section id="view-history" class="view" hidden>
+        <h1 class="section-title">History</h1>
+        <ul id="historyList" class="list"></ul>
+        <div id="historyEmpty" class="card empty"><strong>No attendance records yet</strong>Classes you attend will show up here.</div>
+      </section>
     </main>
-    <p>console.log("hello")</p>
+
+    <!-- Guided scan flow: Scan QR -> Verify face -> Done -->
+    <div id="scanner-section" hidden>
+      <div class="scan-top">
+        <h2>Mark attendance</h2>
+        <button id="closeScanBtn" class="btn btn-secondary" type="button">Cancel</button>
+      </div>
+
+      <ol class="steps" aria-label="Progress">
+        <li data-step="1">1. Scan QR</li>
+        <li data-step="2">2. Verify face</li>
+        <li data-step="3">3. Done</li>
+      </ol>
+
+      <div id="cameraArea">
+        <div class="camera-wrapper">
+          <video id="video" autoplay playsinline muted></video>
+          <canvas id="overlay"></canvas>
+        </div>
+        <div class="slider-row" id="zoomRow">
+          <img src="icons/zoom-out.svg" class="slider-icon left" alt="Zoom out" />
+          <input id="zoom-slider" type="range" min="1" max="5" step="0.1" value="1" aria-label="Zoom" />
+          <img src="icons/zoom-in.svg" class="slider-icon right" alt="Zoom in" />
+        </div>
+      </div>
+      <p id="scan-result" role="status"></p>
+
+      <div id="resultPanel" class="card result-panel" hidden>
+        <div class="result-icon" aria-hidden="true"></div>
+        <h2 id="resultTitle"></h2>
+        <p id="resultText"></p>
+        <button id="resultAction" class="btn btn-primary" type="button"></button>
+      </div>
+    </div>
   </body>
 </html>
