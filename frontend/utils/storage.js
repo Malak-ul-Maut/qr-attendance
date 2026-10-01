@@ -15,6 +15,7 @@ export function storeUser(data) {
       role: data.role,
       username: data.username,
       name: data.name,
+      adminToken: data.adminToken || null,
       subName: data.subjectName,
       section: data.section,
     }),

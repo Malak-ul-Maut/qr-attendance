@@ -1,0 +1,66 @@
+/* shell.css - shared app frame: top bar + nav.
+   Nav is a bottom tab bar on phones and a left rail on wide screens.
+   Needs tokens.css and components.css. */
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 3.5rem;
+  padding: 0 var(--space-4);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.app-header .brand img { height: 32px; width: auto; }
+.app-header .user-name { margin-left: auto; font-size: var(--text-sm); color: var(--ink-700); }
+.app-header .user-name b { color: var(--ink-900); }
+
+.app-nav {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 30;
+  display: flex;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+.nav-item {
+  flex: 1;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  min-height: 3.5rem;
+  padding: var(--space-2) 0;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ink-500);
+  background: none;
+  border: none;
+  border-top: 3px solid transparent;
+  cursor: pointer;
+}
+.nav-item img { width: 22px; height: 22px; opacity: 0.6; }
+.nav-item[aria-current='page'] { color: var(--red-600); border-top-color: var(--red-600); }
+.nav-item[aria-current='page'] img { opacity: 1; }
+
+.app-main {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-4) 6rem; /* room for the tab bar */
+}
+
+/* Wide screens: nav becomes a left rail */
+@media (min-width: 900px) {
+  .app-nav {
+    top: 3.5rem; right: auto; bottom: 0;
+    width: 6.5rem; flex-direction: column; justify-content: flex-start;
+    border-top: none; border-right: 1px solid var(--line);
+  }
+  .nav-item { flex: none; border-top: none; border-left: 3px solid transparent; padding: var(--space-4) 0; }
+  .nav-item[aria-current='page'] { border-left-color: var(--red-600); }
+  .app-main { padding: var(--space-6) var(--space-5); margin-left: calc(6.5rem + max(0px, (100vw - 6.5rem - 40rem) / 2)); margin-right: auto; }
+}

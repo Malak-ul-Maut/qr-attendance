@@ -1,5 +1,6 @@
 import express from 'express';
 import db from '../utils/db.js';
+import { issueAdminToken } from '../utils/admin-auth.js';
 
 const router = express.Router();
 
@@ -36,12 +37,15 @@ router.post('/login', (req, res) => {
           error: 'invallid_credentials',
         });
 
-      return res.json({
+      const result = {
         ok: true,
+        role: row.role,
         name: row.user_name,
         username: row.username,
         subjectName: row.subject_name,
-      });
+      };
+      if (row.role === 'admin') result.adminToken = issueAdminToken(row.username);
+      return res.json(result);
     },
   );
 });
