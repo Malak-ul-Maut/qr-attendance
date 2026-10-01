@@ -123,7 +123,7 @@ def download_if_missing(path, url):
     except ImportError:
         sys.exit("Model download needs gdown. Run: pip install gdown")
     print(f"  downloading {path.name} ...")
-    gdown.download(url=url, output=str(path), quiet=False, fuzzy=True)
+    gdown.download(url=url, output=str(path), quiet=False)
     if not path.exists():
         sys.exit(f"Could not download {path.name} from {url} - download it by hand and save it as {path}")
     return path
