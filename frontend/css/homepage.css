@@ -1,82 +1,152 @@
-/*------------ Header -------------*/
-header {
-  width: 100%;
+/* homepage.css - styles used only by homepage.html */
+
+/* ---------- Header ---------- */
+.site-header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.site-header-inner {
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-5);
   display: flex;
-  column-gap: 30px;
-  justify-content: center;
-  background-image: linear-gradient(
-    to right,
-    hsl(223, 46%, 23%),
-    hsla(223, 66%, 33%, 0.815)
-  );
+  align-items: center;
+  gap: var(--space-4);
 }
-header img {
-  width: 80px;
-  height: auto;
-  border-radius: 4px;
-  align-self: center;
+.site-logo {
+  height: 52px;
+  width: auto;
 }
-header p {
-  font-size: 24px;
+.site-title {
+  font-size: var(--text-lg);
   font-weight: 600;
-  color: white;
-  opacity: 0.8;
+  color: var(--ink-900);
+  padding-left: var(--space-4);
+  border-left: 1px solid var(--line-strong);
 }
 
-/*-------------- Heading & sub-heading --------------*/
-.heading {
-  font-size: 40px;
-  font-weight: 800;
-  color: var(--text);
-  justify-self: center;
-  margin-top: 24px;
-  margin-bottom: 0px;
-  opacity: 0.9;
+/* ---------- Hero: campus photo with the headline at the bottom ---------- */
+.hero {
+  position: relative;
+  min-height: 24rem;
+  display: flex;
+  align-items: flex-end;
+  background-color: var(--ink-900);
+  /* two dark layers: one from the left (behind the text), one from the bottom */
+  background-image:
+    linear-gradient(
+      to right,
+      rgba(32, 35, 40, 0.9) 0%,
+      rgba(32, 35, 40, 0.7) 40%,
+      rgba(32, 35, 40, 0.1) 75%
+    ),
+    linear-gradient(to top, rgba(32, 35, 40, 0.7) 0%, rgba(32, 35, 40, 0) 55%),
+    url('../icons/mit-building.jpg');
+  background-size: cover;
+  background-position: center bottom;
 }
-.sub-heading {
-  font-size: 18px;
+.hero-copy {
+  width: 100%;
+  max-width: var(--content-width);
+  margin: 0 auto;
+  /* extra bottom padding leaves room for the cards that overlap the photo */
+  padding: var(--space-7) var(--space-5) calc(var(--space-8) + var(--space-5));
+  color: #fff;
+}
+.hero-copy h1 {
+  max-width: 18ch;
+  font-size: var(--text-4xl);
   font-weight: 700;
-  color: var(--text-muted);
-  justify-self: center;
-  margin-bottom: 48px;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+.hero-copy p {
+  max-width: 46ch;
+  margin-top: var(--space-3);
+  font-size: var(--text-lg);
+  color: rgba(255, 255, 255, 0.9);
 }
 
-/*-------------- Responsive for mobile ----------------*/
-@media (max-width: 540px) {
-  body {
-    height: 100vh;
-  }
+/* ---------- Role cards ---------- */
+.roles {
+  max-width: var(--content-width);
+  margin: calc(var(--space-8) * -1) auto 0; /* pull cards up over the photo */
+  padding: 0 var(--space-5);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-5);
+  position: relative;
+}
 
-  header {
-    height: 50px;
-  }
-  header img {
-    width: 50px;
-    height: auto;
-    border-radius: 4px;
-  }
-  header p {
-    font-size: 16px;
-    font-weight: 700;
-    opacity: 0.8;
-    color: white;
-  }
+.role-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: var(--space-5);
+  text-decoration: none;
+  color: inherit;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.role-card:hover {
+  border-color: var(--red-600);
+  box-shadow: var(--shadow-md);
+}
 
-  .heading {
-    font-size: 22px;
-    font-weight: 800;
-    opacity: 0.9;
-  }
-  .sub-heading {
-    font-size: 16px;
-    font-weight: 700;
-    margin-left: 16px;
-  }
+.role-icon {
+  width: 3rem;
+  height: 3rem;
+  display: grid;
+  place-items: center;
+  margin-bottom: var(--space-4);
+  color: var(--red-600);
+  background: var(--red-50);
+  border-radius: var(--radius-md);
+}
+.role-card h2 {
+  font-size: var(--text-xl);
+}
+.role-card p {
+  margin-top: var(--space-2);
+  color: var(--ink-500);
+}
+.role-link {
+  margin-top: var(--space-4);
+  font-weight: 600;
+  color: var(--red-600);
+}
+.role-card:hover .role-link {
+  text-decoration: underline;
+}
 
-  main {
-    flex-direction: column;
-    justify-self: center;
-    row-gap: 16px;
-    width: 100%;
+/* ---------- Footer ---------- */
+.site-footer {
+  padding: var(--space-7) var(--space-5);
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--ink-500);
+}
+
+/* ---------- Tablets and phones ---------- */
+@media (max-width: 860px) {
+  .roles {
+    grid-template-columns: 1fr;
+    margin-top: calc(var(--space-6) * -1);
+  }
+  .hero {
+    min-height: 20rem;
+  }
+  .hero-copy {
+    padding-bottom: calc(var(--space-6) + var(--space-5));
+  }
+  .hero-copy h1 {
+    font-size: var(--text-2xl);
+  }
+  .hero-copy p {
+    font-size: var(--text-base);
+  }
+  .site-logo {
+    height: 44px;
   }
 }

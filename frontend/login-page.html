@@ -3,28 +3,77 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Login page</title>
+    <title>Sign in | Attendance System</title>
 
     <link rel="icon" href="icons/qr-code.png" />
-    <link rel="stylesheet" href="css/general.css" />
-    <link rel="stylesheet" href="css/button.css" />
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/components.css" />
     <link rel="stylesheet" href="css/loginpage.css" />
 
     <script defer src="js/login-page.js" type="module"></script>
   </head>
 
   <body>
-    <main>
-      <img class="qr-logo" src="icons/generate-qr.svg" />
-      <p class="signInMsg"></p>
+    <main class="login-page">
+      <a class="login-brand" href="homepage.html">
+        <img
+          src="icons/mit-logo.png"
+          alt="Meerut Institute of Technology, back to home" />
+      </a>
 
-      <input type="text" id="username" placeholder="✉ Username" />
-      <input type="password" id="password" placeholder="🔒 Password" />
+      <section class="login-card card">
+        <div class="login-banner" aria-hidden="true"></div>
 
-      <img class="view-password-icon" src="icons/view-password.svg" />
-      <p class="forgot-password-link">Forgot password?</p>
-      <button id="loginBtn">Sign in</button>
-      <p id="login-msg"></p>
+        <div class="login-body">
+          <a class="back-link" href="homepage.html">Change role</a>
+
+          <h1 class="signInMsg">Sign in</h1>
+          <p class="login-sub">
+            Use the username and password given by your college.
+          </p>
+
+          <form id="loginForm" novalidate>
+            <div class="field">
+              <label for="username">Username</label>
+              <input
+                class="input"
+                type="text"
+                id="username"
+                autocomplete="username"
+                autocapitalize="none"
+                spellcheck="false" />
+            </div>
+
+            <div class="field">
+              <label for="password">Password</label>
+              <div class="input-group">
+                <input
+                  class="input"
+                  type="password"
+                  id="password"
+                  autocomplete="current-password" />
+                <button
+                  class="input-toggle"
+                  id="togglePassword"
+                  type="button"
+                  aria-pressed="false">
+                  Show
+                </button>
+              </div>
+            </div>
+
+            <p id="login-msg" class="alert alert-danger" role="alert" hidden></p>
+
+            <button id="loginBtn" class="btn btn-primary btn-block" type="submit">
+              Sign in
+            </button>
+
+            <button id="forgotPassword" class="link-btn" type="button">
+              Forgot password?
+            </button>
+          </form>
+        </div>
+      </section>
     </main>
   </body>
 </html>

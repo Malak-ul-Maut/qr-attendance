@@ -1,0 +1,321 @@
+/* =====================================================
+   components.css - reusable building blocks.
+   Needs tokens.css to be loaded first.
+   ===================================================== */
+
+/* ---------- Basic reset ---------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  color: var(--ink-700);
+  background: var(--canvas);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+h1,
+h2,
+h3 {
+  color: var(--ink-900);
+  line-height: 1.2;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+a {
+  color: var(--red-600);
+}
+
+/* Visible keyboard focus on everything clickable */
+:focus-visible {
+  outline: 2px solid var(--ink-900);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Lets keyboard users jump past the header */
+.skip-link {
+  position: absolute;
+  left: var(--space-4);
+  top: -4rem;
+  padding: var(--space-2) var(--space-4);
+  background: var(--ink-900);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  z-index: 100;
+}
+.skip-link:focus {
+  top: var(--space-4);
+}
+
+/* ---------- Buttons ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--touch-target);
+  padding: 0 var(--space-5);
+  font: inherit;
+  font-weight: 600;
+  font-size: var(--text-base);
+  text-decoration: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+
+.btn-primary {
+  background: var(--red-600);
+  color: #fff;
+  --spinner-color: #fff;
+}
+.btn-primary:hover {
+  background: var(--red-700);
+}
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--ink-900);
+  border-color: var(--line-strong);
+  --spinner-color: var(--ink-900);
+}
+.btn-secondary:hover {
+  background: var(--canvas);
+}
+
+.btn-block {
+  width: 100%;
+}
+
+/* Loading state: set aria-busy="true" on a button to show the spinner */
+.btn[aria-busy='true'] {
+  position: relative;
+  color: transparent;
+  pointer-events: none;
+}
+.btn[aria-busy='true']::after {
+  content: '';
+  position: absolute;
+  width: 1.1rem;
+  height: 1.1rem;
+  border: 2px solid var(--spinner-color, #fff);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Small text-only button, for things like "Forgot password?" */
+.link-btn {
+  padding: var(--space-1) 0;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--red-600);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+/* ---------- Form fields ---------- */
+.field {
+  display: grid;
+  gap: var(--space-2);
+}
+.field label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink-900);
+}
+
+.input {
+  width: 100%;
+  min-height: var(--touch-target);
+  padding: 0 var(--space-4);
+  font: inherit;
+  color: var(--ink-900);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  transition: border-color 0.15s;
+}
+.input::placeholder {
+  color: var(--ink-400);
+}
+.input:hover {
+  border-color: var(--ink-500);
+}
+.input:focus-visible {
+  outline: 2px solid var(--ink-900);
+  outline-offset: 1px;
+  border-color: var(--ink-900);
+}
+.input[aria-invalid='true'] {
+  border-color: var(--danger-600);
+}
+
+/* Input with a button on its right edge (used for show/hide password) */
+.input-group {
+  position: relative;
+}
+.input-group .input {
+  padding-right: 4.5rem;
+}
+.input-group .input-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  padding: 0 var(--space-4);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink-500);
+  background: none;
+  border: none;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  cursor: pointer;
+}
+.input-group .input-toggle:hover {
+  color: var(--ink-900);
+}
+
+/* ---------- Cards ---------- */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ---------- Inline alert (for form errors) ---------- */
+.alert {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-md);
+}
+.alert[hidden] {
+  display: none;
+}
+.alert-danger {
+  color: var(--danger-600);
+  background: var(--danger-50);
+}
+.alert-danger::before {
+  content: '!';
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: #fff;
+  background: var(--danger-600);
+  border-radius: 50%;
+}
+
+/* ---------- Status badges ---------- */
+.badge {
+  display: inline-block;
+  padding: 2px var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  border-radius: 999px;
+  background: var(--canvas);
+  color: var(--ink-700);
+}
+.badge-success {
+  background: var(--success-50);
+  color: var(--success-600);
+}
+.badge-warning {
+  background: var(--warning-50);
+  color: var(--warning-600);
+}
+.badge-danger {
+  background: var(--danger-50);
+  color: var(--danger-600);
+}
+
+/* ---------- Toasts (replace alert() popups) ---------- */
+.toast-region {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-5);
+  transform: translateX(-50%);
+  display: grid;
+  gap: var(--space-2);
+  width: min(26rem, calc(100vw - 2rem));
+  z-index: 200;
+}
+.toast {
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: #fff;
+  background: var(--ink-900);
+  border-left: 4px solid var(--info-600);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+.toast-success {
+  border-left-color: var(--success-600);
+}
+.toast-error {
+  border-left-color: var(--danger-600);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Respect people who turn off animations in their device settings */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

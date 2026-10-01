@@ -3,46 +3,80 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Homepage</title>
+    <title>Attendance System | Meerut Institute of Technology</title>
 
     <link rel="icon" href="icons/qr-code.png" />
-    <link rel="stylesheet" href="css/general.css" />
-    <link rel="stylesheet" href="css/card.css" />
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/components.css" />
     <link rel="stylesheet" href="css/homepage.css" />
   </head>
 
   <body>
-    <header>
-      <img src="icons/mit-logo.png" />
-      <p>WELCOMES YOU TO</p>
+    <a class="skip-link" href="#roles">Skip to sign in options</a>
+
+    <header class="site-header">
+      <div class="site-header-inner">
+        <img
+          class="site-logo"
+          src="icons/mit-logo.png"
+          alt="Meerut Institute of Technology" />
+        <span class="site-title">Attendance System</span>
+      </div>
     </header>
 
-    <p class="heading">The QR-Based Attendance System</p>
-    <p class="sub-heading">
-      Explore and manage Attendance related activities seamlessly.
-    </p>
-
-    <main>
-      <a href="login-page.html?role=student" class="link-card">
-        <p class="title">Student</p>
-        <p class="sub-title">
-          Access your courses, attendance, and academic resources
+    <section class="hero">
+      <div class="hero-copy">
+        <h1>Mark and track class attendance</h1>
+        <p>
+          Students scan the classroom QR code and verify their face. Faculty
+          see who is present as it happens.
         </p>
+      </div>
+    </section>
+
+    <main id="roles" class="roles">
+      <a class="role-card card" href="login-page.html?role=student">
+        <span class="role-icon" aria-hidden="true">
+          <!-- graduation cap -->
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 9l10-5 10 5-10 5z" />
+            <path d="M6 11.5V16c0 1.5 2.7 3 6 3s6-1.5 6-3v-4.5" />
+            <path d="M22 9v6" />
+          </svg>
+        </span>
+        <h2>Student</h2>
+        <p>Scan the class QR code and check your attendance.</p>
+        <span class="role-link">Sign in as student</span>
       </a>
 
-      <a href="login-page.html?role=faculty" class="link-card">
-        <p class="title">Faculty</p>
-        <p class="sub-title">
-          Manage student attendance, courses, and resources efficiently
-        </p>
+      <a class="role-card card" href="login-page.html?role=faculty">
+        <span class="role-icon" aria-hidden="true">
+          <!-- person at a board -->
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="11" rx="1.5" />
+            <path d="M12 15v4M8 20h8" />
+            <path d="M7 9h6M7 12h4" />
+          </svg>
+        </span>
+        <h2>Faculty</h2>
+        <p>Start a session, show the QR code or run CCTV attendance.</p>
+        <span class="role-link">Sign in as faculty</span>
       </a>
 
-      <a href="login-page.html?role=admin" class="link-card">
-        <p class="title">Admin</p>
-        <p class="sub-title">
-          Oversee departmental activities, user accounts, and course allocations
-        </p>
+      <a class="role-card card" href="login-page.html?role=admin">
+        <span class="role-icon" aria-hidden="true">
+          <!-- shield -->
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3l8 3v5.5c0 4.5-3.3 8.2-8 9.5-4.7-1.3-8-5-8-9.5V6z" />
+            <path d="M9 12l2.2 2.2L15.5 10" />
+          </svg>
+        </span>
+        <h2>Admin</h2>
+        <p>Manage students, faculty and attendance records.</p>
+        <span class="role-link">Sign in as admin</span>
       </a>
     </main>
+
+    <footer class="site-footer">Meerut Institute of Technology</footer>
   </body>
 </html>
