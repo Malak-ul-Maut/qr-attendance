@@ -1,128 +1,287 @@
+/* ==========================================================================
+   Student dashboard — tile grid + camera scanner overlay
+   ========================================================================== */
+
+/* js/student.js toggles main between display:none and display:flex, so it is
+   a flex container from the start and the tile grid stretches to fill it. */
 main {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  row-gap: 1.5rem;
-  margin-top: 8rem;
+  max-width: var(--max-width);
+  margin-inline: auto;
+  padding: var(--space-5) var(--space-4);
 }
 
-.link-card img {
-  width: 3rem;
-}
-.link-card p {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--text-muted);
+main > .roles {
+  flex: 1;
+  min-width: 0;
+  margin-top: 0;
 }
 
+/* The profile menu (avatar + dropdown, with Home/Theme/Log out) now lives in
+   the shared css/header.css instead of a page-specific nav drawer here. */
+
+/* ---- Toast (Subjects/History placeholders) ---- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-4);
+  z-index: 60;
+  transform: translate(-50%, 12px);
+  padding: 0.7rem 1.1rem;
+  border-radius: 999px;
+  background: var(--color-ink);
+  color: var(--color-bg);
+  font-size: 0.88rem;
+  font-weight: 500;
+  box-shadow: var(--shadow-card-hover);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* Emphasize the primary action tile */
+#markAttendanceCard {
+  border-color: var(--color-accent);
+}
+
+#markAttendanceCard::before {
+  background: var(--color-accent);
+}
+
+/* ---- Scanner overlay ----
+   js/student.js shows it with display:block, so the layout uses normal flow
+   (centered children) rather than relying on flex. */
 #scanner-section {
-  width: 100%;
-  height: calc(100vh - 4rem);
-  padding: 20px;
-
-  display: flex;
-  flex-direction: column;
-  background-color: var(--bg);
-
-  position: relative;
-  top: 4rem;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 20;
-  box-sizing: border-box;
-  overflow: auto;
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow-y: auto;
+  padding: var(--space-5) var(--space-3) var(--space-4);
+  background: rgba(10, 12, 20, 0.92);
+  text-align: center;
 }
 
 #closeScanBtn {
-  color: white;
-  font-size: 1rem;
-  font-weight: 800;
-  background-color: #da3633;
+  position: fixed;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 1;
+  width: 38px;
+  height: 38px;
   border: none;
-  border-radius: 1rem;
-  height: 3rem;
-  width: 3rem;
-
-  position: absolute;
-  top: 1.2rem;
-  right: 0.4rem;
-  z-index: 100;
-  transition: all 0.1s ease;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
 }
 
+#closeScanBtn:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* ---- Step indicator ----
+   js/student.js never touches this — a small MutationObserver in
+   js/student-ui.js watches #scan-result's text and flips the "active"/"done"
+   classes here to match, purely as a visual read-out of the same flow. */
+.scan-steps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0 auto var(--space-3);
+  padding: 0;
+  width: min(92vw, 420px);
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.scan-steps li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.scan-steps li:not(:last-child)::after {
+  content: '';
+  width: 22px;
+  height: 1px;
+  margin-left: var(--space-2);
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.scan-steps .dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  font-size: 0.72rem;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.scan-steps li.active,
+.scan-steps li.done {
+  color: #ffffff;
+}
+
+.scan-steps li.active .dot {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.scan-steps li.done .dot {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #0a0c14;
+}
+
+.scan-steps li.error .dot {
+  background: #e05a4e;
+  border-color: #e05a4e;
+  color: #fff;
+}
+
+/* The wrapper takes the video's natural size and the canvas sits exactly on
+   top of it, so the face box drawn by face-api.js lines up with the face. */
 .camera-wrapper {
   position: relative;
-  margin: 20px;
+  width: min(92vw, 420px);
+  min-height: 200px;
+  margin-inline: auto;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: #000;
+  border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
-.camera-wrapper canvas {
-  width: 100%;
-  height: 100%;
+/* Four corner brackets, pulsing gently while the scanner is open — echoes
+   the QR-scan motif from the homepage hero graphic. Pure CSS; js/student.js
+   doesn't know these exist. */
+.camera-wrapper::before,
+.camera-wrapper::after {
+  content: '';
   position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 1000;
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--color-accent);
+  z-index: 2;
+  animation: corner-pulse 2.2s ease-in-out infinite;
   pointer-events: none;
 }
 
-#video {
+.camera-wrapper::before {
+  top: 8px;
+  left: 8px;
+  border-right: none;
+  border-bottom: none;
+}
+
+.camera-wrapper::after {
+  bottom: 8px;
+  right: 8px;
+  border-left: none;
+  border-top: none;
+}
+
+@keyframes corner-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+.camera-wrapper video {
+  display: block;
   width: 100%;
-  border: 0.4rem solid gray;
-  border-radius: 2rem;
-  box-shadow:
-    0px 16px 16px #00000030,
-    0px 48px 48px #00000015;
+  height: auto;
+}
+
+.camera-wrapper canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 .slider-row {
   display: flex;
-  justify-content: space-around;
   align-items: center;
-  width: 80%;
-  margin: 1rem auto 0 auto;
+  gap: var(--space-2);
+  width: min(92vw, 420px);
+  margin: var(--space-3) auto 0;
 }
 
-.slider-icon {
-  width: 3rem;
-  object-fit: contain;
-  opacity: 0.9;
-}
-
-#zoom-slider {
-  --fill: 0%;
-  appearance: none;
-  margin: 0 auto;
-  width: 70%;
-  height: 0.8rem;
-  border-radius: 8px;
+.slider-row .slider-icon {
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
+  opacity: 0.85;
+  cursor: pointer;
+  /* #scanner-section's backdrop is always dark, regardless of site theme, so
+     these icons are always flipped light rather than following
+     --icon-filter (which only flips in dark theme). */
+  filter: invert(1) brightness(1.1);
+}
+
+/* --fill is set by enableZoom() in js/student.js */
+#zoom-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
   background: linear-gradient(
     to right,
-    #1f6feb 0%,
-    #1f6feb var(--fill),
-    hsl(204, 100%, 88%) var(--fill),
-    hsl(204, 100%, 88%) 100%
+    var(--color-accent) var(--fill, 0%),
+    rgba(255, 255, 255, 0.25) var(--fill, 0%)
   );
 }
 
-#zoom-slider::-webkit-slider-thumb {
-  appearance: none;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 50%;
-  background: #0b4db3;
-  border: 3px solid rgba(0, 0, 0, 0.9);
-  box-shadow: 0 4px 8px rgba(11, 77, 179, 0.25);
+#zoom-slider:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 4px;
 }
 
+#zoom-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: none;
+}
+
+#zoom-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: none;
+}
+
+/* The script sets red/green text colours inline, so the message sits on a
+   light pill to stay readable over the dark overlay. */
 #scan-result {
-  font-size: 1.5rem;
-  font-weight: 700;
-  opacity: 0.9;
-  margin-top: 1rem;
-  color: #144c99;
-  text-align: center;
-  flex-shrink: 0;
+  width: fit-content;
+  max-width: 92vw;
+  margin: var(--space-3) auto 0;
+  font-size: 0.94rem;
+  font-weight: 600;
+}
+
+#scan-result:not(:empty) {
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #12172b;
 }

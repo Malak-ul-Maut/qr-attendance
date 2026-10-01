@@ -1,204 +1,711 @@
+/* ==========================================================================
+   Faculty dashboard — session setup, live session, student list, dialog
+   ========================================================================== */
+
+.app-shell {
+  display: flex;
+}
+
+/* ---- Toast (placeholder sidebar items: Generate QR / History / Feedback) ---- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-4);
+  z-index: 60;
+  max-width: min(90vw, 320px);
+  width: max-content;
+  text-align: center;
+  transform: translate(-50%, 12px);
+  padding: 0.7rem 1.1rem;
+  border-radius: 999px;
+  background: var(--color-ink);
+  color: var(--color-bg);
+  font-size: 0.88rem;
+  font-weight: 500;
+  box-shadow: var(--shadow-card-hover);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.app-content {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-5) var(--space-4);
+}
+
+@media (min-width: 761px) {
+  .app-content {
+    margin-left: var(--sidebar-width);
+  }
+}
+
+/* Mobile: the sidebar becomes a fixed bottom tab bar (sidebar.css) — leave
+   room for it so the last bits of content (and the toast) aren't hidden
+   underneath it. */
+@media (max-width: 760px) {
+  .app-content {
+    padding-bottom: calc(
+      var(--space-5) + 68px + env(safe-area-inset-bottom, 0px)
+    );
+  }
+
+  .toast {
+    bottom: calc(var(--space-4) + 64px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* ---- Before start: session setup form ---- */
 #beforeStart {
+  max-width: 480px;
+  margin-inline: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
-  margin-top: 10rem;
-  padding: 2rem 2rem;
-  border-radius: 1rem;
-  align-items: center;
-  justify-self: center;
-  background-image: linear-gradient(to bottom, var(--highlight), var(--bg));
-  box-shadow:
-    0px 4px 4px #00000030,
-    0px 12px 12px #00000015;
+  gap: var(--space-3);
+  transition:
+    background-color 0.25s ease,
+    border-color 0.25s ease;
 }
+
+#beforeStart h2 {
+  font-size: 1.35rem;
+}
+
 #sub-name {
-  font-size: 3rem;
-  font-weight: 800;
-  color: var(--text);
-  margin-bottom: 1rem;
-  opacity: 0.8;
+  font-size: 0.92rem;
+  color: var(--color-muted);
+  margin-top: calc(var(--space-1) * -1);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
 }
-.select-section {
-  font-size: 1.5rem;
-  font-weight: 700;
-  opacity: 0.8;
-  margin-top: 20px;
+
+#sub-name:empty {
+  display: none;
+  padding-bottom: 0;
+  border-bottom: none;
 }
-select {
-  font-size: 1.2rem;
+
+#beforeStart label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.85rem;
   font-weight: 600;
-  opacity: 0.8;
-  padding: 0.5rem 1rem;
-  margin-left: 0.6rem;
-  border-radius: 0.5rem;
-  border: 2px solid #918e8e;
+  color: var(--color-ink-soft);
 }
-#startSessionBtn {
-  color: white;
-  margin-top: 16px;
+
+#beforeStart input,
+#beforeStart select {
+  width: 100%;
+  padding: 0.65rem 0.8rem;
+  font: inherit;
+  font-size: 0.94rem;
+  color: var(--color-ink);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  transition:
+    border-color 0.2s ease,
+    background-color 0.25s ease;
 }
+
+#beforeStart input:focus-visible,
+#beforeStart select:focus-visible {
+  outline: none;
+  border-color: var(--color-primary);
+  background: var(--color-surface);
+}
+
+#classes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 0.4rem;
+}
+
+#classes p {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.84rem;
+  color: var(--color-ink-soft);
+}
+
+#classes:empty::after {
+  content: 'Pick a slot to see its classes.';
+  display: block;
+  padding: var(--space-3);
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-sm);
+}
+
+/* ==========================================================================
+   After start: live session
+   ========================================================================== */
 
 #afterStart {
-  display: none; /* Dynamically changed to 'flex' by JS */
-  justify-content: space-evenly;
-  padding-top: 6rem;
-  padding-left: 5rem;
-}
-.afterStart-fs {
-  padding: 0 !important;
-}
-
-canvas {
-  border-radius: 1rem;
-  width: 35% !important;
-  padding: 1rem;
-  background-color: white;
-  box-shadow:
-    0px 0.5rem 0.5rem #0000006b,
-    0px 1rem 1rem #00000031;
-}
-.canvas-fs {
-  width: 50% !important;
-}
-
-.live-section {
-  background-color: var(--bg-light);
-  width: 40%;
-  padding: 1rem;
-  max-height: calc(100vh - 8rem);
-  border-radius: 1rem;
   display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  align-items: center;
-  position: relative;
-  box-shadow:
-    0px 0.5rem 0.5rem #0000006b,
-    0px 1rem 1rem #00000031;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-start;
 }
-.live-section-fs {
-  max-height: 100vh !important;
+
+/* ---- Canvas stage ----
+   A gradient-framed "device bezel" around the bare <canvas> js/faculty.js
+   draws into (QR code or CCTV preview), so it reads as a designed display
+   even before anything is drawn on it. The scan-line/corner brackets are
+   pure CSS — no JS dependency, so they still show if GSAP fails to load. */
+.canvas-stage {
+  position: relative;
+  flex: 0 1 360px;
+  width: min(100%, 360px);
+  aspect-ratio: 1 / 1;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(
+    145deg,
+    var(--color-primary),
+    var(--color-accent)
+  );
+  box-shadow: var(--shadow-card-hover);
+}
+
+.canvas-stage canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important; /* QRCode.toCanvas()/js/faculty.js set inline px sizes */
+  aspect-ratio: 1 / 1;
+  background: #05070d;
+  border-radius: calc(var(--radius-md) - 6px);
+}
+
+.canvas-corner {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.canvas-corner.tl {
+  top: 14px;
+  left: 14px;
+  border-right: none;
+  border-bottom: none;
+  border-radius: 4px 0 0 0;
+}
+
+.canvas-corner.br {
+  bottom: 14px;
+  right: 14px;
+  border-left: none;
+  border-top: none;
+  border-radius: 0 0 4px 0;
+}
+
+.canvas-scan-line {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  top: 14px;
+  height: 2px;
+  z-index: 2;
+  background: linear-gradient(90deg, transparent, #fff, transparent);
+  box-shadow: 0 0 10px 2px rgba(255, 255, 255, 0.65);
+  pointer-events: none;
+  animation: canvas-scan-sweep 2.6s ease-in-out infinite;
+}
+
+@keyframes canvas-scan-sweep {
+  0% {
+    top: 14px;
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    top: calc(100% - 16px);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-scan-line {
+    display: none;
+  }
+}
+
+/* ---- Live Attendance panel ---- */
+.live-section {
+  position: relative;
+  flex: 1;
+  min-width: 260px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-4);
+  transition:
+    background-color 0.25s ease,
+    border-color 0.25s ease;
 }
 
 .live-section-heading {
-  font-size: 2.5rem;
-  font-weight: 800;
-  opacity: 0.8;
-  margin: 1rem auto;
-}
-.live-section div {
-  width: 100%;
-  display: flex;
-  justify-content: center;
-  column-gap: 1rem;
-  align-items: center;
-}
-#studentCount {
-  font-size: 1.5rem;
-  font-weight: 600;
-  margin: 0;
-  color: #555;
-  display: inline-block;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
 }
 
-.toggle-fullscreen-btn {
-  background-color: rgba(0, 0, 0, 0.205);
-  opacity: 0.5;
-  max-width: 2rem;
-  height: 2rem;
-  border-radius: 1rem;
+.live-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.live-actions-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.live-actions-buttons button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.live-actions-buttons button svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+/* Phones: full-width stacked buttons are easier to tap accurately than
+   three squeezed side by side, and the canvas stage gets a touch more
+   breathing room now that it's the full row width. */
+@media (max-width: 560px) {
+  .live-actions-buttons {
+    flex-direction: column;
+  }
+
+  .live-actions-buttons button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .canvas-stage {
+    width: 100%;
+  }
+}
+
+/* .btn-primary on Submit already carries a filled, higher-contrast look
+   (see button.css) — that's the visual hierarchy signal, no extra rule
+   needed here beyond letting it sit at full opacity next to the two
+   outlined .button-secondary actions. */
+
+#viewCctvResultBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* js/faculty-ui.js adds this once, the moment the button goes from
+   disabled to enabled, so a teacher notices a CCTV result is ready. */
+#viewCctvResultBtn.just-enabled {
+  animation: cctv-ready-pulse 0.45s ease-in-out 2;
+}
+
+@keyframes cctv-ready-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.07);
+  }
+}
+
+/* "Present: N" — a small live dot plus the existing pill, so the panel
+   reads as live even before any count change happens. */
+#studentCount {
+  position: relative;
+  width: fit-content;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--color-primary);
+  background: var(--color-accent-soft);
+  padding: 0.3rem 0.7rem 0.3rem 1.65rem;
+  border-radius: 999px;
+}
+
+#studentCount::before {
+  content: '';
   position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
-  z-index: 1;
+  left: 0.7rem;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  transform: translateY(-50%);
+  animation: live-dot-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes live-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #studentCount::before {
+    animation: none;
+  }
+}
+
+/* ---- Fullscreen toggle ----
+   js/faculty.js only adds/removes .afterStart-fs/.canvas-fs/.live-section-fs
+   on its own button click, not on Esc, so the layout rules key off the
+   browser's real :fullscreen state instead (further down). The icon
+   rotation keys off body.is-fullscreen, toggled by js/faculty-ui.js on the
+   native fullscreenchange event, so it also fires on Esc. */
+.toggle-fullscreen-btn {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--color-muted);
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.toggle-fullscreen-btn:hover,
+.toggle-fullscreen-btn:focus-visible {
+  background: var(--color-accent-soft);
+  color: var(--color-primary);
+}
+
+.toggle-fullscreen-icon {
+  position: absolute;
+  top: calc(var(--space-3) + 8px);
+  right: calc(var(--space-3) + 8px);
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+  filter: var(--icon-filter);
+  transition: transform 0.3s ease;
+}
+
+body.is-fullscreen .toggle-fullscreen-icon {
+  transform: rotate(135deg);
+}
+
+/* ---- Live student list ---- */
+#studentList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 340px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#studentList li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  color: var(--color-ink);
+}
+
+#studentList li .tag {
+  font-size: 0.74rem;
+  color: var(--color-muted);
+}
+
+#studentList:empty::after {
+  content: 'No one has checked in yet.';
+  display: block;
+  padding: var(--space-3);
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-sm);
+}
+
+/* Unticked student: js/faculty.js toggles .strike on the name */
+#studentList li span.strike {
+  text-decoration: line-through;
+  color: var(--color-muted);
+}
+
+#studentList input[type='checkbox'],
+#manual-attendance-list input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-accent);
   cursor: pointer;
 }
-.toggle-fullscreen-btn:hover {
-  opacity: 1;
-}
-.toggle-fullscreen-icon {
-  width: 1.2rem;
-  position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
-  transform: translateX(-30%) translateY(30%);
-}
 
-#studentList {
-  overflow-y: auto;
-  margin-right: 1rem;
-}
-#studentList li {
-  font-size: 1.2rem;
-  font-weight: 600;
-  color: #2e7d32;
-  padding: 0.3rem 2rem;
-  opacity: 0.9;
-  background-color: #e8f5e9;
-  border-left: 4px solid #4caf50;
-  border-bottom: 0.8px solid gray;
-  border-radius: 4px;
-}
-
-#manual-attendance-dialog {
-  padding: 1.8rem;
-  border-radius: 16px;
-  box-shadow:
-    0px 4px 4px #00000030,
-    0px 12px 12px #00000015;
-  background-image: linear-gradient(to bottom, var(--highlight), var(--bg));
-}
-
-#manual-attendance-list li {
-  font-size: 1rem;
-  font-weight: 600;
-  opacity: 0.8;
-  margin-bottom: 0.3rem;
-}
-
-#closeDialog {
-  color: #24292f;
-  background-color: #f6f8fa;
-  border: 1px solid #d0d7de;
-  transition: all 0.15s ease;
-}
-#closeDialog:hover {
-  background-color: #e1e4e8;
-  color: black;
-}
-
-.strike {
-  text-decoration: line-through;
-  opacity: 0.8;
-}
-
-input[type='checkbox'] {
-  height: 16px;
-  width: 16px;
-  clip-path: circle(60%);
-}
-
+/* ==========================================================================
+   CCTV result modal — plain <div class="hidden"> in the markup; this file
+   gives it the lightbox treatment. Lives outside #afterStart/.live-section
+   in the markup (see faculty.html) so position:fixed is relative to the
+   viewport rather than to a transformed ancestor (GSAP's entrance animation
+   sets a transform on .live-section, which would otherwise turn it into
+   the containing block for a fixed-position descendant).
+   ========================================================================== */
 #cctvResultModal {
   position: fixed;
   inset: 0;
-  z-index: 1000;
-  display: grid;
-  place-items: center;
-  width: 100vw;
-  height: 100vh;
-  padding: 0;
-  margin: 0;
-  overflow: hidden;
-  background: #000;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
 }
 
 #cctvResultModal.hidden {
   display: none;
 }
 
-#cctvResultImage {
-  display: block;
+#cctvResultModal:fullscreen {
+  padding: 0;
+  background: var(--color-bg);
+}
+
+#cctvResultModal:fullscreen .modal-backdrop {
+  display: none;
+}
+
+#cctvResultModal:fullscreen .modal-panel {
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
   width: 100%;
   height: 100%;
+  max-width: none;
+  max-height: none;
+  padding: 48px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--color-bg);
+}
+
+#cctvResultModal:fullscreen .modal-panel img {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
   object-fit: contain;
+  border-radius: 0;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 12, 20, 0.65);
+}
+
+.modal-panel {
+  position: relative;
+  z-index: 1;
+  max-width: min(92vw, 720px);
+  max-height: 86vh;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card-hover);
+  padding: var(--space-3);
+}
+
+.modal-panel img {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  border-radius: var(--radius-sm);
+}
+
+.modal-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-bg);
+  color: var(--color-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.modal-close:hover,
+.modal-close:focus-visible {
+  background: var(--color-accent-soft);
+  color: var(--color-primary);
+}
+
+.modal-close svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ---- Manual attendance dialog ---- */
+#manual-attendance-dialog {
+  position: fixed;
+  inset: 0;
+  box-sizing: border-box;
+  width: min(92vw, 440px);
+  height: fit-content;
+  max-height: min(88vh, 42rem);
+  margin: auto;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card-hover);
+  padding: var(--space-4);
+  color: var(--color-ink);
+  background: var(--color-surface);
+}
+
+#manual-attendance-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+#manual-attendance-dialog::backdrop {
+  background: rgba(10, 12, 20, 0.58);
+  -webkit-backdrop-filter: blur(7px);
+  backdrop-filter: blur(7px);
+}
+
+#manual-attendance-dialog h3 {
+  font-size: 1.1rem;
+  margin: 0 0 var(--space-3);
+}
+
+#manual-attendance-list {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: min(42vh, 19rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+#manual-attendance-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.55rem 0.65rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.92rem;
+  transition: background-color 0.15s ease;
+}
+
+#manual-attendance-list li span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+#manual-attendance-list li input[type='checkbox'] {
+  flex: 0 0 16px;
+}
+
+#manual-attendance-list li:hover {
+  background: var(--color-accent-soft);
+}
+
+#manual-attendance-dialog form {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.dialog-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.dialog-actions button {
+  flex: 1;
+  width: auto;
+}
+
+/* ---- Fullscreen (real browser state, not js/faculty.js's own classes) ---- */
+#afterStart:fullscreen {
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-5);
+  padding: var(--space-4);
+  overflow: auto;
+  background: var(--color-bg);
+}
+
+#afterStart:fullscreen .canvas-stage {
+  width: min(70vh, 90vw);
+  flex: 0 0 auto;
+}
+
+#afterStart:fullscreen .live-section {
+  flex: 0 1 420px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+#afterStart:fullscreen #studentList {
+  max-height: 50vh;
 }

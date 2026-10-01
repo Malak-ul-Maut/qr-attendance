@@ -1,42 +1,101 @@
-/* SIDEBAR */
-.sidebar {
-  position: fixed;
-  top: 64px;
-  bottom: 0;
-  left: 0;
-  width: 5rem;
-  padding-top: 0px;
-  background-color: var(--bg-light);
-  border-right: 1.5px solid #d0d7de;
-  box-shadow: 1px 0 6px rgba(0, 0, 0, 0.05);
+/* ==========================================================================
+   Sidebar — vertical nav (faculty dashboard: Generate QR / History / Feedback)
+   ========================================================================== */
+
+:root {
+  --sidebar-width: 220px;
 }
 
-.sidebar img {
-  width: 36px;
-  margin-bottom: 6px;
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--sidebar-width);
+  padding-top: calc(56px + var(--space-3)); /* clears the sticky header */
+  padding-inline: var(--space-2);
+  padding-bottom: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  transition: background-color 0.25s ease, border-color 0.25s ease;
+  z-index: 15;
 }
 
 .sidebar-content {
-  font-size: 14px;
-  font-weight: 600;
-  opacity: 0.9;
-  height: 60px;
   display: flex;
-  flex-direction: column;
-  justify-content: center;
   align-items: center;
-  margin: 24px 0;
+  gap: var(--space-2);
+  padding: 0.7rem 0.8rem;
+  border-radius: var(--radius-sm);
+  color: var(--color-ink-soft);
+  font-size: 0.92rem;
+  font-weight: 500;
   cursor: pointer;
-  transition:
-    background-color 0.2s ease,
-    transform 0.1s ease;
-  border-radius: 8px;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
-.sidebar-content:hover {
-  background-color: #f0f6ff;
-  transform: scale(1.02);
+
+.sidebar-content:hover,
+.sidebar-content:focus-visible {
+  background: var(--color-accent-soft);
+  color: var(--color-primary);
 }
-.sidebar-content:active {
-  background-color: hsl(59, 42%, 80%);
-  transform: scale(1.02);
+
+.sidebar-content img {
+  width: 19px;
+  height: 19px;
+  flex-shrink: 0;
+  filter: var(--icon-filter);
+}
+
+/* Label text next to each icon */
+.sidebar-content > div {
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* ---- Mobile: a real bottom tab bar instead of a squeezed top row ----
+   Fixed to the bottom of the screen, thumb-reachable, with safe-area
+   padding for phones with a home indicator. .app-content gets matching
+   bottom padding in faculty.css so content never sits underneath it. */
+@media (max-width: 760px) {
+  .sidebar {
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    justify-content: space-around;
+    padding: var(--space-1) var(--space-1) calc(var(--space-1) + env(safe-area-inset-bottom, 0px));
+    border-right: none;
+    border-top: 1px solid var(--color-border);
+    border-bottom: none;
+    box-shadow: 0 -4px 16px rgba(18, 23, 43, 0.06);
+    z-index: 25;
+  }
+
+  .sidebar-content {
+    flex: 1;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.45rem 0.3rem;
+    font-size: 0.7rem;
+    text-align: center;
+    border-radius: var(--radius-sm);
+  }
+
+  .sidebar-content > div {
+    white-space: normal;
+    line-height: 1.15;
+  }
+
+  .sidebar-content img {
+    width: 21px;
+    height: 21px;
+  }
 }

@@ -4,6 +4,7 @@ import postData from '/utils/fetch.js';
 const beforeStart = document.querySelector('#beforeStart');
 const afterStart = document.querySelector('#afterStart');
 const canvas = document.querySelector('canvas');
+const canvasStage = document.querySelector('.canvas-stage');
 const liveSection = document.querySelector('.live-section');
 const studentList = document.querySelector('#studentList');
 const studentCount = document.querySelector('#studentCount');
@@ -67,10 +68,17 @@ dateElement.addEventListener('change', loadSlots);
 slotsDropdown.addEventListener('change', loadClasses);
 
 methodDropdown.addEventListener('change', () => {
-  const isCCTV = methodDropdown.value === 'cctv';
-  classSelection.style.display = isCCTV ? 'block' : 'none';
-  canvas.style.display = isCCTV ? 'none' : '';
+  updateMethodVisibility();
 });
+
+function updateMethodVisibility(method = methodDropdown.value) {
+  const isCCTV = method === 'cctv';
+  classSelection.style.display = isCCTV ? 'block' : 'none';
+  canvasStage.style.display = isCCTV ? 'none' : '';
+  viewCctvResultBtn.style.display = isCCTV ? '' : 'none';
+}
+
+updateMethodVisibility();
 
 async function loadClasses() {
   classesPara.innerHTML = '';
@@ -163,13 +171,11 @@ startBtn.addEventListener('click', async () => {
 
     beforeStart.style.display = 'none';
     afterStart.style.display = 'flex';
-    viewCctvResultBtn.hidden = method !== 'cctv';
+    updateMethodVisibility(method);
 
     if (method === 'qr') {
-      canvas.style.display = '';
       renderQR(response);
     } else {
-      canvas.style.display = 'none';
       studentCount.textContent = 'CCTV: processing...';
       await runCCTV();
     }
@@ -242,7 +248,11 @@ function closeCctvResult() {
   }
 }
 
-cctvResultModal.addEventListener('click', closeCctvResult);
+cctvResultModal.addEventListener('click', event => {
+  if (event.target === cctvResultModal || event.target.closest('[data-modal-dismiss]')) {
+    closeCctvResult();
+  }
+});
 
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && !cctvResultModal.classList.contains('hidden')) {
@@ -260,30 +270,46 @@ document.addEventListener('fullscreenchange', () => {
 });
 
 addManuallyBtn.addEventListener('click', async () => {
-  const res = await fetch(`/api/students/${sessionCode}`);
-  const students = await res.json();
+  if (!sessionCode || addManuallyBtn.disabled) return;
 
-  const unmarkedStudents = students.filter(
-    s => !markedStudents.has(String(s.id)),
-  );
+  addManuallyBtn.disabled = true;
+  showManualPopup([], 'Loading students...');
 
-  const attendanceCheckboxes = new Map(
-    [...studentList.querySelectorAll('input[type="checkbox"]')].map(
-      checkbox => [checkbox.dataset.id, checkbox],
-    ),
-  );
-  const availableStudents = new Map(
-    unmarkedStudents.map(student => [String(student.id), student]),
-  );
+  try {
+    const res = await fetch(`/api/students/${sessionCode}`);
+    if (!res.ok) throw new Error(`Student request failed (${res.status})`);
+    const students = await res.json();
 
-  cctvAbsentStudents.forEach(student => {
-    const checkbox = attendanceCheckboxes.get(String(student.id));
-    if (!checkbox?.checked) {
-      availableStudents.set(String(student.id), student);
-    }
-  });
+    const unmarkedStudents = students.filter(
+      student => !markedStudents.has(String(student.id)),
+    );
 
-  showManualPopup([...availableStudents.values()]);
+    const attendanceCheckboxes = new Map(
+      [...studentList.querySelectorAll('input[type="checkbox"]')].map(
+        checkbox => [checkbox.dataset.id, checkbox],
+      ),
+    );
+    const availableStudents = new Map(
+      unmarkedStudents.map(student => [String(student.id), student]),
+    );
+
+    cctvAbsentStudents.forEach(student => {
+      const checkbox = attendanceCheckboxes.get(String(student.id));
+      if (!checkbox?.checked) {
+        availableStudents.set(String(student.id), student);
+      }
+    });
+
+    showManualPopup(
+      [...availableStudents.values()],
+      'No students available to add.',
+    );
+  } catch (error) {
+    console.error('Could not load students for manual attendance:', error);
+    showManualPopup([], 'Could not load students. Close and try again.');
+  } finally {
+    addManuallyBtn.disabled = false;
+  }
 });
 
 addSelectedBtn.addEventListener('click', async () => {
@@ -382,6 +408,7 @@ function clearAttendanceUI() {
   cctvAbsentStudents = [];
   afterStart.style.display = 'none';
   beforeStart.style.display = 'flex';
+  updateMethodVisibility();
   clearTimeout(qrTimer);
   sessionCode = null;
 }
@@ -394,9 +421,19 @@ function updatePresentCount() {
   studentCount.textContent = `Present: ${checkedStudents}`;
 }
 
-function showManualPopup(students) {
+function showManualPopup(
+  students,
+  emptyMessage = 'No students available to add.',
+) {
   const container = document.querySelector('#manual-attendance-list');
   container.innerHTML = '';
+
+  if (students.length === 0) {
+    const li = document.createElement('li');
+    li.className = 'manual-attendance-empty';
+    li.textContent = emptyMessage;
+    container.appendChild(li);
+  }
 
   students.forEach(student => {
     const li = document.createElement('li');
@@ -414,7 +451,8 @@ function showManualPopup(students) {
     container.appendChild(li);
   });
 
-  dialog.showModal();
+  addSelectedBtn.disabled = students.length === 0;
+  if (!dialog.open) dialog.showModal();
 }
 
 // Populate the initial slot/class controls.

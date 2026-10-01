@@ -1,39 +1,234 @@
+/* ==========================================================================
+   Header — dashboard top bar (brand / center title-or-name / profile menu)
+   ========================================================================== */
+
 header {
-  font-size: 20px;
-  font-weight: 500;
-  opacity: 0.9;
-  border-bottom: 1.5px solid #d0d7de;
-  color: white;
-  background-image: linear-gradient(
-    to right,
-    hsla(223, 66%, 33%, 0.815),
-    hsl(223, 46%, 23%)
-  );
-
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-
-  position: fixed;
+  position: sticky;
   top: 0;
-  left: 0;
-  right: 0;
-  height: 4rem;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
-  z-index: 10;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-header-bg);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--color-border);
+  transition: background-color 0.25s ease, border-color 0.25s ease;
 }
 
-.left-section img {
-  width: 2rem;
-  margin-left: 1rem;
+header .left-section,
+header .right-section {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
 }
 
-.middle-section {
+header .right-section {
+  justify-content: flex-end;
+}
+
+header .middle-section {
+  flex: 2;
+  text-align: center;
+}
+
+header .user-name {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  color: var(--color-ink);
+}
+
+/* Narrow phones: a long name + "Welcome," + the title would overflow a
+   3-column header. .page-title (faculty.html's "Teacher Dashboard") and
+   .user-name-prefix ("Welcome, ") are both redundant once the avatar is
+   right there, so they go first; student.html has neither class, so its
+   centered name (the only place it appears) is untouched. */
+@media (max-width: 640px) {
+  header .middle-section.page-title {
+    display: none;
+  }
+
+  header .user-name-prefix {
+    display: none;
+  }
+
+  header .user-name {
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+  }
+}
+
+/* ---- Brand mark (left-section) — links back to homepage.html ---- */
+.brand-mark {
+  display: flex;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  transition: background-color 0.2s ease;
+}
+
+.brand-mark:hover,
+.brand-mark:focus-visible {
+  background: var(--color-accent-soft);
+}
+
+.brand-mark svg {
+  width: 26px;
+  height: 26px;
+  display: block;
+}
+
+/* ==========================================================================
+   Profile menu — avatar button + dropdown (Home / Theme / Log out)
+   Shared by student.html and faculty.html; the only page-specific bit is
+   where it sits in the header markup.
+   ========================================================================== */
+
+.profile-menu {
+  position: relative;
+}
+
+.avatar-btn {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid var(--color-border);
+  background: var(--color-accent-soft);
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.avatar-btn:hover,
+.avatar-btn:focus-visible {
+  border-color: var(--color-accent);
+}
+
+.avatar-btn img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar-fallback {
+  font-size: 0.82rem;
   font-weight: 700;
-  font-size: 1.5rem;
+  color: var(--color-primary);
 }
 
-.right-section {
-  margin-right: 16px;
-  font-size: 15px;
+.profile-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 30;
+  width: 230px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card-hover);
+  padding: var(--space-2);
+  opacity: 0;
+  transform: scale(0.95) translateY(-6px);
+  transform-origin: top right;
+  transition: opacity 0.18s ease, transform 0.18s ease, background-color 0.25s ease, border-color 0.25s ease;
+}
+
+.profile-menu.open .profile-dropdown {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+}
+
+.profile-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--color-ink-soft);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.profile-menu-item:hover,
+.profile-menu-item:focus-visible {
+  background: var(--color-accent-soft);
+  color: var(--color-primary);
+}
+
+.profile-menu-item img {
+  width: 18px;
+  height: 18px;
+  filter: var(--icon-filter);
+}
+
+.profile-menu-section {
+  padding: 0.55rem 0.7rem 0.2rem;
+}
+
+.profile-menu-label {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--color-muted);
+  margin-bottom: 0.45rem;
+}
+
+.profile-menu-divider {
+  height: 1px;
+  margin: var(--space-1) 0.2rem;
+  background: var(--color-border);
+}
+
+/* Small light/dark/system control, used inside .profile-menu-section */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+}
+
+.theme-toggle button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.theme-toggle button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.theme-toggle button:hover {
+  color: var(--color-ink);
+}
+
+.theme-toggle button[aria-pressed='true'] {
+  background: var(--color-accent-soft);
+  color: var(--color-primary);
 }

@@ -3,46 +3,221 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Homepage</title>
+    <title>The QR & CCTV Attendance System</title>
 
     <link rel="icon" href="icons/qr-code.png" />
     <link rel="stylesheet" href="css/general.css" />
     <link rel="stylesheet" href="css/card.css" />
     <link rel="stylesheet" href="css/homepage.css" />
+
+    <!-- Applies any saved theme before first paint, so there's no flash of the wrong theme. -->
+    <script>
+      (function () {
+        var saved = localStorage.getItem('theme'); // 'light' | 'dark' | null (= system)
+        if (saved === 'light' || saved === 'dark') {
+          document.documentElement.setAttribute('data-theme', saved);
+        }
+      })();
+    </script>
   </head>
 
   <body>
-    <header>
-      <img src="icons/mit-logo.png" />
-      <p>WELCOMES YOU TO</p>
+    <header class="site-header">
+      <div class="container bar">
+        <div class="brand">
+          <svg class="mark" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect x="1" y="1" width="38" height="38" rx="9" fill="#1F2B6C" />
+            <rect x="9" y="9" width="8" height="8" fill="#F5F6F9" />
+            <rect x="23" y="9" width="8" height="8" fill="#F5F6F9" />
+            <rect x="9" y="23" width="8" height="8" fill="#F5F6F9" />
+            <rect x="23" y="23" width="8" height="3" fill="#0E9C87" />
+            <rect x="27" y="23" width="4" height="8" fill="#0E9C87" />
+            <rect x="23" y="28" width="4" height="3" fill="#0E9C87" />
+          </svg>
+          <p class="wordmark">Institute<span>Attend</span></p>
+        </div>
+        <div class="nav-group">
+          <nav class="site-nav">
+            <a href="#roles">Sign in</a>
+            <a href="#how-it-works">How it works</a>
+            <a href="#contact">Help</a>
+          </nav>
+
+          <div class="theme-toggle" role="group" aria-label="Theme">
+            <button type="button" data-theme-choice="light" aria-label="Light theme" aria-pressed="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+            </button>
+            <button type="button" data-theme-choice="dark" aria-label="Dark theme" aria-pressed="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+            </button>
+            <button type="button" data-theme-choice="system" aria-label="Match system" aria-pressed="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
     </header>
 
-    <p class="heading">The QR-Based Attendance System</p>
-    <p class="sub-heading">
-      Explore and manage Attendance related activities seamlessly.
-    </p>
+    <section class="hero">
+      <div class="container">
+        <div class="hero-copy">
+          <h1>The smart attendance system built for every classroom.</h1>
+          <p class="lede">
+            Students check in with a QR scan or automatic CCTV recognition, faculty close the
+            register in one tap, and admins keep every department's records straight — no roll
+            call, no paper sheets.
+          </p>
+          <div class="meta-row">
+            <div>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+              Marked in under two seconds
+            </div>
+            <div>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3l7 4v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V7l7-4z"/></svg>
+              Records kept private by role
+            </div>
+            <div>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="6" width="14" height="12" rx="2"/><path d="M17 10l4-2v8l-4-2"/></svg>
+              Works by QR or camera
+            </div>
+          </div>
+        </div>
 
-    <main>
-      <a href="login-page.html?role=student" class="link-card">
-        <p class="title">Student</p>
-        <p class="sub-title">
-          Access your courses, attendance, and academic resources
-        </p>
-      </a>
+        <div class="hero-graphic" id="heroGraphic" aria-hidden="true">
+          <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="scanGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#0E9C87" stop-opacity="0" />
+                <stop offset="50%" stop-color="#0E9C87" stop-opacity="0.25" />
+                <stop offset="100%" stop-color="#0E9C87" stop-opacity="0" />
+              </linearGradient>
+            </defs>
 
-      <a href="login-page.html?role=faculty" class="link-card">
-        <p class="title">Faculty</p>
-        <p class="sub-title">
-          Manage student attendance, courses, and resources efficiently
-        </p>
-      </a>
+            <!-- QR-style grid, generated as a fixed pseudo-random pattern -->
+            <g id="qrGrid"></g>
 
-      <a href="login-page.html?role=admin" class="link-card">
-        <p class="title">Admin</p>
-        <p class="sub-title">
-          Oversee departmental activities, user accounts, and course allocations
-        </p>
-      </a>
+            <!-- Finder corners, like a real QR code -->
+            <g fill="none" stroke="#1F2B6C" stroke-width="4">
+              <rect x="14" y="14" width="34" height="34" rx="4" />
+              <rect x="152" y="14" width="34" height="34" rx="4" />
+              <rect x="14" y="152" width="34" height="34" rx="4" />
+            </g>
+            <g fill="#1F2B6C">
+              <rect x="23" y="23" width="16" height="16" rx="2" />
+              <rect x="161" y="23" width="16" height="16" rx="2" />
+              <rect x="23" y="161" width="16" height="16" rx="2" />
+            </g>
+
+            <!-- Scan line + glow, animated by GSAP -->
+            <rect id="scanGlow" class="scan-glow" x="0" y="0" width="200" height="26" />
+            <line id="scanLine" class="scan-line" x1="8" y1="0" x2="192" y2="0" />
+          </svg>
+        </div>
+      </div>
+    </section>
+
+    <section class="features">
+      <div class="container">
+        <div class="feature">
+          <div class="icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+          </div>
+          <div>
+            <p class="label">Real-time attendance</p>
+            <p class="desc">Every scan lands on the register instantly.</p>
+          </div>
+        </div>
+        <div class="feature">
+          <div class="icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
+          <div>
+            <p class="label">Secure QR scans</p>
+            <p class="desc">Each code expires after one use.</p>
+          </div>
+        </div>
+        <div class="feature">
+          <div class="icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/></svg>
+          </div>
+          <div>
+            <p class="label">CCTV recognition</p>
+            <p class="desc">Classroom cameras can mark attendance with no scan at all.</p>
+          </div>
+        </div>
+        <div class="feature">
+          <div class="icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V9M12 19V4M20 19v-6"/></svg>
+          </div>
+          <div>
+            <p class="label">Clear analytics</p>
+            <p class="desc">Attendance trends by class or student.</p>
+          </div>
+        </div>
+        <div class="feature">
+          <div class="icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </div>
+          <div>
+            <p class="label">Multi-role access</p>
+            <p class="desc">Students, faculty and admins each see only what's theirs.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <main class="roles-section" id="roles">
+      <div class="container">
+        <div class="section-head">
+          <h2>Continue as</h2>
+          <p>Pick your role to get to the right sign-in page.</p>
+        </div>
+
+        <div class="roles">
+          <a href="login-page.html?role=student" class="link-card">
+            <div class="icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1.5 3 3 6 3s6-1.5 6-3v-5"/></svg>
+            </div>
+            <p class="title">Student</p>
+            <p class="sub-title">Check in by QR or camera, check your attendance record, and reach your course resources.</p>
+            <span class="enter">Continue
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </span>
+          </a>
+
+          <a href="login-page.html?role=faculty" class="link-card">
+            <div class="icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </div>
+            <p class="title">Faculty</p>
+            <p class="sub-title">Open a session, watch attendance come in live from QR scans and CCTV, and close the register in one tap.</p>
+            <span class="enter">Continue
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </span>
+          </a>
+
+          <a href="login-page.html?role=admin" class="link-card">
+            <div class="icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 4v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V7l7-4z"/></svg>
+            </div>
+            <p class="title">Admin</p>
+            <p class="sub-title">Manage departments, course allocations, and every account on the system.</p>
+            <span class="enter">Continue
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </span>
+          </a>
+        </div>
+      </div>
     </main>
+
+    <footer class="site-footer" id="contact">
+      <div class="container">
+        <p>&copy; 2026 Institute Attendance System</p>
+        <p>Built for classrooms, not paperwork.</p>
+      </div>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <script src="js/homepage.js"></script>
   </body>
 </html>

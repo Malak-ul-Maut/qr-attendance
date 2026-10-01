@@ -1,37 +1,113 @@
-button {
-  color: white;
-  font-size: 14px;
-  font-weight: 550;
-  cursor: pointer;
-  width: max-content;
-  height: 40px;
-  padding: 5px 20px;
-  margin-top: 8px;
-  border-radius: 0.8rem;
+/* ==========================================================================
+   Buttons — primary action, icon-reset, and plain/link-style buttons
+   ========================================================================== */
+
+.btn-primary {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem;
+  margin-top: var(--space-2);
   border: none;
-  background-color: hsla(223, 66%, 33%, 0.815);
-  opacity: 0.9;
-  transition:
-    opacity 0.15s,
-    transform 0.1s,
-    background-color 0.1s;
-}
-button:hover {
-  box-shadow: 0 2px 4px gray;
-  background-color: hsl(223, 46%, 23%);
-}
-button:active {
-  opacity: 0.6;
-  transform: scale(0.98);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: #ffffff;
+  font-size: 0.98rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+  box-shadow: 0 8px 20px -10px rgba(31, 43, 108, 0.55);
 }
 
-.button-secondary {
-  color: #24292f;
-  background-color: #f6f8fa;
-  border: 1px solid #d0d7de;
-  transition: all 0.15s ease;
+.btn-primary:hover {
+  background: var(--color-primary-soft);
 }
+
+.btn-primary:active {
+  transform: translateY(1px);
+}
+
+.btn-primary:disabled {
+  opacity: 0.65;
+  cursor: progress;
+  transform: none;
+}
+
+/* Reset for icon-only buttons (password visibility, etc.) */
+.icon-btn {
+  border: none;
+  background: transparent;
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--color-muted);
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.icon-btn:hover {
+  color: var(--color-ink);
+  background: var(--color-accent-soft);
+}
+
+.icon-btn img,
+.icon-btn svg {
+  width: 18px;
+  height: 18px;
+  pointer-events: none;
+}
+
+.icon-btn[aria-pressed='true'] {
+  color: var(--color-primary);
+}
+
+/* Secondary/ghost button — outlined, for actions alongside a primary one
+   (e.g. "Submit" next to "Add Manually" on the faculty live-session panel) */
+.button-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
 .button-secondary:hover {
-  background-color: #e1e4e8;
-  color: black;
+  border-color: var(--color-primary);
+  background: var(--color-accent-soft);
+}
+
+.button-secondary:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+/* Plain text-link style used for "back to home", "forgot password" */
+.link-plain {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--color-primary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.link-plain:hover {
+  color: var(--color-primary-soft);
+  text-decoration: underline;
 }
