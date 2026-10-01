@@ -1,421 +1,380 @@
 import { getCurrentUser, logout } from '/utils/storage.js';
 import postData from '/utils/fetch.js';
+import { showToast } from './ui.js';
 
-const beforeStart = document.querySelector('#beforeStart');
-const afterStart = document.querySelector('#afterStart');
-const canvas = document.querySelector('canvas');
-const liveSection = document.querySelector('.live-section');
-const studentList = document.querySelector('#studentList');
-const studentCount = document.querySelector('#studentCount');
-const addManuallyBtn = document.querySelector('#add-manually-btn');
-const dialog = document.querySelector('#manual-attendance-dialog');
-const addSelectedBtn = document.querySelector('#add-selected-btn');
-const startBtn = document.querySelector('#startSessionBtn');
-const viewCctvResultBtn = document.querySelector('#viewCctvResultBtn');
-const methodDropdown = document.querySelector('#attendance-method');
-const classSelection = document.querySelector('#class-selection');
-const classesPara = document.querySelector('#classes');
-
-let sessionCode = null;
-let qrTimer = null;
-let cctvAbsentStudents = [];
-const classIds = [];
-
+const $ = sel => document.querySelector(sel);
 const currentUser = getCurrentUser();
 const facultyId = currentUser.username;
 
-const toggleFullScreenBtn = document.querySelector('.toggle-fullscreen-btn');
-toggleFullScreenBtn.addEventListener('click', () => toggleFullScreen());
+// ---------- Page basics ----------
+$('.user-name b').textContent = currentUser.name || 'Teacher';
+$('#sub-name').textContent = currentUser.subName || currentUser.subjectName || '';
+$('.logout-btn').addEventListener('click', () => logout());
 
-// Display username and subject
-const userName = document.querySelector('.user-name b');
-userName.textContent = currentUser.name || 'Teacher';
+// Tabs: Session / History
+document.querySelectorAll('.nav-item').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(t => t.removeAttribute('aria-current'));
+    tab.setAttribute('aria-current', 'page');
+    document.querySelectorAll('.view').forEach(v => (v.hidden = v.id !== `view-${tab.dataset.view}`));
+  });
+});
 
-const subjectName = document.querySelector('#sub-name');
-subjectName.textContent = currentUser.subName || currentUser.subjectName || '';
-
-document.querySelector('.logout-btn').addEventListener('click', () => logout());
-
-const dateElement = document.querySelector('#date');
-const slotsDropdown = document.querySelector('#slots');
-
-// Use today's date when the page opens. The teacher can still change it for testing.
-if (!dateElement.value) {
-  dateElement.value = new Date().toISOString().slice(0, 10);
+// Call when the backend can list past sessions.
+// sessions: [{ date, slot, method, present, total }]
+export function renderHistory(sessions) {
+  $('#historyEmpty').hidden = sessions.length > 0;
+  $('#historyList').replaceChildren(
+    ...sessions.map(s => {
+      const li = document.createElement('li');
+      li.className = 'card list-row';
+      const text = document.createElement('span');
+      text.textContent = `${s.date} · ${s.slot} · ${s.method.toUpperCase()}`;
+      const badge = document.createElement('span');
+      badge.className = 'badge badge-success';
+      badge.textContent = `${s.present}/${s.total} present`;
+      li.append(text, badge);
+      return li;
+    }),
+  );
 }
+
+// Errors during full screen would be hidden behind it, so leave full screen first
+function notify(message, type = 'info') {
+  if (type === 'error' && document.fullscreenElement) document.exitFullscreen();
+  showToast(message, type);
+}
+
+// ---------- Elements and state ----------
+const beforeStart = $('#beforeStart');
+const afterStart = $('#afterStart');
+const qrCanvas = $('#qrCanvas');
+const studentList = $('#studentList');
+const startBtn = $('#startSessionBtn');
+const dateInput = $('#date');
+const slotList = $('#slots');
+const classSelection = $('#class-selection');
+const classesBox = $('#classes');
+const manualDialog = $('#manual-attendance-dialog');
+const submitDialog = $('#submit-dialog');
+
+let sessionCode = null;
+let qrTimer = null;
+let classIds = [];
+let slotRequestId = 0;
+const roster = new Map(); // studentId -> { name, time, source: 'qr'|'cctv'|'manual', present }
+const manualIds = new Set(); // ids the teacher added by hand
+
+const getMethod = () => $('input[name="method"]:checked').value;
+const getSlotId = () => $('input[name="slot"]:checked')?.value;
+
+// ---------- Setup: date, slots, classes ----------
+dateInput.value ||= new Date().toISOString().slice(0, 10); // today; teacher can change it
 
 async function loadSlots() {
-  slotsDropdown.innerHTML = '';
-  classesPara.innerHTML = '';
-
-  const res = await fetch(
-    `/api/session/slots?date=${encodeURIComponent(dateElement.value)}&faculty_id=${encodeURIComponent(facultyId)}`,
-  );
-  const slotsList = await res.json();
-
-  slotsList.forEach(slot => {
-    const option = document.createElement('option');
-    option.value = slot.id;
-    option.textContent = `${slot.label}: ${slot.start_time} - ${slot.end_time}`;
-    slotsDropdown.appendChild(option);
-  });
-
-  await loadClasses();
-}
-
-dateElement.addEventListener('change', loadSlots);
-slotsDropdown.addEventListener('change', loadClasses);
-
-methodDropdown.addEventListener('change', () => {
-  const isCCTV = methodDropdown.value === 'cctv';
-  classSelection.style.display = isCCTV ? 'block' : 'none';
-  canvas.style.display = isCCTV ? 'none' : '';
-});
-
-async function loadClasses() {
-  classesPara.innerHTML = '';
-
-  if (!slotsDropdown.value) {
-    classSelection.style.display = 'none';
-    return;
-  }
-
-  const res = await fetch(
-    `/api/session/classes?date=${encodeURIComponent(dateElement.value)}&slotId=${encodeURIComponent(slotsDropdown.value)}&faculty_id=${encodeURIComponent(facultyId)}`,
-  );
-  const classes = await res.json();
-
-  classes.forEach(item => {
-    classIds.push(item.class_id);
-    const para = document.createElement('p');
-    para.value = item.class_id;
-    para.textContent = `${item.course} (${item.branch}) • Sem ${item.semester} • Section ${item.section}`;
-    classesPara.appendChild(para);
-  });
-
-  classSelection.style.display =
-    methodDropdown.value === 'cctv' ? 'block' : 'none';
-}
-
-// --------------- Socket initialization -------------
-const socket = io(location.origin);
-
-socket.on('attendance_update', data => {
-  if (String(data.sessionCode || data.sessionId) !== String(sessionCode))
-    return;
-  if (markedStudents.has(String(data.studentId))) return;
-
-  markedStudents.add(String(data.studentId));
-
-  const li = document.createElement('li');
-  const span = document.createElement('span');
-  span.textContent = `${data.studentName} (${data.time})`;
-  span.dataset.id = data.studentId;
-
-  const checkBox = document.createElement('input');
-  checkBox.type = 'checkbox';
-  checkBox.checked = true;
-  checkBox.dataset.id = data.studentId;
-
-  checkBox.addEventListener('change', () => {
-    span.classList.toggle('strike', !checkBox.checked);
-    updatePresentCount();
-  });
-
-  li.appendChild(span);
-  li.appendChild(checkBox);
-  studentList.appendChild(li);
-  li.scrollIntoView();
-  updatePresentCount();
-});
-
-const markedStudents = new Set();
-
-// Start session
-startBtn.addEventListener('click', async () => {
-  const slotId = slotsDropdown.value;
-  const date = dateElement.value;
-  const method = methodDropdown.value;
-
-  if (!slotId) return alert('Please select a slot.');
-
+  const requestId = ++slotRequestId; // ignore answers that arrive late
+  slotList.replaceChildren(...[1, 2].map(() => Object.assign(document.createElement('div'), { className: 'skeleton slot-skeleton' })));
+  $('#slotMsg').hidden = true;
+  $('#slotEmpty').hidden = true;
+  classesBox.replaceChildren();
   startBtn.disabled = true;
-  viewCctvResultBtn.disabled = true;
 
   try {
+    const res = await fetch(`/api/session/slots?date=${encodeURIComponent(dateInput.value)}&faculty_id=${encodeURIComponent(facultyId)}`);
+    if (!res.ok) throw new Error();
+    const slots = await res.json();
+    if (requestId !== slotRequestId) return;
+
+    slotList.replaceChildren(...slots.map((slot, i) => {
+      const label = document.createElement('label');
+      label.className = 'slot-card';
+      label.innerHTML = '<input type="radio" name="slot"><span class="slot-body"><span class="slot-label"></span><span class="slot-time"></span></span>';
+      const input = label.querySelector('input');
+      input.value = slot.id;
+      input.checked = i === 0; // first slot pre-selected
+      input.addEventListener('change', loadClasses);
+      label.querySelector('.slot-label').textContent = slot.label;
+      label.querySelector('.slot-time').textContent = `${slot.start_time} – ${slot.end_time}`;
+      return label;
+    }));
+    $('#slotEmpty').hidden = slots.length > 0;
+    startBtn.disabled = slots.length === 0;
+    await loadClasses();
+  } catch {
+    if (requestId !== slotRequestId) return;
+    slotList.replaceChildren();
+    $('#slotMsg').textContent = 'Could not load your timetable. Check your connection and change the date to retry.';
+    $('#slotMsg').hidden = false;
+  }
+}
+
+async function loadClasses() {
+  classesBox.replaceChildren();
+  classIds = []; // reset every time so old ids never pile up
+  if (!getSlotId()) return updateClassVisibility();
+
+  try {
+    const res = await fetch(`/api/session/classes?date=${encodeURIComponent(dateInput.value)}&slotId=${encodeURIComponent(getSlotId())}&faculty_id=${encodeURIComponent(facultyId)}`);
+    const classes = await res.json();
+    classes.forEach(item => {
+      classIds.push(item.class_id);
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.textContent = `${item.course} (${item.branch}) · Sem ${item.semester} · Section ${item.section}`;
+      classesBox.appendChild(chip);
+    });
+  } catch {
+    notify('Could not load the classes for this slot.', 'error');
+  }
+  updateClassVisibility();
+}
+
+function updateClassVisibility() {
+  classSelection.hidden = getMethod() !== 'cctv' || classIds.length === 0;
+}
+
+dateInput.addEventListener('change', loadSlots);
+document.querySelectorAll('input[name="method"]').forEach(r => r.addEventListener('change', updateClassVisibility));
+
+// ---------- Live roster ----------
+function addToRoster(id, name, time, source, present = true) {
+  id = String(id);
+  if (roster.has(id)) return false;
+  roster.set(id, { name, time, source: manualIds.has(id) ? 'manual' : source, present });
+  renderRoster();
+  return true;
+}
+
+function renderRoster() {
+  const rows = [...roster].map(([id, s]) => {
+    const li = document.createElement('li');
+    li.className = `roster-row ${s.present ? '' : 'is-absent'}`;
+
+    const info = document.createElement('div');
+    const name = document.createElement('span');
+    name.className = 'roster-name';
+    name.textContent = s.name;
+    const meta = document.createElement('span');
+    meta.className = 'roster-meta';
+    const via = { qr: 'QR', cctv: 'CCTV', manual: 'Manual' }[s.source];
+    meta.textContent = s.time ? `${via} · ${s.time}` : via;
+    info.append(name, meta);
+
+    // Tap to flip between Present and Absent
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `status-btn badge ${s.present ? 'badge-success' : 'badge-danger'}`;
+    btn.textContent = s.present ? '✓ Present' : '✕ Absent';
+    btn.setAttribute('aria-label', `${s.name} is ${s.present ? 'present' : 'absent'}. Mark ${s.present ? 'absent' : 'present'}`);
+    btn.addEventListener('click', () => {
+      s.present = !s.present;
+      renderRoster();
+    });
+
+    li.append(info, btn);
+    return li;
+  });
+  studentList.replaceChildren(...rows);
+  $('#rosterEmpty').hidden = roster.size > 0;
+  $('#studentCount').textContent = [...roster.values()].filter(s => s.present).length;
+}
+
+// Students scanning their QR arrive through the socket
+const socket = io(location.origin);
+socket.on('attendance_update', data => {
+  if (String(data.sessionCode || data.sessionId) !== String(sessionCode)) return;
+  if (addToRoster(data.studentId, data.studentName, data.time, 'qr')) {
+    studentList.lastElementChild?.scrollIntoView({ block: 'nearest' });
+  }
+});
+
+// ---------- Start session ----------
+startBtn.addEventListener('click', async () => {
+  const slotId = getSlotId();
+  if (!slotId) return notify('Pick a class slot first.', 'error');
+  const method = getMethod();
+
+  startBtn.setAttribute('aria-busy', 'true');
+  startBtn.disabled = true;
+  try {
     const response = await postData('/api/session/start', {
-      date,
+      date: dateInput.value,
       slotId,
       facultyId,
       method,
       classIds,
+      sessionType: $('input[name="session-type"]:checked').value,
     });
-
-    if (!response.ok) {
-      console.error('Start session failed:', response);
-      alert(`Could not start session: ${response.error || 'unknown error'}`);
-      return;
-    }
+    if (!response.ok) return notify(`Could not start session: ${response.error || 'unknown error'}`, 'error');
 
     sessionCode = response.sessionCode;
-    markedStudents.clear();
+    roster.clear();
+    manualIds.clear();
+    renderRoster();
     socket.emit('join_session', sessionCode);
 
-    beforeStart.style.display = 'none';
-    afterStart.style.display = 'flex';
-    viewCctvResultBtn.hidden = method !== 'cctv';
-
-    if (method === 'qr') {
-      canvas.style.display = '';
-      renderQR(response);
-    } else {
-      canvas.style.display = 'none';
-      studentCount.textContent = 'CCTV: processing...';
-      await runCCTV();
-    }
+    beforeStart.hidden = true;
+    afterStart.hidden = false;
+    const isQr = method === 'qr';
+    qrCanvas.hidden = !isQr;
+    $('#cctvPanel').hidden = isQr;
+    $('#fullscreenBtn').hidden = !isQr;
+    $('#panelTitle').textContent = isQr ? 'Scan to mark attendance' : 'CCTV result';
+    $('#liveStatus').textContent = isQr ? '' : 'Processing CCTV image...';
+    if (isQr) renderQR(response);
+    else await runCCTV();
+  } catch {
+    notify('Could not reach the server. Try again.', 'error');
   } finally {
+    startBtn.removeAttribute('aria-busy');
     startBtn.disabled = false;
   }
 });
 
+function renderQR(data) {
+  if (!sessionCode) return;
+  if (typeof QRCode === 'undefined') return ($('#qrError').hidden = false);
+  QRCode.toCanvas(qrCanvas, data.token, { width: qrCanvas.clientWidth, height: qrCanvas.clientWidth, margin: 2 });
+  scheduleTokenRefresh(500); // the QR changes constantly so screenshots stop working
+}
+
+function scheduleTokenRefresh(delay) {
+  clearTimeout(qrTimer);
+  qrTimer = setTimeout(async () => {
+    if (!sessionCode) return;
+    const data = await postData('/api/session/token', { sessionCode }).catch(() => ({ ok: false }));
+    if (!sessionCode) return; // session ended while we waited
+    if (data.ok) renderQR(data);
+    else scheduleTokenRefresh(2000); // keep trying instead of freezing on an old QR
+  }, delay);
+}
+
 async function runCCTV() {
   const response = await postData('/api/attendance/cctv/run', { sessionCode });
-
   if (!response.ok) {
-    console.error('CCTV processing failed:', response);
-    studentCount.textContent = 'CCTV processing failed';
-    alert(`CCTV attendance failed: ${response.error || 'unknown error'}`);
-    return;
+    $('#liveStatus').textContent = 'CCTV processing failed';
+    return notify(`CCTV attendance failed: ${response.error || 'unknown error'}`, 'error');
   }
 
-  const presentStudentIds = new Set(
-    response.presentStudents.map(student => String(student.student_id)),
-  );
-  const cctvTime = new Date().toLocaleTimeString();
-  cctvAbsentStudents = response.students.filter(
-    student => !presentStudentIds.has(String(student.id)),
-  );
+  // Show everyone: recognised students as Present, the rest as Absent (tap to fix)
+  const presentIds = new Set(response.presentStudents.map(s => String(s.student_id)));
+  const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  response.students.forEach(s => addToRoster(s.id, s.name, time, 'cctv', presentIds.has(String(s.id))));
 
-  response.students.forEach(student => {
-    const studentId = String(student.id);
-    if (!presentStudentIds.has(studentId)) return;
-
-    markedStudents.add(studentId);
-
-    const li = document.createElement('li');
-    const span = document.createElement('span');
-    span.textContent = `${student.name} (${cctvTime})`;
-    span.dataset.id = studentId;
-
-    const checkBox = document.createElement('input');
-    checkBox.type = 'checkbox';
-    checkBox.checked = true;
-    checkBox.dataset.id = studentId;
-    checkBox.addEventListener('change', () => {
-      span.classList.toggle('strike', !checkBox.checked);
-      updatePresentCount();
-    });
-    span.classList.toggle('strike', !checkBox.checked);
-
-    li.appendChild(span);
-    li.appendChild(checkBox);
-    studentList.appendChild(li);
-  });
-
-  updatePresentCount();
-  viewCctvResultBtn.disabled = false;
-}
-
-const cctvResultModal = document.getElementById('cctvResultModal');
-
-viewCctvResultBtn.addEventListener('click', () => {
-  document.getElementById('cctvResultImage').src =
-    `/results/${sessionCode}.jpg`;
-  cctvResultModal.classList.remove('hidden');
-  cctvResultModal.requestFullscreen?.().catch(() => {});
-});
-
-function closeCctvResult() {
-  cctvResultModal.classList.add('hidden');
-  if (document.fullscreenElement === cctvResultModal) {
-    document.exitFullscreen();
-  }
-}
-
-cctvResultModal.addEventListener('click', closeCctvResult);
-
-document.addEventListener('keydown', event => {
-  if (event.key === 'Escape' && !cctvResultModal.classList.contains('hidden')) {
-    closeCctvResult();
-  }
-});
-
-document.addEventListener('fullscreenchange', () => {
-  if (
-    !cctvResultModal.classList.contains('hidden') &&
-    document.fullscreenElement !== cctvResultModal
-  ) {
-    cctvResultModal.classList.add('hidden');
-  }
-});
-
-addManuallyBtn.addEventListener('click', async () => {
-  const res = await fetch(`/api/students/${sessionCode}`);
-  const students = await res.json();
-
-  const unmarkedStudents = students.filter(
-    s => !markedStudents.has(String(s.id)),
-  );
-
-  const attendanceCheckboxes = new Map(
-    [...studentList.querySelectorAll('input[type="checkbox"]')].map(
-      checkbox => [checkbox.dataset.id, checkbox],
-    ),
-  );
-  const availableStudents = new Map(
-    unmarkedStudents.map(student => [String(student.id), student]),
-  );
-
-  cctvAbsentStudents.forEach(student => {
-    const checkbox = attendanceCheckboxes.get(String(student.id));
-    if (!checkbox?.checked) {
-      availableStudents.set(String(student.id), student);
-    }
-  });
-
-  showManualPopup([...availableStudents.values()]);
-});
-
-addSelectedBtn.addEventListener('click', async () => {
-  const selected = document.querySelectorAll(
-    '#manual-attendance-list input:checked',
-  );
-
-  const students = [];
-
-  selected.forEach(cb => {
-    students.push({
-      id: cb.value,
-      name: cb.dataset.name,
-    });
-  });
-
-  const response = await postData('/api/attendance/manual', {
-    sessionCode,
-    students,
-  });
-
-  if (!response?.ok) {
-    console.error('Manual attendance returned error:', response);
-    return;
-  }
-
-  students.forEach(student => {
-    const checkbox = [
-      ...studentList.querySelectorAll('input[type="checkbox"]'),
-    ].find(item => item.dataset.id === String(student.id));
-    if (!checkbox) return;
-
-    checkbox.checked = true;
-    checkbox.previousElementSibling?.classList.remove('strike');
-  });
-  updatePresentCount();
-  dialog.close();
-});
-
-// Submit attendance and end session
-document
-  .querySelector('#submit-attendance-btn')
-  .addEventListener('click', async () => {
-    const students = studentList.querySelectorAll('input[type=checkbox]');
-    const presentStudentIds = [];
-
-    students.forEach(student => {
-      if (student.checked) presentStudentIds.push(student.dataset.id);
-    });
-
-    const response = await postData('/api/session/finalize', {
-      sessionCode,
-      presentStudentIds,
-    });
-
-    if (!response.ok)
-      return console.error('Finalize returned error:', response);
-
-    alert('✔ Attendance submitted successfully');
-    clearAttendanceUI();
-  });
-
-function renderQR(data) {
-  const options = {
-    width: canvas.clientWidth,
-    height: canvas.clientWidth,
-    margin: 2,
+  const img = $('#cctvResultImage');
+  img.onload = () => {
+    $('#cctvSkeleton').hidden = true;
+    img.hidden = false;
   };
-  QRCode.toCanvas(canvas, data.token, options);
-
-  qrTimer = setTimeout(async () => {
-    const tokenData = await postData('/api/session/token', { sessionCode });
-    if (!tokenData.ok) return console.warn('Token refresh failed:', tokenData);
-    renderQR(tokenData);
-  }, 500);
+  img.onerror = () => {
+    $('#cctvSkeleton').hidden = true;
+    notify('The annotated CCTV image could not be loaded.', 'error');
+  };
+  img.src = `/results/${sessionCode}.jpg?t=${Date.now()}`;
+  $('#liveStatus').textContent = 'Check the list and fix any mistakes.';
 }
 
-function toggleFullScreen() {
-  if (!document.fullscreenElement) {
-    afterStart.classList.add('afterStart-fs');
-    canvas.classList.add('canvas-fs');
-    liveSection.classList.add('live-section-fs');
-    afterStart.requestFullscreen();
-  } else {
-    afterStart.classList.remove('afterStart-fs');
-    canvas.classList.remove('canvas-fs');
-    liveSection.classList.remove('live-section-fs');
-    document.exitFullscreen();
+// ---------- Full screen (for projectors) ----------
+$('#fullscreenBtn').addEventListener('click', () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else afterStart.requestFullscreen();
+});
+document.addEventListener('fullscreenchange', () => {
+  $('#fullscreenBtn').textContent = document.fullscreenElement ? 'Exit full screen' : 'Full screen';
+});
+
+// ---------- Add manually ----------
+$('#add-manually-btn').addEventListener('click', async () => {
+  try {
+    const res = await fetch(`/api/students/${sessionCode}`);
+    const students = await res.json();
+    // Anyone not currently marked present can be added
+    showManualPopup(students.filter(s => !roster.get(String(s.id))?.present));
+  } catch {
+    notify('Could not load the student list.', 'error');
   }
-}
-
-function clearAttendanceUI() {
-  studentCount.textContent = 'Present: 0';
-  studentList.textContent = '';
-  markedStudents.clear();
-  cctvAbsentStudents = [];
-  afterStart.style.display = 'none';
-  beforeStart.style.display = 'flex';
-  clearTimeout(qrTimer);
-  sessionCode = null;
-}
-
-function updatePresentCount() {
-  const checkedStudents = document.querySelectorAll(
-    '#studentList input[type="checkbox"]:checked',
-  ).length;
-
-  studentCount.textContent = `Present: ${checkedStudents}`;
-}
+});
 
 function showManualPopup(students) {
-  const container = document.querySelector('#manual-attendance-list');
-  container.innerHTML = '';
-
-  students.forEach(student => {
+  const list = $('#manual-attendance-list');
+  list.replaceChildren(...students.map(student => {
     const li = document.createElement('li');
-    const span = document.createElement('span');
-    span.textContent = student.name;
-    span.dataset.id = student.id;
-
-    const checkBox = document.createElement('input');
-    checkBox.type = 'checkbox';
-    checkBox.value = student.id;
-    checkBox.dataset.name = student.name;
-
-    li.appendChild(span);
-    li.appendChild(checkBox);
-    container.appendChild(li);
-  });
-
-  dialog.showModal();
+    const label = document.createElement('label');
+    label.className = 'check-row';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.value = student.id;
+    box.dataset.name = student.name;
+    label.append(box, document.createTextNode(student.name));
+    li.appendChild(label);
+    return li;
+  }));
+  $('#manualEmpty').hidden = students.length > 0;
+  $('#add-selected-btn').disabled = students.length === 0;
+  manualDialog.showModal();
 }
 
-// Populate the initial slot/class controls.
-loadSlots().catch(error => console.error('Could not load timetable:', error));
+$('#closeDialog').addEventListener('click', () => manualDialog.close());
+
+$('#add-selected-btn').addEventListener('click', async event => {
+  const students = [...document.querySelectorAll('#manual-attendance-list input:checked')].map(cb => ({ id: cb.value, name: cb.dataset.name }));
+  if (students.length === 0) return notify('Tick at least one student.', 'error');
+
+  const btn = event.currentTarget;
+  btn.setAttribute('aria-busy', 'true');
+  students.forEach(s => manualIds.add(String(s.id)));
+  const response = await postData('/api/attendance/manual', { sessionCode, students }).catch(() => ({ ok: false }));
+  btn.removeAttribute('aria-busy');
+
+  if (!response?.ok) {
+    students.forEach(s => manualIds.delete(String(s.id)));
+    return notify('Could not add those students. Try again.', 'error');
+  }
+  const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  students.forEach(s => {
+    const entry = roster.get(String(s.id));
+    if (entry) Object.assign(entry, { present: true, source: 'manual' });
+    else addToRoster(s.id, s.name, time, 'manual');
+  });
+  renderRoster();
+  manualDialog.close();
+});
+
+// ---------- Submit (asks first, because it ends the session) ----------
+$('#submit-attendance-btn').addEventListener('click', () => {
+  const present = [...roster.values()].filter(s => s.present).length;
+  $('#submitSummary').textContent = `${present} student${present === 1 ? '' : 's'} will be marked present. This ends the session.`;
+  submitDialog.showModal();
+});
+$('#cancelSubmitBtn').addEventListener('click', () => submitDialog.close());
+
+$('#confirmSubmitBtn').addEventListener('click', async event => {
+  const btn = event.currentTarget;
+  const presentStudentIds = [...roster].filter(([, s]) => s.present).map(([id]) => id);
+
+  btn.setAttribute('aria-busy', 'true');
+  const response = await postData('/api/session/finalize', { sessionCode, presentStudentIds }).catch(() => ({ ok: false }));
+  btn.removeAttribute('aria-busy');
+  submitDialog.close();
+
+  if (!response.ok) return notify('Could not submit attendance. Nothing was lost; try again.', 'error');
+  showToast('Attendance submitted.', 'success');
+  endSessionUI();
+});
+
+function endSessionUI() {
+  clearTimeout(qrTimer);
+  sessionCode = null;
+  roster.clear();
+  manualIds.clear();
+  if (document.fullscreenElement) document.exitFullscreen();
+  $('#cctvResultImage').hidden = true;
+  $('#cctvResultImage').removeAttribute('src');
+  $('#cctvSkeleton').hidden = false;
+  $('#qrError').hidden = true;
+  renderRoster();
+  afterStart.hidden = true;
+  beforeStart.hidden = false;
+}
+
+loadSlots();

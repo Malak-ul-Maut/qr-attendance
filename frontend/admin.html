@@ -45,9 +45,9 @@
         <img src="icons/teacher.svg" alt="Faculty" />
         <div>Faculty</div>
       </div>
-      <div class="sidebar-content database-nav">
+      <div class="sidebar-content">
         <img src="icons/courses.svg" alt="Courses" />
-        <div>Database</div>
+        <div>Attendance</div>
       </div>
       <div class="sidebar-content logout-btn">
         <img src="icons/logout-black.svg" alt="Logout" />
@@ -216,33 +216,7 @@
         </dialog>
       </section>
 
-      <section class="database" style="display: none">
-        <div class="database-toolbar">
-          <h2>Database</h2>
-          <label for="databaseTableSelect">Table</label>
-          <select id="databaseTableSelect" aria-label="Choose database table"></select>
-          <input id="databaseSearch" type="search" placeholder="Search rows" aria-label="Search rows" />
-          <button id="databaseAddRowBtn" type="button">Add row</button>
-        </div>
-        <p id="databaseStatus" role="status" aria-live="polite"></p>
-        <div id="databaseRows" class="database-rows"></div>
-        <div class="database-pagination">
-          <span id="databasePageLabel"></span>
-          <button id="databasePreviousBtn" type="button" aria-label="Previous page">Previous</button>
-          <button id="databaseNextBtn" type="button" aria-label="Next page">Next</button>
-        </div>
-
-        <dialog id="databaseRowModal" class="modal database-modal">
-          <h3 id="databaseRowModalTitle">Add row</h3>
-          <form method="dialog">
-            <div id="databaseRowFields" class="database-row-fields"></div>
-            <div class="database-modal-actions">
-              <button id="databaseSaveRowBtn" type="button">Save row</button>
-              <button id="databaseCloseRowBtn" class="button-secondary" type="button">Cancel</button>
-            </div>
-          </form>
-        </dialog>
-      </section>
+      <section class="attendance"></section>
     </main>
 
     <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
