@@ -64,8 +64,8 @@ a {
   left: var(--space-4);
   top: -4rem;
   padding: var(--space-2) var(--space-4);
-  background: var(--ink-900);
-  color: #fff;
+  background: var(--toast-bg);
+  color: var(--toast-ink);
   border-radius: var(--radius-sm);
   z-index: 100;
 }
@@ -95,8 +95,8 @@ a {
 
 .btn-primary {
   background: var(--red-600);
-  color: #fff;
-  --spinner-color: #fff;
+  color: var(--on-red, #fff);
+  --spinner-color: var(--on-red, #fff);
 }
 .btn-primary:hover {
   background: var(--red-700);
@@ -139,7 +139,8 @@ a {
 
 /* Small text-only button, for things like "Forgot password?" */
 .link-btn {
-  padding: var(--space-1) 0;
+  min-height: var(--touch-target);
+  padding: var(--space-1) var(--space-3);
   font: inherit;
   font-size: var(--text-sm);
   font-weight: 600;
@@ -248,7 +249,7 @@ a {
   place-items: center;
   font-weight: 700;
   font-size: 0.8rem;
-  color: #fff;
+  color: var(--on-red, #fff);
   background: var(--danger-600);
   border-radius: 50%;
 }
@@ -291,8 +292,8 @@ a {
   padding: var(--space-3) var(--space-4);
   font-size: var(--text-sm);
   font-weight: 500;
-  color: #fff;
-  background: var(--ink-900);
+  color: var(--toast-ink);
+  background: var(--toast-bg);
   border-left: 4px solid var(--info-600);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-md);
@@ -340,7 +341,7 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .segmented label { position: relative; flex: 1; }
 .segmented input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .segmented span { display: grid; place-items: center; min-height: var(--touch-target); font-weight: 600; color: var(--ink-700); }
-.segmented input:checked + span { background: var(--ink-900); color: #fff; }
+.segmented input:checked + span { background: var(--ink-900); color: var(--surface); }
 .segmented input:focus-visible + span { outline: 2px solid var(--red-600); outline-offset: -4px; }
 
 /* Native <dialog> modal */
@@ -348,3 +349,65 @@ dialog.dialog { width: min(28rem, calc(100vw - 2rem)); padding: var(--space-5); 
 dialog.dialog::backdrop { background: rgba(32, 35, 40, 0.5); }
 .dialog h2 { font-size: var(--text-xl); margin-bottom: var(--space-2); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: var(--space-3); margin-top: var(--space-5); }
+
+/* ---------- Added in phase 5 ---------- */
+
+/* Destructive action (delete). Outlined by default so it never looks like the main action; fills red on hover. */
+.btn-danger {
+  background: var(--surface);
+  color: var(--danger-600);
+  border-color: var(--danger-600);
+  --spinner-color: var(--danger-600);
+}
+.btn-danger:hover { background: var(--danger-600); color: var(--on-red, #fff); }
+/* Solid version, used on the final "Yes, delete" button in a confirm dialog */
+.btn-danger.btn-solid { background: var(--danger-600); color: var(--on-red, #fff); --spinner-color: var(--on-red, #fff); }
+.btn-danger.btn-solid:hover { background: var(--danger-700, #8f1c13); }
+
+/* Compact button for table rows */
+.btn-sm { min-height: 36px; padding: 0 var(--space-3); font-size: var(--text-sm); }
+
+/* Message under a form field: error (!) or success (check). Icon + text, never colour alone. */
+.field-msg { display: flex; gap: var(--space-2); align-items: baseline; font-size: var(--text-sm); }
+.field-msg.err { color: var(--danger-600); }
+.field-msg.err::before { content: '!'; font-weight: 700; }
+.field-msg.ok { color: var(--success-600); }
+.field-msg.ok::before { content: '\2713'; font-weight: 700; }
+.field-msg.info { color: var(--ink-500); }
+select.input { padding-right: var(--space-3); }
+
+/* ---------- Added in phase 6 ---------- */
+
+/* Dark theme: white text on the lighter dark-mode reds/greens would be hard to read, so buttons use dark text there */
+@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) { --on-red: #1a0608; --danger-700: #ffb3ab; } }
+:root[data-theme='dark'] { --on-red: #1a0608; --danger-700: #ffb3ab; }
+
+/* Placeholder-sized focus: dialogs and cards that receive programmatic focus show no stray ring */
+dialog:focus { outline: none; }
+
+/* Icon-only or small controls get a full-size tap area */
+.icon-btn { display: inline-grid; place-items: center; width: var(--touch-target); height: var(--touch-target); padding: 0; color: var(--ink-700); background: none; border: 1px solid var(--line-strong); border-radius: var(--radius-md); cursor: pointer; }
+.icon-btn:hover { background: var(--canvas); color: var(--ink-900); }
+.icon-btn svg { width: 20px; height: 20px; }
+.theme-toggle .icon-sun { display: none; }
+:root[data-theme='dark'] .theme-toggle .icon-sun { display: block; }
+:root[data-theme='dark'] .theme-toggle .icon-moon { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .theme-toggle .icon-sun { display: block; }
+  :root:not([data-theme='light']) .theme-toggle .icon-moon { display: none; }
+}
+
+/* Long words/emails never push a card wider than the screen */
+.card, .alert, .toast { overflow-wrap: anywhere; }
+
+/* Make sure text can be zoomed to 200% without hiding content under the fixed bars */
+html { scroll-padding-top: 4.5rem; }
+
+/* High-contrast / forced-colours mode: keep focus and borders visible */
+@media (forced-colors: active) {
+  .btn, .input, .card, .badge { border: 1px solid CanvasText; }
+  .segmented input:checked + span { outline: 2px solid Highlight; outline-offset: -2px; }
+}
+
+/* Headings that receive focus from script (after a tab change) do not need a ring */
+[tabindex='-1']:focus { outline: none; }

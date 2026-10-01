@@ -9,6 +9,12 @@
   gap: var(--space-5);
   padding: var(--space-5) var(--space-4);
 }
+.login-theme-toggle {
+  position: fixed;
+  top: var(--space-4);
+  right: var(--space-4);
+  z-index: 10;
+}
 
 .login-brand img {
   height: 56px;

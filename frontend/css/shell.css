@@ -15,7 +15,10 @@
   border-bottom: 1px solid var(--line);
 }
 .app-header .brand img { height: 32px; width: auto; }
-.app-header .user-name { margin-left: auto; font-size: var(--text-sm); color: var(--ink-700); }
+.app-header .user-name { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); color: var(--ink-700); }
+/* Phones: the header is tight, so the logout button shrinks a little */
+.app-header .btn { flex: none; min-height: 40px; padding: 0 var(--space-4); }
+.app-header .theme-toggle { flex: none; width: 40px; height: 40px; }
 .app-header .user-name b { color: var(--ink-900); }
 
 .app-nav {
@@ -35,7 +38,7 @@
   min-height: 3.5rem;
   padding: var(--space-2) 0;
   font: inherit;
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   color: var(--ink-500);
   background: none;
@@ -44,6 +47,17 @@
   cursor: pointer;
 }
 .nav-item img { width: 22px; height: 22px; opacity: 0.6; }
+/* The SVG icons are dark; flip them to light on the dark theme */
+:root[data-theme='dark'] .nav-item img { filter: invert(1); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) .nav-item img { filter: invert(1); } }
+.nav-item:hover { color: var(--ink-900); }
+/* Phones held sideways: the bottom bar eats a lot of height, so make it slimmer */
+@media (max-height: 480px) and (orientation: landscape) {
+  .app-header { height: 3rem; }
+  .nav-item { min-height: 2.75rem; flex-direction: row; justify-content: center; align-items: center; gap: var(--space-2); }
+  .nav-item img { width: 18px; height: 18px; }
+  .app-main { padding-bottom: 4.5rem; }
+}
 .nav-item[aria-current='page'] { color: var(--red-600); border-top-color: var(--red-600); }
 .nav-item[aria-current='page'] img { opacity: 1; }
 
@@ -67,3 +81,12 @@
 
 /* Projector-first pages (faculty) use the full width */
 .app-main.wide { --main-max: 78rem; }
+
+/* Big screens and projectors (1600px and wider): scale everything up so it reads from the back of a classroom */
+@media (min-width: 1600px) {
+  html { font-size: 112.5%; }
+  .app-main.wide { --main-max: 96rem; }
+}
+@media (min-width: 2200px) {
+  html { font-size: 137.5%; }
+}

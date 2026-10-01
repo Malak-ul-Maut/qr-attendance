@@ -24,6 +24,10 @@
   padding-left: var(--space-4);
   border-left: 1px solid var(--line-strong);
 }
+.site-header-inner .theme-toggle {
+  flex: none;
+  margin-left: auto;
+}
 
 /* ---------- Hero: campus photo with the headline at the bottom ---------- */
 .hero {

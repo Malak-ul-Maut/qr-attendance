@@ -19,6 +19,8 @@ document.querySelectorAll('.nav-item').forEach(tab => {
     document.querySelectorAll('.nav-item').forEach(t => t.removeAttribute('aria-current'));
     tab.setAttribute('aria-current', 'page');
     document.querySelectorAll('.view').forEach(v => (v.hidden = v.id !== `view-${tab.dataset.view}`));
+    // Land on the new heading so screen-reader users hear where they are
+    document.querySelector(`#view-${tab.dataset.view} h1`)?.focus({ preventScroll: true });
   });
 });
 
@@ -28,21 +30,40 @@ export function setOverallPercent(percent) {
   $('#overallPct').textContent = `${Math.round(percent)}%`;
   $('#overallNote').textContent = 'Across all your subjects.';
 }
+// Builds one list row with textContent only, so names from the server can never become HTML
+function listRow(title, subtitle, badgeText, badgeClass) {
+  const li = document.createElement('li');
+  li.className = 'card list-row';
+  const left = document.createElement('span');
+  left.append(title);
+  if (subtitle) {
+    left.append(document.createElement('br'));
+    const small = document.createElement('small');
+    small.textContent = subtitle;
+    left.append(small);
+  }
+  const badge = document.createElement('span');
+  badge.className = `badge ${badgeClass}`;
+  badge.textContent = badgeText;
+  li.append(left, badge);
+  return li;
+}
 // subjects: [{ name, percent }]
 export function renderSubjects(subjects) {
   $('#subjectEmpty').hidden = subjects.length > 0;
-  $('#subjectList').innerHTML = subjects
-    .map(s => `<li class="card list-row"><span>${s.name}</span>
-      <span class="badge ${s.percent >= 75 ? 'badge-success' : 'badge-warning'}">${s.percent}%</span></li>`)
-    .join('');
+  $('#subjectList').replaceChildren(
+    ...subjects.map(s => listRow(String(s.name), '', `${s.percent >= 75 ? '✓' : '!'} ${s.percent}%`, s.percent >= 75 ? 'badge-success' : 'badge-warning')),
+  );
 }
 // records: [{ subject, date, status }]  status: 'present' | 'absent'
 export function renderHistory(records) {
   $('#historyEmpty').hidden = records.length > 0;
-  $('#historyList').innerHTML = records
-    .map(r => `<li class="card list-row"><span>${r.subject}<br><small>${r.date}</small></span>
-      <span class="badge ${r.status === 'present' ? 'badge-success' : 'badge-danger'}">${r.status === 'present' ? 'Present' : 'Absent'}</span></li>`)
-    .join('');
+  $('#historyList').replaceChildren(
+    ...records.map(r => {
+      const present = r.status === 'present';
+      return listRow(String(r.subject), String(r.date), present ? '✓ Present' : '✕ Absent', present ? 'badge-success' : 'badge-danger');
+    }),
+  );
 }
 
 // ---------- Face models + saved face (loaded in the background) ----------
@@ -102,6 +123,8 @@ function setStep(n) {
     const s = Number(li.dataset.step);
     li.classList.toggle('done', s < n);
     li.classList.toggle('current', s === n);
+    // Tell screen readers which step is active (colour alone is not enough)
+    if (s === n) li.setAttribute('aria-current', 'step'); else li.removeAttribute('aria-current');
   });
 }
 function setStatus(text, isError = false) {
@@ -109,11 +132,16 @@ function setStatus(text, isError = false) {
   scanResult.classList.toggle('error', isError);
 }
 
+let scanOpener = null; // the button that opened the scanner, so focus can return to it
+
 async function openScanner() {
+  scanOpener = scanOpener || document.activeElement;
   active = true;
   isProcessing = false;
   matchStreak = 0;
   scannerSection.hidden = false;
+  setPageInert(true);
+  $('#closeScanBtn').focus();
   $('#cameraArea').hidden = false;
   $('#resultPanel').hidden = true;
   setStep(1);
@@ -136,7 +164,19 @@ function closeScanner() {
   stopCamera();
   canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
   scannerSection.hidden = true;
+  setPageInert(false);
+  scanOpener?.focus?.();
+  scanOpener = null;
 }
+
+// While the scanner covers the page, the page behind it must not be reachable with Tab or a screen reader
+function setPageInert(on) {
+  document.querySelectorAll('.app-header, .app-nav, .app-main').forEach(el => (el.inert = on));
+}
+// Escape closes the scanner
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !scannerSection.hidden) closeScanner();
+});
 
 async function startQrScan() {
   const cameraFingerprint = await getCameraId();
@@ -236,6 +276,7 @@ function showResult(ok, title, text) {
   $('#resultTitle').textContent = title;
   $('#resultText').textContent = text;
   $('#resultAction').textContent = ok ? 'Done' : 'Try again';
+  $('#resultAction').focus();
 }
 
 function stopCamera() {
