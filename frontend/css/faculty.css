@@ -1,204 +1,299 @@
-#beforeStart {
-  display: flex;
-  flex-direction: column;
-  margin-top: 10rem;
-  padding: 2rem 2rem;
-  border-radius: 1rem;
-  align-items: center;
-  justify-self: center;
-  background-image: linear-gradient(to bottom, var(--highlight), var(--bg));
-  box-shadow:
-    0px 4px 4px #00000030,
-    0px 12px 12px #00000015;
+/* faculty.css - styles used only by faculty.html. Projector-first: big type, big QR. */
+
+.view[hidden] {
+  display: none;
 }
-#sub-name {
-  font-size: 3rem;
-  font-weight: 800;
-  color: var(--text);
-  margin-bottom: 1rem;
-  opacity: 0.8;
-}
-.select-section {
-  font-size: 1.5rem;
-  font-weight: 700;
-  opacity: 0.8;
-  margin-top: 20px;
-}
-select {
-  font-size: 1.2rem;
-  font-weight: 600;
-  opacity: 0.8;
-  padding: 0.5rem 1rem;
-  margin-left: 0.6rem;
-  border-radius: 0.5rem;
-  border: 2px solid #918e8e;
-}
-#startSessionBtn {
-  color: white;
-  margin-top: 16px;
+.muted {
+  color: var(--ink-500);
 }
 
-#afterStart {
-  display: none; /* Dynamically changed to 'flex' by JS */
-  justify-content: space-evenly;
-  padding-top: 6rem;
-  padding-left: 5rem;
-}
-.afterStart-fs {
-  padding: 0 !important;
-}
-
-canvas {
-  border-radius: 1rem;
-  width: 35% !important;
-  padding: 1rem;
-  background-color: white;
-  box-shadow:
-    0px 0.5rem 0.5rem #0000006b,
-    0px 1rem 1rem #00000031;
-}
-.canvas-fs {
-  width: 50% !important;
-}
-
-.live-section {
-  background-color: var(--bg-light);
-  width: 40%;
-  padding: 1rem;
-  max-height: calc(100vh - 8rem);
-  border-radius: 1rem;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  align-items: center;
-  position: relative;
-  box-shadow:
-    0px 0.5rem 0.5rem #0000006b,
-    0px 1rem 1rem #00000031;
-}
-.live-section-fs {
-  max-height: 100vh !important;
-}
-
-.live-section-heading {
-  font-size: 2.5rem;
-  font-weight: 800;
-  opacity: 0.8;
-  margin: 1rem auto;
-}
-.live-section div {
-  width: 100%;
-  display: flex;
-  justify-content: center;
-  column-gap: 1rem;
-  align-items: center;
-}
-#studentCount {
-  font-size: 1.5rem;
-  font-weight: 600;
-  margin: 0;
-  color: #555;
-  display: inline-block;
-}
-
-.toggle-fullscreen-btn {
-  background-color: rgba(0, 0, 0, 0.205);
-  opacity: 0.5;
-  max-width: 2rem;
-  height: 2rem;
-  border-radius: 1rem;
-  position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
-  z-index: 1;
-  cursor: pointer;
-}
-.toggle-fullscreen-btn:hover {
-  opacity: 1;
-}
-.toggle-fullscreen-icon {
-  width: 1.2rem;
-  position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
-  transform: translateX(-30%) translateY(30%);
-}
-
-#studentList {
-  overflow-y: auto;
-  margin-right: 1rem;
-}
-#studentList li {
-  font-size: 1.2rem;
-  font-weight: 600;
-  color: #2e7d32;
-  padding: 0.3rem 2rem;
-  opacity: 0.9;
-  background-color: #e8f5e9;
-  border-left: 4px solid #4caf50;
-  border-bottom: 0.8px solid gray;
-  border-radius: 4px;
-}
-
-#manual-attendance-dialog {
-  padding: 1.8rem;
-  border-radius: 16px;
-  box-shadow:
-    0px 4px 4px #00000030,
-    0px 12px 12px #00000015;
-  background-image: linear-gradient(to bottom, var(--highlight), var(--bg));
-}
-
-#manual-attendance-list li {
-  font-size: 1rem;
-  font-weight: 600;
-  opacity: 0.8;
-  margin-bottom: 0.3rem;
-}
-
-#closeDialog {
-  color: #24292f;
-  background-color: #f6f8fa;
-  border: 1px solid #d0d7de;
-  transition: all 0.15s ease;
-}
-#closeDialog:hover {
-  background-color: #e1e4e8;
-  color: black;
-}
-
-.strike {
-  text-decoration: line-through;
-  opacity: 0.8;
-}
-
-input[type='checkbox'] {
-  height: 16px;
-  width: 16px;
-  clip-path: circle(60%);
-}
-
-#cctvResultModal {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
+/* ---- Start-session card ---- */
+.setup {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-5);
   display: grid;
-  place-items: center;
-  width: 100vw;
-  height: 100vh;
-  padding: 0;
-  margin: 0;
-  overflow: hidden;
-  background: #000;
+  gap: var(--space-5);
 }
-
-#cctvResultModal.hidden {
+.setup-title {
+  font-size: var(--text-2xl);
+}
+.setup-title:empty {
   display: none;
 }
 
-#cctvResultImage {
+.slot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  gap: var(--space-3);
+}
+.slot-card {
+  position: relative;
   display: block;
+}
+.slot-card input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.slot-body {
+  display: grid;
+  gap: 2px;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 2px solid var(--line-strong);
+  border-radius: var(--radius-md);
+}
+.slot-label {
+  font-weight: 700;
+  color: var(--ink-900);
+}
+.slot-time {
+  font-size: var(--text-sm);
+  color: var(--ink-500);
+}
+.slot-card input:checked + .slot-body {
+  border-color: var(--red-600);
+  background: var(--red-50);
+}
+.slot-card input:focus-visible + .slot-body {
+  outline: 2px solid var(--ink-900);
+  outline-offset: 2px;
+}
+.slot-skeleton {
+  height: 4rem;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.chip {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+#startSessionBtn {
+  min-height: 3.5rem;
+  font-size: var(--text-lg);
+}
+
+/* ---- Live session ---- */
+#afterStart:fullscreen {
+  overflow: auto;
+  padding: var(--space-5);
+  background: var(--canvas);
+}
+.live-grid {
+  display: grid;
+  gap: var(--space-5);
+  align-items: start;
+}
+@media (min-width: 900px) {
+  .live-grid {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  }
+}
+
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.panel-head h2 {
+  font-size: var(--text-xl);
+}
+.qr-panel {
+  padding: var(--space-5);
+}
+/* The QR library sets inline sizes, so !important is needed to keep it responsive. Big on purpose. */
+#qrCanvas {
+  display: block;
+  margin: 0 auto;
+  width: min(100%, 78vh) !important;
+  height: auto !important;
+  aspect-ratio: 1;
+}
+#cctvPanel .skeleton {
+  aspect-ratio: 16 / 9;
+}
+#cctvResultImage {
   width: 100%;
-  height: 100%;
+  border-radius: var(--radius-md);
+  cursor: zoom-in;
+}
+#cctvResultImage:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+#cctvResultImage:fullscreen {
+  width: 100vw;
+  height: 100vh;
   object-fit: contain;
+  border-radius: 0;
+  background: #000;
+  cursor: zoom-out;
+}
+
+.roster-panel {
+  padding: var(--space-5);
+}
+.roster-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+.count {
+  font-size: var(--text-4xl);
+  font-weight: 700;
+  color: var(--ink-900);
+  line-height: 1;
+}
+.count-label {
+  font-size: var(--text-lg);
+  color: var(--ink-500);
+}
+#liveStatus {
+  font-size: var(--text-sm);
+  color: var(--ink-500);
+}
+.roster-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
+}
+
+.roster {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+  max-height: calc(100vh - 20rem);
+  min-height: 6rem;
+  overflow-y: auto;
+}
+.roster-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+.roster-name {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--ink-900);
+}
+.roster-meta {
+  display: block;
+  font-size: var(--text-sm);
+  color: var(--ink-500);
+}
+.roster-row.is-absent .roster-name {
+  color: var(--ink-500);
+}
+/* Tap a status to flip it. Always icon + word, never colour alone. */
+.status-btn {
+  min-height: var(--touch-target);
+  min-width: 6.5rem;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+.status-btn:hover {
+  border-color: currentColor;
+}
+.empty {
+  padding: var(--space-5);
+  text-align: center;
+  color: var(--ink-500);
+}
+
+/* ---- History ---- */
+.section-title {
+  font-size: var(--text-xl);
+  margin-bottom: var(--space-4);
+}
+.list {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  max-width: 40rem;
+}
+.list-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+/* ---- Manual add dialog ---- */
+#manual-attendance-list {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--touch-target);
+  cursor: pointer;
+}
+.check-row input {
+  width: 1.25rem;
+  height: 1.25rem;
+  accent-color: var(--red-600);
+}
+
+/* Phones and small tablets: setup card and roster use the full width; buttons wrap */
+@media (max-width: 600px) {
+  .setup {
+    padding: var(--space-5) var(--space-4);
+    border-radius: var(--radius-md);
+  }
+  .qr-panel,
+  .roster-panel {
+    padding: var(--space-4);
+  }
+  .roster-actions .btn {
+    flex: 1 1 8rem;
+  }
+  .roster {
+    max-height: none;
+  }
+  .roster-name {
+    font-size: var(--text-base);
+  }
+  .count {
+    font-size: var(--text-3xl);
+  }
+}
+/* Projectors are usually wide but short: keep the QR square and fully visible without scrolling */
+@media (min-width: 900px) and (max-height: 760px) {
+  #qrCanvas {
+    width: min(100%, 62vh) !important;
+  }
+}
+/* In full screen the roster can use the whole height */
+#afterStart:fullscreen .roster {
+  max-height: calc(100vh - 14rem);
 }

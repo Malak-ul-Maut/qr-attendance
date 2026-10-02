@@ -1,358 +1,941 @@
-import { getCurrentUser, logout } from '/utils/storage.js';
+// admin.js - the admin portal: dashboard, students, faculty, attendance, database.
+// No alert(), confirm() or page reloads: messages are toasts / inline text,
+// confirmations use <dialog>, and tables update in place after a change.
 
-let currentConfig = null;
-let editingId = null;
-let studentMetadata = null;
+import { getCurrentUser, logout } from '/utils/storage.js';
+import { showToast } from './ui.js';
+
+const $ = (selector, root = document) => root.querySelector(selector);
+const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+const currentUser = getCurrentUser() || {};
+
+// Small helper to build elements without innerHTML (so server text can never become markup)
+function h(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (value === false || value == null) continue;
+    if (key === 'class') node.className = value;
+    else if (key === 'text') node.textContent = value;
+    else if (key.startsWith('on')) node.addEventListener(key.slice(2), value);
+    else node.setAttribute(key, value === true ? '' : value);
+  }
+  node.append(...children.filter(child => child != null));
+  return node;
+}
+
+// Calls the backend and returns JSON. On failure throws an Error whose .code is the
+// server's `error` value (for example "username_taken"), or "network" if it never answered.
+async function api(url, options = {}) {
+  let response;
+  try {
+    response = await fetch(url, options);
+  } catch {
+    throw Object.assign(new Error('Could not reach the server.'), { code: 'network' });
+  }
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw Object.assign(new Error(body.error || 'Request failed.'), { code: body.error || 'http_' + response.status });
+  }
+  return body;
+}
+
+// Shows or clears the red/green message under a form field
+function setFieldMsg(id, text, kind = 'err') {
+  const input = document.getElementById(id);
+  const msg = document.getElementById(`${id}-msg`);
+  if (!msg) return;
+  msg.textContent = text || '';
+  msg.hidden = !text;
+  msg.className = `field-msg ${kind}`;
+  if (input) {
+    if (text && kind === 'err') input.setAttribute('aria-invalid', 'true');
+    else input.removeAttribute('aria-invalid');
+  }
+}
+
+// Shows or clears the red box at the bottom of a dialog
+function setBox(id, text) {
+  const box = document.getElementById(id);
+  box.textContent = text || '';
+  box.hidden = !text;
+}
+
+// Checks required fields, shows a message under each empty one and focuses the first.
+// fields: [{ id, label, select }]. Returns true when everything is filled in.
+function requireFields(fields) {
+  let firstBad = null;
+  for (const { id, label, select } of fields) {
+    const input = document.getElementById(id);
+    const empty = !input.value.trim();
+    setFieldMsg(id, empty ? (select ? `Choose a ${label}.` : `Enter the ${label}.`) : '');
+    if (empty && !firstBad) firstBad = input;
+  }
+  firstBad?.focus();
+  return !firstBad;
+}
+
+// Clear a field's message as soon as the person starts fixing it
+document.addEventListener('input', event => {
+  const id = event.target.id;
+  if (id && document.getElementById(`${id}-msg`) && id !== 'faceImages') setFieldMsg(id, '');
+});
+
+// Show / hide password buttons
+$$('[data-toggle-password]').forEach(button => {
+  button.addEventListener('click', () => {
+    const input = document.getElementById(button.dataset.togglePassword);
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    button.textContent = show ? 'Hide' : 'Show';
+    button.setAttribute('aria-pressed', String(show));
+  });
+});
+
+// Busy state for buttons: shows a spinner and blocks double clicks
+const setBusy = (button, busy) => {
+  if (busy) button.setAttribute('aria-busy', 'true');
+  else button.removeAttribute('aria-busy');
+};
+
+// ==================== Page basics and tabs ====================
+$('.user-name b').textContent = currentUser.name || 'Admin';
+$('.logout-btn').addEventListener('click', () => logout());
+
+const VIEWS = ['dashboard', 'students', 'faculty', 'attendance', 'database'];
+const VIEW_TITLES = { dashboard: 'Dashboard', students: 'Students', faculty: 'Faculty', attendance: 'Attendance', database: 'Database' };
+let viewLoaders = {}; // filled in below; each runs when its tab is opened
+
+function showView(name, { moveFocus = false } = {}) {
+  if (!VIEWS.includes(name)) name = 'dashboard';
+  $$('.nav-item').forEach(item => {
+    if (item.dataset.view === name) item.setAttribute('aria-current', 'page');
+    else item.removeAttribute('aria-current');
+  });
+  VIEWS.forEach(view => (document.getElementById(`view-${view}`).hidden = view !== name));
+  document.title = `${VIEW_TITLES[name]} | Admin`;
+  // Remember the tab in the address so a refresh stays where you were
+  if (location.hash !== `#${name}`) history.replaceState(null, '', `#${name}`);
+  if (moveFocus) document.getElementById(`${name}Title`)?.focus();
+  viewLoaders[name]?.();
+}
+
+$$('.nav-item').forEach(item => item.addEventListener('click', () => showView(item.dataset.view, { moveFocus: true })));
+$$('[data-goto]').forEach(card => card.addEventListener('click', () => showView(card.dataset.goto, { moveFocus: true })));
+window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
+
+// ==================== Dashboard ====================
+async function loadStats() {
+  $('#statsError').hidden = true;
+  try {
+    const { stats } = await api('/api/admin/stats');
+    $('#studentCount').textContent = stats.students;
+    $('#facultyCount').textContent = stats.faculty;
+    $('#attendanceCount').textContent = stats.attendance;
+    $('#liveSessionCount').textContent = stats.liveSessions;
+    $('#liveSessionNote').textContent = stats.liveSessions > 0 ? 'Running now' : 'None running';
+  } catch {
+    $('#statsError').hidden = false;
+  }
+}
+$('#statsRetryBtn').addEventListener('click', loadStats);
+
+// HOOK: call when the backend can list recent events.
+// items: [{ kind: 'Attendance' | 'Student' | 'Session' | ..., text, time }]  (time is display text)
+export function renderActivity(items) {
+  $('#activityEmpty').hidden = items.length > 0;
+  $('#activityList').replaceChildren(
+    ...items.map(item =>
+      h('li', {}, h('span', { class: 'badge', text: item.kind }), h('span', { text: item.text }), h('span', { class: 'adm-when', text: item.time || '' })),
+    ),
+  );
+}
+
+// ==================== Data table (used for students, faculty, attendance) ====================
+// columns: [{ key, label, get(row) -> text, sortable, num, clip, render(row, cell) }]
+function createDataTable({ mount, columns, noun, pageSize = 10, onRetry, emptyHint = '' }) {
+  const state = { rows: [], loading: true, error: false, query: '', filter: null, sortKey: null, sortDir: 1, page: 0, focusSort: null };
+
+  function visibleRows() {
+    const query = state.query.trim().toLowerCase();
+    let rows = state.rows.filter(row => !state.filter || state.filter(row));
+    if (query) {
+      rows = rows.filter(row => columns.some(col => col.get && String(col.get(row) ?? '').toLowerCase().includes(query)));
+    }
+    if (state.sortKey) {
+      const col = columns.find(c => c.key === state.sortKey);
+      rows = [...rows].sort((a, b) => String(col.get(a) ?? '').localeCompare(String(col.get(b) ?? ''), undefined, { numeric: true, sensitivity: 'base' }) * state.sortDir);
+    }
+    return rows;
+  }
+
+  function render() {
+    // Loading: grey placeholder rows (only on first load; later refreshes keep the old rows visible)
+    if (state.loading && !state.rows.length) {
+      mount.replaceChildren(h('div', { class: 'adm-skeleton-rows', 'aria-busy': 'true', 'aria-label': `Loading ${noun}s` }, ...[1, 2, 3, 4, 5].map(() => h('div', { class: 'skeleton' }))));
+      return;
+    }
+    if (state.error) {
+      mount.replaceChildren(
+        h('div', { class: 'adm-state', role: 'alert' }, h('strong', { text: `Could not load ${noun}s` }), h('span', { text: 'Check your connection and try again.' }), h('button', { class: 'btn btn-secondary', type: 'button', text: 'Try again', onclick: () => onRetry?.() })),
+      );
+      return;
+    }
+    if (!state.rows.length) {
+      mount.replaceChildren(h('div', { class: 'adm-state' }, h('strong', { text: `No ${noun}s yet` }), h('span', { text: emptyHint })));
+      return;
+    }
+
+    const rows = visibleRows();
+    const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+    state.page = Math.min(state.page, pageCount - 1);
+    const pageRows = rows.slice(state.page * pageSize, (state.page + 1) * pageSize);
+
+    if (!rows.length) {
+      mount.replaceChildren(h('div', { class: 'adm-state' }, h('strong', { text: `No ${noun}s match` }), h('span', { text: 'Try a different search or filter.' })));
+      return;
+    }
+
+    const head = h('tr', {}, ...columns.map(col => {
+      const th = h('th', { scope: 'col' });
+      if (col.sortable) {
+        th.setAttribute('aria-sort', state.sortKey === col.key ? (state.sortDir === 1 ? 'ascending' : 'descending') : 'none');
+        th.append(h('button', { class: 'adm-sort', type: 'button', 'data-sort': col.key, text: col.label, onclick: () => sortBy(col.key) }));
+      } else th.textContent = col.label;
+      return th;
+    }));
+    const body = h('tbody', {}, ...pageRows.map(row => h('tr', {}, ...columns.map(col => {
+      const td = h('td', { class: [col.num && 'adm-num', col.clip && 'adm-clip'].filter(Boolean).join(' ') || false });
+      if (col.render) col.render(row, td);
+      else {
+        td.textContent = col.get(row) ?? '';
+        if (col.clip) td.title = td.textContent;
+      }
+      return td;
+    }))));
+
+    const first = state.page * pageSize + 1;
+    const last = Math.min(rows.length, first + pageSize - 1);
+    const pager = h('div', { class: 'adm-pager' },
+      h('span', { role: 'status', text: `Showing ${first}–${last} of ${rows.length}` }),
+      h('span', { class: 'adm-pager-btns' },
+        h('button', { class: 'btn btn-secondary btn-sm', type: 'button', text: 'Previous', disabled: state.page === 0, onclick: () => go(-1) }),
+        h('button', { class: 'btn btn-secondary btn-sm', type: 'button', text: 'Next', disabled: state.page >= pageCount - 1, onclick: () => go(1) })));
+
+    mount.replaceChildren(
+      h('div', { class: 'adm-table-wrap', tabindex: '0', role: 'region', 'aria-label': `${noun} list` }, h('table', { class: 'adm-table' }, h('thead', {}, head), body)),
+      pager,
+    );
+    // After re-sorting, put keyboard focus back on the heading button that was used
+    if (state.focusSort) mount.querySelector(`[data-sort="${state.focusSort}"]`)?.focus();
+    state.focusSort = null;
+  }
+
+  function sortBy(key) {
+    state.sortDir = state.sortKey === key ? -state.sortDir : 1;
+    state.sortKey = key;
+    state.focusSort = key;
+    render();
+  }
+  function go(step) { state.page += step; render(); }
+
+  return {
+    render,
+    setRows(rows) { state.rows = rows; state.loading = false; state.error = false; render(); },
+    setLoading() { state.loading = true; state.error = false; render(); },
+    setError() { state.loading = false; state.error = true; render(); },
+    setQuery(query) { state.query = query; state.page = 0; render(); },
+    setFilter(fn) { state.filter = fn; state.page = 0; render(); },
+    get rows() { return visibleRows(); },
+  };
+}
+
+// ==================== Confirm-delete dialog (shared) ====================
+const deleteDialog = $('#deleteDialog');
+let deleteAction = null;
+
+// run: async function that performs the delete; the dialog stays open (with a spinner) until it finishes
+function askDelete({ title, text, run }) {
+  $('#deleteTitle').textContent = title;
+  $('#deleteText').textContent = text;
+  setBox('deleteError', '');
+  deleteAction = run;
+  deleteDialog.showModal();
+}
+$('#deleteCancelBtn').addEventListener('click', () => deleteDialog.close());
+deleteDialog.addEventListener('cancel', event => {
+  if ($('#deleteConfirmBtn').getAttribute('aria-busy')) event.preventDefault(); // don't close mid-delete
+});
+$('#deleteConfirmBtn').addEventListener('click', async event => {
+  const button = event.currentTarget;
+  setBusy(button, true);
+  setBox('deleteError', '');
+  try {
+    await deleteAction();
+    deleteDialog.close();
+  } catch (error) {
+    setBox('deleteError', error.code === 'network' ? 'Could not reach the server. Try again.' : 'Could not delete. Try again.');
+  } finally {
+    setBusy(button, false);
+  }
+});
+
+// Row buttons: Edit is a normal button, Delete is outlined red so the two never look alike
+function rowActions(noun, row, name, onEdit, onDelete) {
+  return h('div', { class: 'adm-actions' },
+    h('button', { class: 'btn btn-secondary btn-sm', type: 'button', text: 'Edit', 'aria-label': `Edit ${noun} ${name}`, onclick: () => onEdit(row) }),
+    h('button', { class: 'btn btn-danger btn-sm', type: 'button', text: 'Delete', 'aria-label': `Delete ${noun} ${name}`, onclick: () => onDelete(row) }));
+}
+
+// ==================== Students ====================
+const STUDENTS_API = '/api/students';
+let students = [];
+let studentMeta = null; // { courses, branches, classes } for the form and table labels
+let studentsLoaded = false;
+let editingStudent = null; // the student being edited, or null when adding
+let studentStep = 1;
+let faceFiles = []; // { file, url } objects chosen in step 3
+let modelsPromise = null;
+
+const lookup = (list, id, field = 'label') => list?.find(item => String(item.id) === String(id))?.[field];
+const branchLabel = s => lookup(studentMeta?.branches, s.branchId) || s.branch || s.branchId || '';
+const classLabel = s => {
+  const section = s.section || (studentMeta?.classes.find(c => String(c.id) === String(s.classId))?.section ?? '');
+  return [s.semester ? `Sem ${s.semester}` : '', section].filter(Boolean).join(' · ') || (s.classId ? `Class ${s.classId}` : '');
+};
+
+const studentTable = createDataTable({
+  mount: $('#studentsTable'),
+  noun: 'student',
+  emptyHint: 'Select "Add student" to create the first one.',
+  onRetry: () => loadStudents(),
+  columns: [
+    { key: 'name', label: 'Name', sortable: true, get: s => s.name },
+    { key: 'username', label: 'Username', sortable: true, get: s => s.username },
+    { key: 'roll', label: 'Roll no.', sortable: true, num: true, get: s => s.rollNumber },
+    { key: 'branch', label: 'Branch', sortable: true, get: branchLabel },
+    { key: 'class', label: 'Class', sortable: true, get: classLabel },
+    { key: 'actions', label: 'Actions', render: (s, td) => td.append(rowActions('student', s, s.name, openStudentEditor, askDeleteStudent)) },
+  ],
+});
+
+async function loadStudentMeta() {
+  if (studentMeta) return studentMeta;
+  studentMeta = await api(`${STUDENTS_API}/meta`);
+  fillSelect('studentCourse', studentMeta.courses, 'Select course');
+  fillSelect('studentBranch', studentMeta.branches, 'Select branch');
+  $('#studentBranchFilter').replaceChildren(new Option('All branches', ''), ...studentMeta.branches.map(b => new Option(b.label, b.id)));
+  return studentMeta;
+}
+
+function fillSelect(id, options, placeholder) {
+  $(`#${id}`).replaceChildren(new Option(placeholder, ''), ...options.map(o => new Option(o.label, o.id)));
+}
+
+async function loadStudents() {
+  if (!studentsLoaded) studentTable.setLoading();
+  try {
+    // Labels need the course/branch list, but a failure there should not hide the students
+    const [list] = await Promise.all([api(STUDENTS_API), loadStudentMeta().catch(() => null)]);
+    students = list;
+    studentsLoaded = true;
+    studentTable.setRows(students);
+  } catch {
+    if (!studentsLoaded) studentTable.setError();
+    else showToast('Could not refresh students.', 'error');
+  }
+}
+
+$('#studentSearch').addEventListener('input', e => studentTable.setQuery(e.target.value));
+$('#studentBranchFilter').addEventListener('change', e => {
+  const branch = e.target.value;
+  studentTable.setFilter(branch ? s => String(s.branchId) === branch : null);
+});
+
+// ---- Class dropdown depends on course + branch + semester ----
+function updateMatchingClasses() {
+  if (!studentMeta) return;
+  const courseId = $('#studentCourse').value;
+  const branchId = $('#studentBranch').value;
+  const semester = Number($('#studentSemester').value);
+  const matching = studentMeta.classes.filter(c => String(c.course_id) === courseId && String(c.branch_id) === branchId && c.semester === semester);
+  const ready = courseId && branchId && semester;
+  const previous = $('#studentClass').value; // keep the chosen class if it still matches
+  fillSelect('studentClass', matching.map(c => ({ id: c.id, label: `Class ${c.id} - ${c.section}` })), ready ? (matching.length ? 'Select class' : 'No classes match these choices') : 'Select course, branch, and semester first');
+  if (matching.some(c => String(c.id) === previous)) $('#studentClass').value = previous;
+  $('#studentClass').disabled = matching.length === 0;
+}
+['studentCourse', 'studentBranch', 'studentSemester'].forEach(id => $(`#${id}`).addEventListener('change', updateMatchingClasses));
+$('#studentSemester').addEventListener('input', updateMatchingClasses);
+
+// ---- Username availability ----
+let usernameCheckId = 0;
+// Returns true (free), false (taken) or null (could not check; the server will decide on save)
+async function checkStudentUsername() {
+  const username = $('#studentUsername').value.trim();
+  if (!username || (editingStudent && username === editingStudent.username)) {
+    setFieldMsg('studentUsername', '');
+    return true;
+  }
+  const mine = ++usernameCheckId;
+  setFieldMsg('studentUsername', 'Checking username…', 'info');
+  try {
+    const { available } = await api(`${STUDENTS_API}/username-available?username=${encodeURIComponent(username)}`);
+    if (mine !== usernameCheckId) return null; // a newer check replaced this one
+    setFieldMsg('studentUsername', available ? 'Username is available' : 'Username is already in use', available ? 'ok' : 'err');
+    return available;
+  } catch {
+    if (mine === usernameCheckId) setFieldMsg('studentUsername', '');
+    return null;
+  }
+}
+$('#studentUsername').addEventListener('blur', () => { if ($('#studentModal').open) checkStudentUsername(); });
+
+// ---- Face models: start loading when the form opens so Save is not slow ----
+// Loads a classic <script> on demand and resolves when it has run
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const tag = document.createElement('script');
+    tag.src = src;
+    tag.onload = resolve;
+    tag.onerror = () => reject(new Error(`Could not load ${src}`));
+    document.head.appendChild(tag);
+  });
+}
+// face-api.js and the model cache helper are only fetched when first needed
+let faceLibsPromise = null;
+function loadFaceLibs() {
+  if (!faceLibsPromise) {
+    faceLibsPromise = (async () => {
+      if (!window.faceapi) await loadScript('/utils/face-api.js');
+      if (typeof cacheModelsFromManifest === 'undefined') await loadScript('/utils/cache-models.js');
+    })().catch(error => {
+      faceLibsPromise = null; // allow a retry next time
+      throw error;
+    });
+  }
+  return faceLibsPromise;
+}
+
+function ensureModels() {
+  if (!modelsPromise) {
+    modelsPromise = (async () => {
+      await loadFaceLibs();
+      await cacheModelsFromManifest('/utils/models/models-manifest.json');
+      await Promise.all([
+        faceapi.nets.ssdMobilenetv1.loadFromUri('/utils/models'),
+        faceapi.nets.faceLandmark68Net.loadFromUri('/utils/models'),
+        faceapi.nets.faceRecognitionNet.loadFromUri('/utils/models'),
+      ]);
+    })().catch(error => {
+      modelsPromise = null; // allow a retry next time
+      throw error;
+    });
+  }
+  return modelsPromise;
+}
+
+// ---- Photo previews ----
+function renderFacePreviews(results = new Map()) {
+  $('#facePreviews').replaceChildren(
+    ...faceFiles.map((item, index) => {
+      const result = results.get(item);
+      return h('li', { class: 'adm-preview' },
+        h('img', { src: item.url, alt: `Photo ${index + 1}: ${item.file.name}` }),
+        h('button', { class: 'adm-remove', type: 'button', 'aria-label': `Remove photo ${index + 1}`, text: '×', onclick: () => removeFace(item) }),
+        result && h('span', { class: `badge ${result.ok ? 'badge-success' : 'badge-danger'}`, text: result.ok ? '✓ Face found' : '✕ No clear face' }));
+    }),
+  );
+  const count = faceFiles.length;
+  $('#faceStatus').textContent = count ? `${count} photo${count === 1 ? '' : 's'} selected${count < 3 ? ' (3 or more recommended)' : ''}` : editingStudent ? 'No new photos. The current face data will be kept.' : 'No photos selected';
+}
+function removeFace(item) {
+  URL.revokeObjectURL(item.url);
+  faceFiles = faceFiles.filter(f => f !== item);
+  setFieldMsg('faceImages', '');
+  renderFacePreviews();
+}
+function clearFaces() {
+  faceFiles.forEach(f => URL.revokeObjectURL(f.url));
+  faceFiles = [];
+  $('#faceImages').value = '';
+  renderFacePreviews();
+}
+$('#faceImages').addEventListener('change', event => {
+  const added = [...event.target.files].filter(file => file.type.startsWith('image/'));
+  faceFiles.push(...added.map(file => ({ file, url: URL.createObjectURL(file) })));
+  event.target.value = ''; // so choosing the same photo again still fires
+  setFieldMsg('faceImages', '');
+  renderFacePreviews();
+});
+
+// Finds a face in each photo and returns the face "fingerprints" (descriptors)
+async function getDescriptors() {
+  const descriptors = [];
+  const results = new Map();
+  for (let i = 0; i < faceFiles.length; i++) {
+    $('#faceStatus').textContent = `Checking photo ${i + 1} of ${faceFiles.length}…`;
+    const item = faceFiles[i];
+    const img = await faceapi.bufferToImage(item.file);
+    const detection = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
+    // Same rule as before: a face must be found with confidence of at least 0.7
+    const ok = Boolean(detection) && detection.detection.score >= 0.7;
+    results.set(item, { ok });
+    if (ok) descriptors.push(detection.descriptor);
+  }
+  renderFacePreviews(results);
+  return descriptors;
+}
+
+// Average of all descriptors = one fingerprint for the student
+function computeCentroid(descriptors) {
+  const centroid = new Float32Array(descriptors[0].length);
+  for (let i = 0; i < centroid.length; i++) {
+    centroid[i] = descriptors.reduce((sum, d) => sum + d[i], 0) / descriptors.length;
+  }
+  return centroid;
+}
+
+const readDataUrl = file => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve({ dataUrl: reader.result });
+  reader.onerror = () => reject(new Error(`Could not read ${file.name}`));
+  reader.readAsDataURL(file);
+});
+
+// ---- Stepped form ----
+const studentModal = $('#studentModal');
+const STEP_FIELDS = {
+  1: [
+    { id: 'studentName', label: 'full name' },
+    { id: 'studentUsername', label: 'username' },
+    { id: 'studentPassword', label: 'password', editOptional: true },
+    { id: 'studentRollNumber', label: 'roll number' },
+  ],
+  2: [
+    { id: 'studentCourse', label: 'course', select: true },
+    { id: 'studentBranch', label: 'branch', select: true },
+    { id: 'studentSemester', label: 'semester' },
+    { id: 'studentClass', label: 'class', select: true },
+  ],
+};
+
+function goToStep(step) {
+  studentStep = step;
+  $$('.adm-step[data-step]', studentModal).forEach(el => (el.hidden = Number(el.dataset.step) !== step));
+  $$('#studentSteps li').forEach(li => {
+    const n = Number(li.dataset.step);
+    if (n === step) li.setAttribute('aria-current', 'step');
+    else li.removeAttribute('aria-current');
+    li.toggleAttribute('data-done', n < step);
+  });
+  $('#studentBackBtn').hidden = step === 1;
+  $('#studentNextBtn').hidden = step === 3;
+  $('#saveStudentBtn').hidden = step !== 3;
+  setBox('studentFormError', '');
+  // Step 3 needs the face models, so warm them up now
+  if (step === 3) ensureModels().catch(() => {});
+  $('.adm-step[data-step="' + step + '"] :is(input:not(.visually-hidden), select):not(:disabled)', studentModal)?.focus();
+}
+
+// Checks the current step. Returns true when the person may continue.
+async function validateStudentStep(step) {
+  const fields = (STEP_FIELDS[step] || []).filter(f => !(editingStudent && f.editOptional));
+  if (!requireFields(fields)) return false;
+  if (step === 1) {
+    const free = await checkStudentUsername();
+    if (free === false) { $('#studentUsername').focus(); return false; }
+  }
+  if (step === 2) {
+    const semester = Number($('#studentSemester').value);
+    if (!Number.isInteger(semester) || semester < 1 || semester > 8) {
+      setFieldMsg('studentSemester', 'Enter a semester from 1 to 8.');
+      $('#studentSemester').focus();
+      return false;
+    }
+  }
+  return true;
+}
+
+function resetStudentForm() {
+  ['studentName', 'studentUsername', 'studentPassword', 'studentRollNumber', 'studentCourse', 'studentBranch', 'studentSemester'].forEach(id => ($(`#${id}`).value = ''));
+  [...STEP_FIELDS[1], ...STEP_FIELDS[2], { id: 'faceImages' }].forEach(f => setFieldMsg(f.id, ''));
+  $('#studentPassword').type = 'password';
+  $('[data-toggle-password="studentPassword"]').textContent = 'Show';
+  $('#studentPassword').placeholder = '';
+  updateMatchingClasses();
+  clearFaces();
+}
+
+async function openStudentForm(student) {
+  editingStudent = student;
+  resetStudentForm();
+  $('#studentModalTitle').textContent = student ? 'Edit student' : 'Add student';
+  if (student) {
+    $('#studentName').value = student.name || '';
+    $('#studentUsername').value = student.username || '';
+    $('#studentPassword').value = student.password || '';
+    $('#studentPassword').placeholder = 'Leave blank to keep the current password';
+    $('#studentRollNumber').value = student.rollNumber || '';
+    $('#studentCourse').value = student.courseId ?? '';
+    $('#studentBranch').value = student.branchId ?? '';
+    $('#studentSemester').value = student.semester ?? '';
+    updateMatchingClasses();
+    $('#studentClass').value = student.classId ?? '';
+  }
+  goToStep(1);
+  studentModal.showModal();
+  // The course/branch lists may not have loaded yet (or failed earlier): try again now
+  if (!studentMeta) {
+    try {
+      await loadStudentMeta();
+      if (student) {
+        $('#studentCourse').value = student.courseId ?? '';
+        $('#studentBranch').value = student.branchId ?? '';
+        updateMatchingClasses();
+        $('#studentClass').value = student.classId ?? '';
+      }
+    } catch {
+      setBox('studentFormError', 'Could not load course and branch options. Close this window and try again.');
+    }
+  }
+}
+const openStudentEditor = student => openStudentForm(student);
+$('#addStudentBtn').addEventListener('click', () => openStudentForm(null));
+$('#closeStudentModalBtn').addEventListener('click', () => studentModal.close());
+$('#studentBackBtn').addEventListener('click', () => goToStep(studentStep - 1));
+studentModal.addEventListener('close', clearFaces);
+studentModal.addEventListener('cancel', event => {
+  if ($('#saveStudentBtn').getAttribute('aria-busy')) event.preventDefault();
+});
+
+// Enter / the Next button moves forward; on the last step it saves
+$('#studentForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (studentStep < 3) {
+    const next = $('#studentNextBtn');
+    setBusy(next, true);
+    const ok = await validateStudentStep(studentStep);
+    setBusy(next, false);
+    if (ok) goToStep(studentStep + 1);
+  } else {
+    await saveStudent();
+  }
+});
+
+async function saveStudent() {
+  const saveBtn = $('#saveStudentBtn');
+  setBox('studentFormError', '');
+
+  // Photos are required for a new student; optional when editing
+  if (!editingStudent && faceFiles.length === 0) {
+    setFieldMsg('faceImages', 'Add at least one photo.');
+    return;
+  }
+
+  const data = {
+    name: $('#studentName').value.trim(),
+    username: $('#studentUsername').value.trim(),
+    rollNumber: $('#studentRollNumber').value.trim(),
+    courseId: $('#studentCourse').value,
+    branchId: $('#studentBranch').value,
+    semester: $('#studentSemester').value,
+    classId: $('#studentClass').value,
+  };
+  // When editing, a blank password means "keep the current one"
+  const password = $('#studentPassword').value;
+  if (password || !editingStudent) data.password = password;
+
+  setBusy(saveBtn, true);
+  const controls = $$('#studentForm button:not(#saveStudentBtn)');
+  controls.forEach(b => (b.disabled = true));
+  let descriptors = [];
+  try {
+    if (faceFiles.length) {
+      try {
+        await ensureModels();
+      } catch {
+        setBox('studentFormError', 'The face tools could not be loaded. Check your connection and try again.');
+        return;
+      }
+      descriptors = await getDescriptors();
+      if (descriptors.length === 0) {
+        setFieldMsg('faceImages', 'No clear face was found. Remove unclear photos and add front-facing ones.');
+        return;
+      }
+      data.faceDescriptor = JSON.stringify(Array.from(computeCentroid(descriptors)));
+    }
+
+    // Photos are only uploaded when creating (same as before)
+    if (!editingStudent) data.faceImages = await Promise.all(faceFiles.map(f => readDataUrl(f.file)));
+
+    const url = editingStudent ? `${STUDENTS_API}/${encodeURIComponent(editingStudent.username)}` : STUDENTS_API;
+    await api(url, { method: editingStudent ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+
+    const wasEditing = Boolean(editingStudent);
+    studentModal.close();
+    showToast(wasEditing ? `Saved changes to ${data.name}.` : `Added ${data.name}.`, 'success');
+    if (descriptors.length && descriptors.length < 3) showToast(`Only ${descriptors.length} clear photo${descriptors.length === 1 ? ' was' : 's were'} found. 3 or more works best.`, 'info', 6000);
+    loadStudents();
+    loadStats();
+  } catch (error) {
+    if (error.code === 'username_taken') {
+      goToStep(1);
+      setFieldMsg('studentUsername', 'Username is already in use');
+      $('#studentUsername').focus();
+    } else {
+      setBox('studentFormError', error.code === 'network' ? 'Could not reach the server. Try again.' : 'Could not save the student. Try again.');
+    }
+  } finally {
+    setBusy(saveBtn, false);
+    controls.forEach(b => (b.disabled = false));
+    if (!faceFiles.length) renderFacePreviews();
+  }
+}
+
+function askDeleteStudent(student) {
+  askDelete({
+    title: `Delete ${student.name}?`,
+    text: 'This removes the student account. It cannot be undone.',
+    run: async () => {
+      await api(`${STUDENTS_API}/${encodeURIComponent(student.username)}`, { method: 'DELETE' });
+      students = students.filter(s => s.username !== student.username);
+      studentTable.setRows(students); // remove the row without reloading
+      showToast(`Deleted ${student.name}.`, 'success');
+      loadStats();
+    },
+  });
+}
+
+// ==================== Faculty ====================
+const FACULTY_API = '/api/faculty';
+let faculty = [];
+let facultyLoaded = false;
+let editingFaculty = null;
+const facultyModal = $('#facultyModal');
+const FACULTY_FIELDS = [
+  { id: 'facultyName', label: 'full name' },
+  { id: 'facultyUsername', label: 'username' },
+  { id: 'facultyPassword', label: 'password', editOptional: true },
+  { id: 'facultySubject', label: 'subject' },
+  { id: 'facultySection', label: 'section' },
+];
+
+const facultyTable = createDataTable({
+  mount: $('#facultyTable'),
+  noun: 'faculty member',
+  emptyHint: 'Select "Add faculty" to create the first one.',
+  onRetry: () => loadFaculty(),
+  columns: [
+    { key: 'name', label: 'Name', sortable: true, get: f => f.name },
+    { key: 'username', label: 'Username', sortable: true, get: f => f.username },
+    { key: 'subject', label: 'Subject', sortable: true, get: f => f.subjectName },
+    { key: 'section', label: 'Section', sortable: true, get: f => f.section },
+    { key: 'actions', label: 'Actions', render: (f, td) => td.append(rowActions('faculty member', f, f.name, openFacultyForm, askDeleteFaculty)) },
+  ],
+});
+
+async function loadFaculty() {
+  if (!facultyLoaded) facultyTable.setLoading();
+  try {
+    faculty = await api(FACULTY_API);
+    facultyLoaded = true;
+    facultyTable.setRows(faculty);
+  } catch {
+    if (!facultyLoaded) facultyTable.setError();
+    else showToast('Could not refresh faculty.', 'error');
+  }
+}
+$('#facultySearch').addEventListener('input', e => facultyTable.setQuery(e.target.value));
+
+function openFacultyForm(member = null) {
+  editingFaculty = member;
+  FACULTY_FIELDS.forEach(f => setFieldMsg(f.id, ''));
+  setBox('facultyFormError', '');
+  $('#facultyModalTitle').textContent = member ? 'Edit faculty' : 'Add faculty';
+  $('#facultyName').value = member?.name || '';
+  $('#facultyUsername').value = member?.username || '';
+  $('#facultyPassword').value = member?.password || '';
+  $('#facultyPassword').placeholder = member ? 'Leave blank to keep the current password' : '';
+  $('#facultyPassword').type = 'password';
+  $('[data-toggle-password="facultyPassword"]').textContent = 'Show';
+  $('#facultySubject').value = member?.subjectName || '';
+  $('#facultySection').value = member?.section || '';
+  facultyModal.showModal();
+  $('#facultyName').focus();
+}
+$('#addFacultyBtn').addEventListener('click', () => openFacultyForm(null));
+$('#closeFacultyModalBtn').addEventListener('click', () => facultyModal.close());
+facultyModal.addEventListener('cancel', event => {
+  if ($('#saveFacultyBtn').getAttribute('aria-busy')) event.preventDefault();
+});
+
+$('#facultyForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  setBox('facultyFormError', '');
+  if (!requireFields(FACULTY_FIELDS.filter(f => !(editingFaculty && f.editOptional)))) return;
+
+  const data = {
+    username: $('#facultyUsername').value.trim(),
+    name: $('#facultyName').value.trim(),
+    subjectName: $('#facultySubject').value.trim(),
+    section: $('#facultySection').value.trim(),
+  };
+  const password = $('#facultyPassword').value;
+  if (password || !editingFaculty) data.password = password;
+
+  const saveBtn = $('#saveFacultyBtn');
+  setBusy(saveBtn, true);
+  try {
+    const url = editingFaculty ? `${FACULTY_API}/${encodeURIComponent(editingFaculty.username)}` : FACULTY_API;
+    await api(url, { method: editingFaculty ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+    const wasEditing = Boolean(editingFaculty);
+    facultyModal.close();
+    showToast(wasEditing ? `Saved changes to ${data.name}.` : `Added ${data.name}.`, 'success');
+    loadFaculty();
+    loadStats();
+  } catch (error) {
+    if (error.code === 'username_taken') {
+      setFieldMsg('facultyUsername', 'Username is already in use');
+      $('#facultyUsername').focus();
+    } else {
+      setBox('facultyFormError', error.code === 'network' ? 'Could not reach the server. Try again.' : 'Could not save the faculty member. Try again.');
+    }
+  } finally {
+    setBusy(saveBtn, false);
+  }
+});
+
+function askDeleteFaculty(member) {
+  askDelete({
+    title: `Delete ${member.name}?`,
+    text: 'This removes the faculty account. It cannot be undone.',
+    run: async () => {
+      await api(`${FACULTY_API}/${encodeURIComponent(member.username)}`, { method: 'DELETE' });
+      faculty = faculty.filter(f => f.username !== member.username);
+      facultyTable.setRows(faculty);
+      showToast(`Deleted ${member.name}.`, 'success');
+      loadStats();
+    },
+  });
+}
+
+// ==================== Attendance reports ====================
+// There is no backend route for reports yet, so this screen works on whatever rows it is given.
+// To connect it, do ONE of these:
+//   1. setAttendanceLoader(async ({ from, to, method }) => rows)   - Apply will call it
+//   2. renderAttendanceReport(rows)                               - push rows in yourself
+// rows: [{ date: 'YYYY-MM-DD', subject, className, faculty, method: 'qr'|'cctv', present, total }]
+let attendanceLoader = null;
+let attendanceRows = [];
+
+const pct = row => (row.total ? Math.round((row.present / row.total) * 100) : 0);
+const attendanceTable = createDataTable({
+  mount: $('#attendanceTable'),
+  noun: 'session',
+  emptyHint: 'Choose a date range and select Apply to see attendance.',
+  onRetry: () => $('#attendanceFilters').requestSubmit(),
+  columns: [
+    { key: 'date', label: 'Date', sortable: true, get: r => r.date },
+    { key: 'subject', label: 'Subject', sortable: true, get: r => r.subject },
+    { key: 'class', label: 'Class', sortable: true, get: r => r.className },
+    { key: 'faculty', label: 'Faculty', sortable: true, get: r => r.faculty },
+    { key: 'method', label: 'Method', sortable: true, get: r => (r.method || '').toUpperCase() },
+    { key: 'count', label: 'Present', num: true, get: r => `${r.present}/${r.total}` },
+    {
+      key: 'pct', label: 'Attendance', sortable: true, num: true, get: r => String(pct(r)).padStart(3, '0'),
+      render: (r, td) => {
+        const value = pct(r);
+        const level = value >= 75 ? ['good', 'success'] : value >= 60 ? ['mid', 'warning'] : ['low', 'danger'];
+        td.append(h('span', { class: `badge badge-${level[1]} adm-pct adm-pct-${level[0]}`, text: `${value}%` }));
+      },
+    },
+  ],
+});
+attendanceTable.setRows([]);
+
+export function setAttendanceLoader(loader) { attendanceLoader = loader; }
+export function renderAttendanceReport(rows) {
+  attendanceRows = rows;
+  attendanceTable.setRows(rows);
+  const has = rows.length > 0;
+  $('#attSummary').hidden = !has;
+  $('#exportCsvBtn').disabled = !has;
+  $('#attSessions').textContent = rows.length;
+  $('#attAverage').textContent = has ? `${Math.round(rows.reduce((sum, r) => sum + pct(r), 0) / rows.length)}%` : '0%';
+}
+
+$('#attendanceFilters').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (!attendanceLoader) {
+    showToast('Attendance reports are not connected yet.', 'info');
+    return;
+  }
+  const from = $('#attFrom').value;
+  const to = $('#attTo').value;
+  if (from && to && from > to) {
+    showToast('The "From" date must be before the "To" date.', 'error');
+    return;
+  }
+  const apply = $('#attApplyBtn');
+  setBusy(apply, true);
+  attendanceTable.setLoading();
+  try {
+    renderAttendanceReport(await attendanceLoader({ from, to, method: $('#attMethod').value }));
+  } catch {
+    attendanceTable.setError();
+  } finally {
+    setBusy(apply, false);
+  }
+});
+
+// Spreadsheet programs run text that starts with = + - or @ as a formula, so defuse those
+const csvCell = value => {
+  let text = String(value ?? '');
+  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+  return `"${text.replaceAll('"', '""')}"`;
+};
+$('#exportCsvBtn').addEventListener('click', () => {
+  const header = ['Date', 'Subject', 'Class', 'Faculty', 'Method', 'Present', 'Total', 'Attendance %'];
+  const lines = attendanceTable.rows.map(r => [r.date, r.subject, r.className, r.faculty, r.method, r.present, r.total, pct(r)].map(csvCell).join(','));
+  const blob = new Blob(['\ufeff' + [header.map(csvCell).join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const link = h('a', { href: URL.createObjectURL(blob), download: `attendance-${new Date().toISOString().slice(0, 10)}.csv` });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(link.href);
+  showToast('CSV downloaded.', 'success');
+});
+
+// ==================== Database browser ====================
 let databaseTables = [];
 let activeDatabaseTable = null;
 let activeDatabasePage = 0;
 let activeDatabaseSearch = '';
 let databaseSearchTimer = null;
 let editingDatabaseRow = null;
+let databaseRequestId = 0; // used to ignore answers that arrive late
 
-// ==================== Initialize Dashboard ====================
-initializeDashboard();
+const rowModal = $('#databaseRowModal');
 
-async function initializeDashboard() {
-  document.querySelector('.user-name b').textContent =
-    getCurrentUser().name || 'Admin';
-
-  document
-    .querySelector('.logout-btn')
-    .addEventListener('click', () => logout());
-
-  // Load and display statistics
-  const response = await fetch('/api/admin/stats');
-  const data = await response.json();
-
-  document.getElementById('studentCount').textContent = data.stats.students;
-  document.getElementById('facultyCount').textContent = data.stats.faculty;
-  document.getElementById('liveSessionCount').textContent =
-    data.stats.liveSessions;
-  document.getElementById('attendanceCount').textContent =
-    data.stats.attendance;
-
-  // Setup section managers
-  setupSectionManager({
-    navSelector: '.student-nav',
-    linkCardSelector: '.student-link-card',
-    sectionSelector: '.students',
-    modalId: 'studentModal',
-    tableId: 'studentsTable',
-    addBtnId: 'addStudentBtn',
-    saveBtnId: 'saveStudentBtn',
-    closeBtnId: 'closeStudentModalBtn',
-    apiEndpoint: '/api/students',
-    entityName: 'Student',
-    needsFaceRecognition: true,
-    studentForm: true,
-    fields: [
-      { id: 'studentName', fieldName: 'name' },
-      { id: 'studentUsername', fieldName: 'username' },
-      { id: 'studentPassword', fieldName: 'password' },
-      { id: 'studentRollNumber', fieldName: 'rollNumber' },
-      { id: 'studentCourse', fieldName: 'courseId' },
-      { id: 'studentBranch', fieldName: 'branchId' },
-      { id: 'studentSemester', fieldName: 'semester' },
-      { id: 'studentClass', fieldName: 'classId' },
-    ],
-    usernameField: 'username',
-  });
-  initializeStudentForm();
-
-  setupSectionManager({
-    navSelector: '.faculty-nav',
-    sectionSelector: '.faculty',
-    linkCardSelector: '.faculty-link-card',
-    modalId: 'facultyModal',
-    tableId: 'facultyTable',
-    addBtnId: 'addFacultyBtn',
-    saveBtnId: 'saveFacultyBtn',
-    closeBtnId: 'closeFacultyModalBtn',
-    apiEndpoint: '/api/faculty',
-    entityName: 'Faculty',
-    needsFaceRecognition: false,
-    fields: [
-      { id: 'facultyUsername', fieldName: 'username' },
-      { id: 'facultyName', fieldName: 'name' },
-      {
-        id: 'facultyPassword',
-        fieldName: 'password',
-      },
-      { id: 'facultySubject', fieldName: 'subjectName' },
-      { id: 'facultySection', fieldName: 'section' },
-    ],
-    usernameField: 'username',
-  });
-
-  setupDatabaseBrowser();
-}
-
-// ==================== Generic Section Manager ====================
-function showSection(config) {
-  // Hide all sections
-  document.querySelector('.homepage').style.display = 'none';
-  document.querySelector('.students').style.display = 'none';
-  document.querySelector('.faculty').style.display = 'none';
-  document.querySelector('.database').style.display = 'none';
-
-  currentConfig = config;
-
-  // Show current section
-  document.querySelector(config.sectionSelector).style.display = 'block';
-  loadEntities(config);
-}
-
-function setupDatabaseBrowser() {
-  document
-    .querySelector('.database-nav')
-    .addEventListener('click', showDatabase);
-  document
-    .getElementById('databaseTableSelect')
-    .addEventListener('change', event => {
-      activeDatabaseTable = databaseTables.find(
-        table => table.name === event.target.value,
-      );
-      activeDatabasePage = 0;
-      refreshDatabaseRows();
-    });
-  document.getElementById('databaseSearch').addEventListener('input', event => {
-    clearTimeout(databaseSearchTimer);
-    databaseSearchTimer = setTimeout(() => {
-      activeDatabaseSearch = event.target.value.trim();
-      activeDatabasePage = 0;
-      refreshDatabaseRows();
-    }, 200);
-  });
-  document.getElementById('databaseAddRowBtn').addEventListener('click', () => {
-    if (activeDatabaseTable) openDatabaseRowEditor();
-  });
-  document.getElementById('databasePreviousBtn').addEventListener('click', () => {
-    if (activeDatabasePage > 0) {
-      activeDatabasePage -= 1;
-      refreshDatabaseRows();
-    }
-  });
-  document.getElementById('databaseNextBtn').addEventListener('click', () => {
-    activeDatabasePage += 1;
-    refreshDatabaseRows();
-  });
-  document
-    .getElementById('databaseCloseRowBtn')
-    .addEventListener('click', () => {
-      document.getElementById('databaseRowModal').close();
-    });
-  document
-    .getElementById('databaseSaveRowBtn')
-    .addEventListener('click', saveDatabaseRow);
+function setDatabaseStatus(message, isError = false) {
+  const status = $('#databaseStatus');
+  status.textContent = message;
+  status.classList.toggle('err', isError && Boolean(message));
 }
 
 async function showDatabase() {
-  document.querySelector('.homepage').style.display = 'none';
-  document.querySelector('.students').style.display = 'none';
-  document.querySelector('.faculty').style.display = 'none';
-  document.querySelector('.database').style.display = 'block';
-
-  if (!getCurrentUser()?.adminToken) {
-    setDatabaseStatus('Sign out and sign in again as admin to access the database.');
+  if (!currentUser.adminToken) {
+    setDatabaseStatus('Sign out and sign in again as admin to access the database.', true);
     return;
   }
-  if (databaseTables.length) return refreshDatabaseRows();
+  if (databaseTables.length) return; // already loaded; keep the page and search as they were
   await loadDatabaseTables();
 }
 
-async function loadDatabaseTables() {
-  setDatabaseStatus('Loading database tables...');
-  try {
-    const result = await databaseRequest('/api/admin/database/tables');
-    databaseTables = result.tables;
-    const select = document.getElementById('databaseTableSelect');
-    select.replaceChildren();
-    databaseTables.forEach(table => {
-      const option = new Option(
-        `${humanize(table.name)} (${table.rowCount})`,
-        table.name,
-      );
-      select.add(option);
-    });
-    activeDatabaseTable = databaseTables[0] || null;
-    if (activeDatabaseTable) select.value = activeDatabaseTable.name;
-    document.getElementById('databaseAddRowBtn').disabled = !activeDatabaseTable;
-    await refreshDatabaseRows();
-  } catch (error) {
-    setDatabaseStatus(error.message);
-  }
-}
-
-async function refreshDatabaseRows() {
-  if (!activeDatabaseTable) return;
-  setDatabaseStatus('Loading rows...');
-  const query = new URLSearchParams({
-    page: String(activeDatabasePage),
-    pageSize: '50',
-    search: activeDatabaseSearch,
-  });
-  try {
-    const result = await databaseRequest(
-      `/api/admin/database/tables/${encodeURIComponent(activeDatabaseTable.name)}/rows?${query}`,
-    );
-    renderDatabaseRows(result.rows);
-    const pageCount = Math.max(1, Math.ceil(result.total / result.pageSize));
-    document.getElementById('databasePageLabel').textContent =
-      `${result.total} rows · page ${result.page + 1} of ${pageCount}`;
-    document.getElementById('databasePreviousBtn').disabled = result.page === 0;
-    document.getElementById('databaseNextBtn').disabled =
-      (result.page + 1) * result.pageSize >= result.total;
-    setDatabaseStatus('');
-  } catch (error) {
-    setDatabaseStatus(error.message);
-  }
-}
-
-function renderDatabaseRows(rows) {
-  const container = document.getElementById('databaseRows');
-  const columns = activeDatabaseTable.columns.filter(column => !column.sensitive);
-  const table = document.createElement('table');
-  table.className = 'database-table';
-  const header = document.createElement('thead');
-  const headerRow = document.createElement('tr');
-  columns.forEach(column => {
-    const cell = document.createElement('th');
-    cell.scope = 'col';
-    cell.textContent = humanize(column.name);
-    headerRow.append(cell);
-  });
-  const actionHeading = document.createElement('th');
-  actionHeading.scope = 'col';
-  actionHeading.textContent = 'Actions';
-  headerRow.append(actionHeading);
-  header.append(headerRow);
-  table.append(header);
-
-  const body = document.createElement('tbody');
-  rows.forEach(row => {
-    const rowElement = document.createElement('tr');
-    columns.forEach(column => {
-      const cell = document.createElement('td');
-      const value = row[column.name];
-      cell.textContent = column.foreignKey
-        ? referenceLabel(column.foreignKey.options, value)
-        : value == null
-          ? ''
-          : String(value);
-      rowElement.append(cell);
-    });
-    const actions = document.createElement('td');
-    const edit = document.createElement('button');
-    edit.type = 'button';
-    edit.textContent = 'Edit';
-    edit.addEventListener('click', () => openDatabaseRowEditor(row));
-    actions.append(edit);
-    rowElement.append(actions);
-    body.append(rowElement);
-  });
-  table.append(body);
-  container.replaceChildren(table);
-  if (!rows.length) {
-    const empty = document.createElement('p');
-    empty.className = 'database-empty';
-    empty.textContent = 'No rows found.';
-    container.append(empty);
-  }
-}
-
-function openDatabaseRowEditor(row = null) {
-  const modal = document.getElementById('databaseRowModal');
-  const fields = document.getElementById('databaseRowFields');
-  const primaryKey = activeDatabaseTable.columns.find(column => column.primaryKey);
-  fields.replaceChildren();
-  editingDatabaseRow = row;
-  document.getElementById('databaseRowModalTitle').textContent =
-    `${row ? 'Edit' : 'Add'} ${humanize(activeDatabaseTable.name)} row`;
-
-  activeDatabaseTable.columns.forEach(column => {
-    if (!row && column.autoGenerated) return;
-    const label = document.createElement('label');
-    label.htmlFor = `database-field-${column.name}`;
-    label.textContent = `${humanize(column.name)}${column.sensitive ? ' (write-only)' : ''}`;
-    const control = createDatabaseField(column, row);
-    control.id = label.htmlFor;
-    control.dataset.column = column.name;
-    control.required = column.required && !(row && column.sensitive);
-    if (column.primaryKey && row) control.disabled = true;
-    if (column.sensitive && row) {
-      control.required = false;
-      control.placeholder = 'Leave blank to keep the current value';
-    }
-    fields.append(label, control);
-  });
-  modal.showModal();
-}
-
-function createDatabaseField(column, row) {
-  if (column.foreignKey) {
-    const select = document.createElement('select');
-    const placeholder = new Option(
-      column.required ? 'Choose a reference' : 'None',
-      '',
-    );
-    select.add(placeholder);
-    column.foreignKey.options.forEach(option => {
-      select.add(new Option(option.label, option.value));
-    });
-    if (row && row[column.name] != null) select.value = String(row[column.name]);
-    return select;
-  }
-
-  const control = column.sensitive && column.name === 'descriptor'
-    ? document.createElement('textarea')
-    : document.createElement('input');
-  if (control instanceof HTMLInputElement) {
-    control.type = column.sensitive ? 'password' : /INT/i.test(column.type) ? 'number' : 'text';
-    if (/INT/i.test(column.type)) control.step = '1';
-  }
-  if (row && !column.sensitive && row[column.name] != null) {
-    control.value = String(row[column.name]);
-  }
-  return control;
-}
-
-async function saveDatabaseRow() {
-  const values = {};
-  document.querySelectorAll('#databaseRowFields [data-column]').forEach(control => {
-    if (control.disabled) return;
-    values[control.dataset.column] = control.value;
-  });
-  const isEditing = Boolean(editingDatabaseRow);
-  const primaryKey = activeDatabaseTable.columns.find(column => column.primaryKey);
-  const rowId = isEditing ? editingDatabaseRow[primaryKey.name] : null;
-  const path = `/api/admin/database/tables/${encodeURIComponent(activeDatabaseTable.name)}/rows`;
-  const url = isEditing ? `${path}/${encodeURIComponent(rowId)}` : path;
-  const saveButton = document.getElementById('databaseSaveRowBtn');
-  saveButton.disabled = true;
-  try {
-    await databaseRequest(url, {
-      method: isEditing ? 'PUT' : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ values }),
-    });
-    document.getElementById('databaseRowModal').close();
-    await loadDatabaseTables();
-  } catch (error) {
-    setDatabaseStatus(error.message);
-  } finally {
-    saveButton.disabled = false;
-  }
-}
-
 async function databaseRequest(url, options = {}) {
-  const token = getCurrentUser()?.adminToken;
-  const response = await fetch(url, {
-    ...options,
-    headers: { ...options.headers, Authorization: `Bearer ${token || ''}` },
-  });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) {
+  try {
+    return await api(url, { ...options, headers: { ...options.headers, Authorization: `Bearer ${currentUser.adminToken || ''}` } });
+  } catch (error) {
     const messages = {
       admin_login_required: 'Sign in again as admin to manage database rows.',
       invalid_admin_token: 'Your admin session is invalid. Sign in again.',
@@ -361,381 +944,177 @@ async function databaseRequest(url, options = {}) {
       row_conflict_or_invalid_reference: 'The row conflicts with existing data or a reference is invalid.',
       required_value_missing: 'Complete all required fields.',
       primary_key_is_immutable: 'Primary keys cannot be changed.',
+      network: 'Could not reach the server.',
     };
-    throw new Error(messages[result.error] || 'Database request failed.');
+    throw new Error(messages[error.code] || 'Database request failed.');
   }
-  return result;
 }
+
+// keepSelection: after saving a row, refresh the counts but stay on the same table and page
+async function loadDatabaseTables(keepSelection = false) {
+  setDatabaseStatus('Loading database tables…');
+  try {
+    const result = await databaseRequest('/api/admin/database/tables');
+    const selectedName = keepSelection ? activeDatabaseTable?.name : null;
+    databaseTables = result.tables;
+    const select = $('#databaseTableSelect');
+    select.replaceChildren(...databaseTables.map(t => new Option(`${humanize(t.name)} (${t.rowCount})`, t.name)));
+    activeDatabaseTable = databaseTables.find(t => t.name === selectedName) || databaseTables[0] || null;
+    if (!keepSelection) activeDatabasePage = 0;
+    if (activeDatabaseTable) select.value = activeDatabaseTable.name;
+    $('#databaseAddRowBtn').disabled = !activeDatabaseTable;
+    await refreshDatabaseRows();
+  } catch (error) {
+    setDatabaseStatus(error.message, true);
+  }
+}
+
+async function refreshDatabaseRows() {
+  if (!activeDatabaseTable) {
+    setDatabaseStatus('There are no tables to show.');
+    return;
+  }
+  const mine = ++databaseRequestId;
+  setDatabaseStatus('Loading rows…');
+  const query = new URLSearchParams({ page: String(activeDatabasePage), pageSize: '50', search: activeDatabaseSearch });
+  try {
+    const result = await databaseRequest(`/api/admin/database/tables/${encodeURIComponent(activeDatabaseTable.name)}/rows?${query}`);
+    if (mine !== databaseRequestId) return;
+    renderDatabaseRows(result.rows);
+    const pageCount = Math.max(1, Math.ceil(result.total / result.pageSize));
+    $('#databasePageLabel').textContent = `${result.total} rows · page ${result.page + 1} of ${pageCount}`;
+    $('#databasePreviousBtn').disabled = result.page === 0;
+    $('#databaseNextBtn').disabled = (result.page + 1) * result.pageSize >= result.total;
+    setDatabaseStatus('');
+  } catch (error) {
+    if (mine === databaseRequestId) setDatabaseStatus(error.message, true);
+  }
+}
+
+function renderDatabaseRows(rows) {
+  const columns = activeDatabaseTable.columns.filter(c => !c.sensitive);
+  const primaryKey = activeDatabaseTable.columns.find(c => c.primaryKey);
+  const table = h('table', { class: 'adm-table' },
+    h('thead', {}, h('tr', {}, ...columns.map(c => h('th', { scope: 'col', text: humanize(c.name) })), h('th', { scope: 'col', text: 'Actions' }))),
+    h('tbody', {}, ...rows.map(row => h('tr', {},
+      ...columns.map(c => {
+        const value = row[c.name];
+        const text = c.foreignKey ? referenceLabel(c.foreignKey.options, value) : value == null ? '' : String(value);
+        return h('td', { class: 'adm-clip', title: text, text });
+      }),
+      h('td', {}, h('button', { class: 'btn btn-secondary btn-sm', type: 'button', text: 'Edit', 'aria-label': `Edit row ${primaryKey ? row[primaryKey.name] : ''}`, onclick: () => openDatabaseRowEditor(row) })),
+    ))));
+  const container = $('#databaseRows');
+  container.setAttribute('aria-label', `${humanize(activeDatabaseTable.name)} rows`);
+  container.replaceChildren(table);
+  if (!rows.length) container.append(h('p', { class: 'adm-empty', text: 'No rows found.' }));
+}
+
+function openDatabaseRowEditor(row = null) {
+  const fields = $('#databaseRowFields');
+  fields.replaceChildren();
+  editingDatabaseRow = row;
+  setBox('databaseRowError', '');
+  $('#databaseRowModalTitle').textContent = `${row ? 'Edit' : 'Add'} ${humanize(activeDatabaseTable.name)} row`;
+
+  activeDatabaseTable.columns.forEach(column => {
+    if (!row && column.autoGenerated) return;
+    const id = `database-field-${column.name}`;
+    const control = createDatabaseField(column, row);
+    control.id = id;
+    control.classList.add('input');
+    control.dataset.column = column.name;
+    control.required = column.required && !(row && column.sensitive);
+    if (column.primaryKey && row) control.disabled = true;
+    if (column.sensitive && row) control.placeholder = 'Leave blank to keep the current value';
+    const label = h('label', { for: id, text: `${humanize(column.name)}${column.sensitive ? ' (write-only)' : ''}` });
+    fields.append(h('div', { class: 'field' }, label, control));
+  });
+  rowModal.showModal();
+  $('input:not(:disabled), select:not(:disabled), textarea', fields)?.focus();
+}
+
+function createDatabaseField(column, row) {
+  if (column.foreignKey) {
+    const select = h('select');
+    select.add(new Option(column.required ? 'Choose a reference' : 'None', ''));
+    column.foreignKey.options.forEach(o => select.add(new Option(o.label, o.value)));
+    if (row && row[column.name] != null) select.value = String(row[column.name]);
+    return select;
+  }
+  const control = column.sensitive && column.name === 'descriptor' ? h('textarea', { rows: '3' }) : h('input');
+  if (control instanceof HTMLInputElement) {
+    control.type = column.sensitive ? 'password' : /INT/i.test(column.type) ? 'number' : 'text';
+    if (/INT/i.test(column.type)) control.step = '1';
+  }
+  if (row && !column.sensitive && row[column.name] != null) control.value = String(row[column.name]);
+  return control;
+}
+
+$('#databaseRowForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  if (!form.reportValidity()) return; // browser shows which required field is empty
+  const values = {};
+  $$('#databaseRowFields [data-column]').forEach(control => {
+    if (!control.disabled) values[control.dataset.column] = control.value;
+  });
+  const isEditing = Boolean(editingDatabaseRow);
+  const primaryKey = activeDatabaseTable.columns.find(c => c.primaryKey);
+  const path = `/api/admin/database/tables/${encodeURIComponent(activeDatabaseTable.name)}/rows`;
+  const url = isEditing ? `${path}/${encodeURIComponent(editingDatabaseRow[primaryKey.name])}` : path;
+  const saveBtn = $('#databaseSaveRowBtn');
+  setBusy(saveBtn, true);
+  setBox('databaseRowError', '');
+  try {
+    await databaseRequest(url, { method: isEditing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values }) });
+    rowModal.close();
+    showToast(isEditing ? 'Row saved.' : 'Row added.', 'success');
+    await loadDatabaseTables(true);
+  } catch (error) {
+    setBox('databaseRowError', error.message); // stays inside the dialog so the person can fix it
+  } finally {
+    setBusy(saveBtn, false);
+  }
+});
+
+$('#databaseTableSelect').addEventListener('change', event => {
+  activeDatabaseTable = databaseTables.find(t => t.name === event.target.value);
+  activeDatabasePage = 0;
+  refreshDatabaseRows();
+});
+$('#databaseSearch').addEventListener('input', event => {
+  clearTimeout(databaseSearchTimer);
+  databaseSearchTimer = setTimeout(() => {
+    activeDatabaseSearch = event.target.value.trim();
+    activeDatabasePage = 0;
+    refreshDatabaseRows();
+  }, 200);
+});
+$('#databaseAddRowBtn').addEventListener('click', () => { if (activeDatabaseTable) openDatabaseRowEditor(); });
+$('#databasePreviousBtn').addEventListener('click', () => { if (activeDatabasePage > 0) { activeDatabasePage -= 1; refreshDatabaseRows(); } });
+$('#databaseNextBtn').addEventListener('click', () => { activeDatabasePage += 1; refreshDatabaseRows(); });
+$('#databaseCloseRowBtn').addEventListener('click', () => rowModal.close());
 
 function referenceLabel(options, value) {
   if (value == null) return '';
-  return options.find(option => String(option.value) === String(value))?.label || String(value);
+  return options.find(o => String(o.value) === String(value))?.label || String(value);
 }
-
 function humanize(value) {
-  return value.replaceAll('_', ' ').replace(/\b\w/g, character => character.toUpperCase());
+  return value.replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
-function setDatabaseStatus(message) {
-  document.getElementById('databaseStatus').textContent = message;
-}
+// ==================== Start up ====================
+// Tabs load their data the first time (and each time) they are opened
+viewLoaders = {
+  students: loadStudents,
+  faculty: loadFaculty,
+  database: showDatabase,
+};
+loadStats();
+// Warm the course/branch lists in the background so the student form and table labels are ready
+loadStudentMeta().catch(() => {});
+showView(location.hash.slice(1));
 
-function setupSectionManager(config) {
-  const nav = document.querySelector(config.navSelector);
-  const linkCard = document.querySelector(config.linkCardSelector);
-  const modal = document.getElementById(config.modalId);
-  const addBtn = document.getElementById(config.addBtnId);
-  const saveBtn = document.getElementById(config.saveBtnId);
-  const closeBtn = modal.querySelector(`[id="${config.closeBtnId}"]`);
-
-  nav.addEventListener('click', () => showSection(config));
-  linkCard.addEventListener('click', () => showSection(config));
-
-  addBtn.onclick = () => {
-    editingId = null;
-    clearFormFields(config);
-    if (config.studentForm) updateMatchingClasses();
-    modal.showModal();
-  };
-
-  closeBtn.onclick = () => {
-    modal.close();
-  };
-
-  saveBtn.onclick = async () => {
-    await saveEntity(config);
-  };
-}
-
-// ==================== Generic Entity Operations ====================
-async function loadEntities(config) {
-  const response = await fetch(config.apiEndpoint);
-  const entities = await response.json();
-
-  new gridjs.Grid({
-    columns: ['Name', 'Username', 'Section', 'Actions'],
-    data: entities.map(entity => [
-      entity.name,
-      entity[config.usernameField],
-      entity.section,
-      gridjs.html(
-        `<button onclick="window.editEntity('${encodeURIComponent(JSON.stringify(entity))}')">Edit</button>
-         <button onclick="window.deleteEntity('${entity[config.usernameField]}', '${config.apiEndpoint}', '${config.entityName}')" class="button-secondary">Delete</button>`,
-      ),
-    ]),
-    style: {
-      td: {
-        border: '1px solid #ccc',
-      },
-      table: {
-        'font-size': '18px',
-      },
-    },
-    width: '70%',
-    height: '500px',
-    search: true,
-    pagination: { limit: 15 },
-    fixedHeader: true,
-    sort: true,
-  }).render(document.getElementById(config.tableId));
-}
-
-async function saveEntity(config) {
-  const data = {};
-
-  config.fields.forEach(field => {
-    const value = document.getElementById(field.id).value;
-    if (!value) {
-      throw new Error(`Missing required field: ${field.fieldName}`);
-    }
-    data[field.fieldName] = value;
-  });
-
-  if (config.studentForm && data.username !== editingId) {
-    data.username = data.username.trim();
-    const usernameStatus = document.getElementById('studentUsernameStatus');
-    usernameStatus.textContent = 'Checking username...';
-    const availability = await fetch(
-      `${config.apiEndpoint}/username-available?username=${encodeURIComponent(data.username)}`,
-    ).then(response => response.json());
-    if (!availability.available) {
-      usernameStatus.textContent = 'Username is already in use';
-      alert('Choose a username that is not already in use');
-      return;
-    }
-    usernameStatus.textContent = 'Username is available';
-  }
-
-  // Only process face recognition for students
-  if (config.needsFaceRecognition) {
-    await loadModels();
-
-    const files = document.getElementById('faceImages').files;
-
-    if (files.length === 0 && !editingId) {
-      alert('Upload at least one face image');
-      return;
-    }
-
-    document.getElementById('faceStatus').textContent = 'Processing faces...';
-
-    const descriptors = await getDescriptorsFromImages(files);
-
-    if (descriptors.length === 0 && !editingId) {
-      alert('No valid faces detected');
-      return;
-    }
-
-    if (descriptors.length > 0 && descriptors.length < 3) {
-      alert('Upload at least 3 images for better accuracy');
-    }
-
-    // Only compute centroid if there are descriptors
-    if (descriptors.length > 0) {
-      const centroid = computeCentroid(descriptors);
-      data.faceDescriptor = JSON.stringify(Array.from(centroid));
-    }
-  }
-
-  let method = 'POST';
-  let url = config.apiEndpoint;
-
-  if (editingId) {
-    method = 'PUT';
-    url = `${config.apiEndpoint}/${editingId}`;
-  }
-
-  let requestBody = JSON.stringify(data);
-  const headers = { 'Content-Type': 'application/json' };
-  if (config.studentForm && method === 'POST') {
-    data.faceImages = await Promise.all(
-      Array.from(document.getElementById('faceImages').files, file =>
-        readImageDataUrl(file),
-      ),
-    );
-    requestBody = JSON.stringify(data);
-  }
-
-  const response = await fetch(url, { method, headers, body: requestBody });
-
-  if (response.ok) {
-    setTimeout(() => {
-      editingId = null;
-      document.getElementById(config.modalId).close();
-      location.reload();
-    }, 2000);
-  } else {
-    const result = await response.json().catch(() => ({}));
-    alert(
-      result.error === 'username_taken'
-        ? 'Username is already in use'
-        : 'Error saving entity',
-    );
-  }
-}
-
-function readImageDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve({ dataUrl: reader.result });
-    reader.onerror = () => reject(new Error(`Could not read ${file.name}`));
-    reader.readAsDataURL(file);
-  });
-}
-
-async function initializeStudentForm() {
-  const response = await fetch('/api/students/meta');
-  if (!response.ok) throw new Error('Could not load student options');
-  studentMetadata = await response.json();
-  populateSelect('studentCourse', studentMetadata.courses, 'Select course');
-  populateSelect('studentBranch', studentMetadata.branches, 'Select branch');
-
-  for (const id of ['studentCourse', 'studentBranch', 'studentSemester']) {
-    document
-      .getElementById(id)
-      .addEventListener('change', updateMatchingClasses);
-  }
-  document
-    .getElementById('studentUsername')
-    .addEventListener('blur', checkStudentUsername);
-}
-
-function populateSelect(id, options, placeholder) {
-  const select = document.getElementById(id);
-  select.replaceChildren(new Option(placeholder, ''));
-  options.forEach(option => select.add(new Option(option.label, option.id)));
-}
-
-function updateMatchingClasses() {
-  if (!studentMetadata) return;
-  const courseId = document.getElementById('studentCourse').value;
-  const branchId = document.getElementById('studentBranch').value;
-  const semester = Number(document.getElementById('studentSemester').value);
-  const matching = studentMetadata.classes.filter(
-    item =>
-      String(item.course_id) === courseId &&
-      String(item.branch_id) === branchId &&
-      item.semester === semester,
-  );
-  const placeholder =
-    courseId && branchId && semester
-      ? 'Select class'
-      : 'Select course, branch, and semester first';
-  populateSelect(
-    'studentClass',
-    matching.map(item => ({
-      id: item.id,
-      label: `Class ${item.id} - ${item.section}`,
-    })),
-    placeholder,
-  );
-  document.getElementById('studentClass').disabled = matching.length === 0;
-}
-
-async function checkStudentUsername() {
-  const input = document.getElementById('studentUsername');
-  const username = input.value.trim();
-  const status = document.getElementById('studentUsernameStatus');
-  if (!username) {
-    status.textContent = '';
-    return;
-  }
-  const response = await fetch(
-    `/api/students/username-available?username=${encodeURIComponent(username)}`,
-  );
-  const result = await response.json();
-  status.textContent = result.available
-    ? 'Username is available'
-    : 'Username is already in use';
-}
-
-function editEntity(encodedEntity) {
-  const config = currentConfig;
-  const modal = document.getElementById(config.modalId);
-
-  const entity = JSON.parse(decodeURIComponent(encodedEntity));
-  editingId = entity[config.usernameField];
-
-  document.querySelector(`#${config.modalId} h3`).textContent =
-    `Edit ${config.entityName}`;
-
-  // Prefill form fields
-  if (config.studentForm) {
-    config.fields
-      .filter(field => field.id !== 'studentClass')
-      .forEach(field => {
-        document.getElementById(field.id).value = entity[field.fieldName] || '';
-      });
-    updateMatchingClasses();
-    document.getElementById('studentClass').value = entity.classId || '';
-  } else {
-    config.fields.forEach(field => {
-      document.getElementById(field.id).value = entity[field.fieldName] || '';
-    });
-  }
-
-  modal.showModal();
-}
-
-async function deleteEntity(id, apiEndpoint, entityName) {
-  if (!confirm(`Delete this ${entityName}?`)) return;
-
-  const response = await fetch(`${apiEndpoint}/${id}`, {
-    method: 'DELETE',
-  });
-
-  if (response.ok) {
-    location.reload();
-  } else {
-    alert(`Error deleting ${entityName}`);
-  }
-}
-
-function clearFormFields(config) {
-  config.fields.forEach(field => {
-    document.getElementById(field.id).value = '';
-  });
-
-  document.querySelector(`#${config.modalId} h3`).textContent =
-    `Add ${config.entityName}`;
-  if (config.studentForm) {
-    document.getElementById('studentPassword').value = 'password';
-    document.getElementById('studentUsernameStatus').textContent = '';
-    document.getElementById('faceImages').value = '';
-    document.getElementById('faceStatus').textContent = 'No images uploaded';
-  }
-}
-
-async function getDescriptorsFromImages(files) {
-  const descriptors = [];
-
-  const saveBtn = document.getElementById('saveStudentBtn');
-  saveBtn.disabled = true;
-  saveBtn.textContent = 'Processing...';
-
-  const faceStatus = document.getElementById('faceStatus');
-
-  for (let i = 0; i < files.length; i++) {
-    faceStatus.textContent = `Processing image ${i + 1} of ${files.length}...`;
-
-    const img = await faceapi.bufferToImage(files[i]);
-
-    const detection = await faceapi
-      .detectSingleFace(img)
-      .withFaceLandmarks()
-      .withFaceDescriptor();
-
-    if (!detection) {
-      console.warn('No face detected in image');
-      continue;
-    }
-
-    if (detection.detection.score < 0.7) {
-      console.warn('Low confidence face skipped');
-      continue;
-    }
-
-    descriptors.push(detection.descriptor);
-
-    console.log('Face added:', detection.detection.score);
-  }
-
-  faceStatus.textContent = 'Saved successfully ✅';
-  saveBtn.disabled = false;
-  saveBtn.textContent = 'Save';
-  return descriptors;
-}
-
-function computeCentroid(descriptors) {
-  if (!descriptors || descriptors.length === 0) {
-    throw new Error('No face descriptors provided');
-  }
-
-  const length = descriptors[0].length;
-  const centroid = new Float32Array(length);
-
-  for (let i = 0; i < length; i++) {
-    let sum = 0;
-    for (const desc of descriptors) {
-      sum += desc[i];
-    }
-    centroid[i] = sum / descriptors.length;
-  }
-
-  return centroid;
-}
-
-async function loadModels() {
-  await cacheModelsFromManifest('/utils/models/models-manifest.json');
-
-  // Load models
-  await Promise.all([
-    faceapi.nets.ssdMobilenetv1.loadFromUri('/utils/models'),
-    faceapi.nets.faceLandmark68Net.loadFromUri('/utils/models'),
-    faceapi.nets.faceRecognitionNet.loadFromUri('/utils/models'),
-  ]).then(() => console.log('models loaded'));
-}
-
-// ==================== Global Functions for Onclick Handlers ====================
-window.editEntity = editEntity;
-window.deleteEntity = deleteEntity;
+// Handy for wiring the hooks from the browser console or another script
+window.adminHooks = { renderActivity, renderAttendanceReport, setAttendanceLoader };

@@ -3,249 +3,332 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Admin Portal</title>
-    <link
-      href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css"
-      rel="stylesheet" />
-    <link rel="stylesheet" href="css/general.css" />
-    <link rel="stylesheet" href="css/header.css" />
-    <link rel="stylesheet" href="css/sidebar.css" />
-    <link rel="stylesheet" href="css/card.css" />
-    <link rel="stylesheet" href="css/button.css" />
+    <title>Admin | Attendance System</title>
+    <link rel="icon" href="icons/qr-code.png" />
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/components.css" />
+    <link rel="stylesheet" href="css/shell.css" />
     <link rel="stylesheet" href="css/admin.css" />
+
+    <!-- Theme + login check only. face-api.js and the model cache are loaded by admin.js the first time the student form reaches the photo step (they are large and most admin visits never need them). -->
+    <script src="js/theme.js"></script>
     <script src="utils/auth-guard.js" type="module"></script>
-    <script src="utils/cache-models.js"></script>
-    <script src="/utils/face-api.js"></script>
   </head>
 
   <body>
-    <header>
-      <div class="left-section">
-        <img
-          style="cursor: pointer"
-          src="icons/hamburger-menu.svg"
-          alt="Menu" />
-      </div>
-      <div class="middle-section">Admin Dashboard</div>
-      <div class="right-section">
-        <span class="user-name">Welcome, <b>Admin</b></span>
-      </div>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="app-header">
+      <a class="brand" href="admin.html"><img src="icons/mit-logo.png" alt="MIT" /></a>
+      <span class="user-name">Welcome, <b>Admin</b></span>
+      <button class="icon-btn theme-toggle" type="button" aria-pressed="false" aria-label="Switch to dark theme">
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      </button>
+      <button class="btn btn-secondary logout-btn" type="button">Log out</button>
     </header>
 
-    <nav class="sidebar">
-      <div class="sidebar-content" onclick="location.reload()">
-        <img src="icons/home.svg" alt="Home" />
-        <div>Home</div>
-      </div>
-      <div class="sidebar-content student-nav">
-        <img src="icons/student.svg" alt="Students" />
-        <div>Students</div>
-      </div>
-      <div class="sidebar-content faculty-nav">
-        <img src="icons/teacher.svg" alt="Faculty" />
-        <div>Faculty</div>
-      </div>
-      <div class="sidebar-content database-nav">
-        <img src="icons/courses.svg" alt="Courses" />
-        <div>Database</div>
-      </div>
-      <div class="sidebar-content logout-btn">
-        <img src="icons/logout-black.svg" alt="Logout" />
-        <div>Log out</div>
-      </div>
+    <!-- Bottom tabs on phones, left rail on desktop (see shell.css) -->
+    <nav class="app-nav" aria-label="Admin sections">
+      <button class="nav-item" type="button" data-view="dashboard" aria-current="page"><img src="icons/home.svg" alt="" />Home</button>
+      <button class="nav-item" type="button" data-view="students"><img src="icons/student.svg" alt="" />Students</button>
+      <button class="nav-item" type="button" data-view="faculty"><img src="icons/teacher.svg" alt="" />Faculty</button>
+      <button class="nav-item" type="button" data-view="attendance"><img src="icons/history.svg" alt="" />Attendance</button>
+      <button class="nav-item" type="button" data-view="database"><img src="icons/courses.svg" alt="" />Database</button>
     </nav>
 
-    <main>
-      <section class="homepage">
-        <section class="home-cards">
-          <div class="link-card student-link-card">
-            <p class="sub-title">Students</p>
-            <p class="title" id="studentCount"></p>
-          </div>
+    <main id="main" class="app-main wide">
+      <!-- ================= Dashboard ================= -->
+      <section id="view-dashboard" class="adm-view" aria-labelledby="dashboardTitle">
+        <div class="adm-head">
+          <h1 id="dashboardTitle" tabindex="-1">Dashboard</h1>
+        </div>
 
-          <div class="link-card faculty-link-card">
-            <p class="sub-title">Faculty</p>
-            <p class="title" id="facultyCount"></p>
-          </div>
+        <p id="statsError" class="alert alert-danger" role="alert" hidden>
+          <span>Could not load the numbers. <button id="statsRetryBtn" class="link-btn" type="button">Try again</button></span>
+        </p>
 
-          <div class="link-card">
-            <p class="sub-title">Attendance</p>
-            <p class="title" id="attendanceCount">58</p>
+        <div class="adm-stats">
+          <button class="card adm-stat" type="button" data-goto="students">
+            <span class="adm-stat-label">Students</span>
+            <span class="adm-stat-value" id="studentCount">–</span>
+            <span class="adm-stat-note">View all students</span>
+          </button>
+          <button class="card adm-stat" type="button" data-goto="faculty">
+            <span class="adm-stat-label">Faculty</span>
+            <span class="adm-stat-value" id="facultyCount">–</span>
+            <span class="adm-stat-note">View all faculty</span>
+          </button>
+          <button class="card adm-stat" type="button" data-goto="attendance">
+            <span class="adm-stat-label">Attendance</span>
+            <span class="adm-stat-value" id="attendanceCount">–</span>
+            <span class="adm-stat-note">Open reports</span>
+          </button>
+          <div class="card adm-stat adm-stat-static">
+            <span class="adm-stat-label">Live sessions</span>
+            <span class="adm-stat-value" id="liveSessionCount">–</span>
+            <span class="adm-stat-note" id="liveSessionNote">&nbsp;</span>
           </div>
+        </div>
 
-          <div class="link-card">
-            <p class="sub-title">Live sessions</p>
-            <p class="title" id="liveSessionCount"></p>
-          </div>
-        </section>
-
-        <section class="activities">
-          <p>Activities</p>
-          <div>
-            <!-- Recent activities will be listed here -->
-            <ul>
-              <li>✔️ Attendance finalised for CSE101, 10:22 AM</li>
-              <li>➕ Student added: Yash Sharma</li>
-              <li>🕒 Session started for DBMS, Faculty: Mukesh Rathor</li>
-            </ul>
-          </div>
+        <section class="card adm-panel" aria-labelledby="activityTitle">
+          <h2 id="activityTitle">Recent activity</h2>
+          <!-- Filled by renderActivity() once the backend can supply events -->
+          <ul id="activityList" class="adm-activity"></ul>
+          <p id="activityEmpty" class="adm-empty">No recent activity to show yet.</p>
         </section>
       </section>
 
-      <section class="students" style="display: none">
-        <h2>Students</h2>
-        <button id="addStudentBtn">+ Add Student</button>
+      <!-- ================= Students ================= -->
+      <section id="view-students" class="adm-view" aria-labelledby="studentsTitle" hidden>
+        <div class="adm-head">
+          <h1 id="studentsTitle" tabindex="-1">Students</h1>
+          <button id="addStudentBtn" class="btn btn-primary" type="button">Add student</button>
+        </div>
+        <div class="adm-toolbar">
+          <div class="field adm-grow">
+            <label for="studentSearch">Search students</label>
+            <input class="input" id="studentSearch" type="search" placeholder="Name, username, roll number" />
+          </div>
+          <div class="field">
+            <label for="studentBranchFilter">Branch</label>
+            <select class="input" id="studentBranchFilter"><option value="">All branches</option></select>
+          </div>
+        </div>
         <div id="studentsTable"></div>
-
-        <dialog id="studentModal" class="modal">
-          <h3>Add Student</h3>
-
-          <form method="dialog">
-            <div>
-              <label for="studentName">Name:</label>
-              <input type="text" id="studentName" required />
-            </div>
-
-            <div>
-              <label for="studentUsername">Username:</label>
-              <input type="text" id="studentUsername" required />
-              <small id="studentUsernameStatus" aria-live="polite"></small>
-            </div>
-
-            <div>
-              <label for="studentPassword">Password:</label>
-              <input
-                type="password"
-                id="studentPassword"
-                value="password"
-                required />
-            </div>
-
-            <div>
-              <label for="studentRollNumber">Roll number:</label>
-              <input type="text" id="studentRollNumber" required />
-            </div>
-
-            <div>
-              <label for="studentCourse">Course:</label>
-              <select id="studentCourse" required>
-                <option value="">Select course</option>
-              </select>
-            </div>
-
-            <div>
-              <label for="studentBranch">Branch:</label>
-              <select id="studentBranch" required>
-                <option value="">Select branch</option>
-              </select>
-            </div>
-
-            <div>
-              <label for="studentSemester">Semester:</label>
-              <input
-                type="number"
-                id="studentSemester"
-                min="1"
-                max="8"
-                step="1"
-                required />
-            </div>
-
-            <div>
-              <label for="studentClass">Class:</label>
-              <select id="studentClass" required disabled>
-                <option value="">
-                  Select course, branch, and semester first
-                </option>
-              </select>
-            </div>
-
-            <input type="file" id="faceImages" multiple accept="image/*" />
-            <p id="faceStatus">No images uploaded</p>
-            <div>
-              <button id="saveStudentBtn" type="button">Save student</button>
-              <button id="closeStudentModalBtn" class="button-secondary">
-                Cancel
-              </button>
-            </div>
-          </form>
-        </dialog>
       </section>
 
-      <section class="faculty" style="display: none">
-        <h2>Faculty</h2>
-        <button id="addFacultyBtn">+ Add Faculty</button>
+      <!-- ================= Faculty ================= -->
+      <section id="view-faculty" class="adm-view" aria-labelledby="facultyTitle" hidden>
+        <div class="adm-head">
+          <h1 id="facultyTitle" tabindex="-1">Faculty</h1>
+          <button id="addFacultyBtn" class="btn btn-primary" type="button">Add faculty</button>
+        </div>
+        <div class="adm-toolbar">
+          <div class="field adm-grow">
+            <label for="facultySearch">Search faculty</label>
+            <input class="input" id="facultySearch" type="search" placeholder="Name, username, subject" />
+          </div>
+        </div>
         <div id="facultyTable"></div>
-
-        <dialog id="facultyModal" class="modal">
-          <h3>Add Faculty</h3>
-
-          <form method="dialog">
-            <div>
-              Name:
-              <input type="text" id="facultyName" required />
-            </div>
-
-            <div>
-              Username:
-              <input type="text" id="facultyUsername" required />
-            </div>
-
-            <div>
-              Password:
-              <input type="text" id="facultyPassword" required />
-            </div>
-
-            <div>
-              Subject:
-              <input type="text" id="facultySubject" required />
-            </div>
-
-            <div>
-              Section:
-              <input type="text" id="facultySection" required />
-            </div>
-
-            <div>
-              <button id="saveFacultyBtn">Save</button>
-              <button id="closeFacultyModalBtn" class="button-secondary">
-                Cancel
-              </button>
-            </div>
-          </form>
-        </dialog>
       </section>
 
-      <section class="database" style="display: none">
-        <div class="database-toolbar">
-          <h2>Database</h2>
-          <label for="databaseTableSelect">Table</label>
-          <select id="databaseTableSelect" aria-label="Choose database table"></select>
-          <input id="databaseSearch" type="search" placeholder="Search rows" aria-label="Search rows" />
-          <button id="databaseAddRowBtn" type="button">Add row</button>
-        </div>
-        <p id="databaseStatus" role="status" aria-live="polite"></p>
-        <div id="databaseRows" class="database-rows"></div>
-        <div class="database-pagination">
-          <span id="databasePageLabel"></span>
-          <button id="databasePreviousBtn" type="button" aria-label="Previous page">Previous</button>
-          <button id="databaseNextBtn" type="button" aria-label="Next page">Next</button>
+      <!-- ================= Attendance reports ================= -->
+      <section id="view-attendance" class="adm-view" aria-labelledby="attendanceTitle" hidden>
+        <div class="adm-head">
+          <h1 id="attendanceTitle" tabindex="-1">Attendance</h1>
+          <button id="exportCsvBtn" class="btn btn-secondary" type="button" disabled>Export CSV</button>
         </div>
 
-        <dialog id="databaseRowModal" class="modal database-modal">
-          <h3 id="databaseRowModalTitle">Add row</h3>
-          <form method="dialog">
-            <div id="databaseRowFields" class="database-row-fields"></div>
-            <div class="database-modal-actions">
-              <button id="databaseSaveRowBtn" type="button">Save row</button>
-              <button id="databaseCloseRowBtn" class="button-secondary" type="button">Cancel</button>
-            </div>
-          </form>
-        </dialog>
+        <form id="attendanceFilters" class="card adm-toolbar adm-filters">
+          <div class="field">
+            <label for="attFrom">From</label>
+            <input class="input" id="attFrom" type="date" />
+          </div>
+          <div class="field">
+            <label for="attTo">To</label>
+            <input class="input" id="attTo" type="date" />
+          </div>
+          <div class="field">
+            <label for="attMethod">Method</label>
+            <select class="input" id="attMethod">
+              <option value="">All methods</option>
+              <option value="qr">QR code</option>
+              <option value="cctv">CCTV</option>
+            </select>
+          </div>
+          <button id="attApplyBtn" class="btn btn-primary" type="submit">Apply</button>
+        </form>
+
+        <div class="adm-stats adm-stats-small" id="attSummary" hidden>
+          <div class="card adm-stat adm-stat-static"><span class="adm-stat-label">Sessions</span><span class="adm-stat-value" id="attSessions">0</span></div>
+          <div class="card adm-stat adm-stat-static"><span class="adm-stat-label">Average attendance</span><span class="adm-stat-value" id="attAverage">0%</span></div>
+        </div>
+
+        <div id="attendanceTable"></div>
+      </section>
+
+      <!-- ================= Database ================= -->
+      <section id="view-database" class="adm-view" aria-labelledby="databaseTitle" hidden>
+        <div class="adm-head">
+          <h1 id="databaseTitle" tabindex="-1">Database</h1>
+          <button id="databaseAddRowBtn" class="btn btn-primary" type="button" disabled>Add row</button>
+        </div>
+        <p class="adm-warning"><span aria-hidden="true">!</span> Changes here are written straight to the database.</p>
+        <div class="adm-toolbar">
+          <div class="field">
+            <label for="databaseTableSelect">Table</label>
+            <select class="input" id="databaseTableSelect"></select>
+          </div>
+          <div class="field adm-grow">
+            <label for="databaseSearch">Search rows</label>
+            <input class="input" id="databaseSearch" type="search" placeholder="Search rows" />
+          </div>
+        </div>
+        <p id="databaseStatus" class="adm-status" role="status"></p>
+        <div id="databaseRows" class="adm-table-wrap" tabindex="0" role="region" aria-label="Database rows"></div>
+        <div class="adm-pager">
+          <span id="databasePageLabel"></span>
+          <span class="adm-pager-btns">
+            <button id="databasePreviousBtn" class="btn btn-secondary btn-sm" type="button">Previous</button>
+            <button id="databaseNextBtn" class="btn btn-secondary btn-sm" type="button">Next</button>
+          </span>
+        </div>
       </section>
     </main>
 
-    <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
+    <!-- ================= Dialogs ================= -->
+
+    <!-- Add / edit student: three steps -->
+    <dialog id="studentModal" class="dialog adm-dialog" aria-labelledby="studentModalTitle">
+      <form id="studentForm" novalidate>
+        <h2 id="studentModalTitle">Add student</h2>
+        <ol class="adm-steps" id="studentSteps" aria-label="Progress">
+          <li data-step="1"><span>Account</span></li>
+          <li data-step="2"><span>Class</span></li>
+          <li data-step="3"><span>Face photos</span></li>
+        </ol>
+
+        <!-- Step 1 -->
+        <div class="adm-step" data-step="1">
+          <div class="field">
+            <label for="studentName">Full name</label>
+            <input class="input" id="studentName" type="text" autocomplete="off" aria-describedby="studentName-msg" />
+            <p class="field-msg" id="studentName-msg" hidden></p>
+          </div>
+          <div class="field">
+            <label for="studentUsername">Username</label>
+            <input class="input" id="studentUsername" type="text" autocomplete="off" autocapitalize="none" aria-describedby="studentUsername-msg" />
+            <p class="field-msg" id="studentUsername-msg" role="status" hidden></p>
+          </div>
+          <div class="field">
+            <label for="studentPassword">Password</label>
+            <div class="input-group">
+              <input class="input" id="studentPassword" type="password" autocomplete="new-password" aria-describedby="studentPassword-msg" />
+              <button class="input-toggle" type="button" data-toggle-password="studentPassword" aria-pressed="false">Show</button>
+            </div>
+            <p class="field-msg" id="studentPassword-msg" hidden></p>
+          </div>
+          <div class="field">
+            <label for="studentRollNumber">Roll number</label>
+            <input class="input" id="studentRollNumber" type="text" autocomplete="off" aria-describedby="studentRollNumber-msg" />
+            <p class="field-msg" id="studentRollNumber-msg" hidden></p>
+          </div>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="adm-step" data-step="2" hidden>
+          <div class="field">
+            <label for="studentCourse">Course</label>
+            <select class="input" id="studentCourse" aria-describedby="studentCourse-msg"><option value="">Select course</option></select>
+            <p class="field-msg" id="studentCourse-msg" hidden></p>
+          </div>
+          <div class="field">
+            <label for="studentBranch">Branch</label>
+            <select class="input" id="studentBranch" aria-describedby="studentBranch-msg"><option value="">Select branch</option></select>
+            <p class="field-msg" id="studentBranch-msg" hidden></p>
+          </div>
+          <div class="field">
+            <label for="studentSemester">Semester</label>
+            <input class="input" id="studentSemester" type="number" min="1" max="8" step="1" inputmode="numeric" aria-describedby="studentSemester-msg" />
+            <p class="field-msg" id="studentSemester-msg" hidden></p>
+          </div>
+          <div class="field">
+            <label for="studentClass">Class</label>
+            <select class="input" id="studentClass" disabled aria-describedby="studentClass-msg"><option value="">Select course, branch, and semester first</option></select>
+            <p class="field-msg" id="studentClass-msg" hidden></p>
+          </div>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="adm-step" data-step="3" hidden>
+          <p class="adm-help" id="faceHelp">Add clear, front-facing photos of the student. Three or more photos give the best accuracy.</p>
+          <div>
+            <input class="visually-hidden" id="faceImages" type="file" multiple accept="image/*" aria-describedby="faceHelp faceImages-msg" />
+            <label class="btn btn-secondary" for="faceImages">Choose photos</label>
+          </div>
+          <p class="field-msg" id="faceImages-msg" role="status" hidden></p>
+          <ul id="facePreviews" class="adm-previews"></ul>
+          <p id="faceStatus" class="adm-help" role="status">No photos selected</p>
+        </div>
+
+        <p id="studentFormError" class="alert alert-danger" role="alert" hidden></p>
+
+        <div class="dialog-actions">
+          <button id="closeStudentModalBtn" class="btn btn-secondary" type="button">Cancel</button>
+          <button id="studentBackBtn" class="btn btn-secondary" type="button">Back</button>
+          <button id="studentNextBtn" class="btn btn-primary" type="submit">Next</button>
+          <button id="saveStudentBtn" class="btn btn-primary" type="submit">Save student</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Add / edit faculty -->
+    <dialog id="facultyModal" class="dialog adm-dialog" aria-labelledby="facultyModalTitle">
+      <form id="facultyForm" novalidate>
+        <h2 id="facultyModalTitle">Add faculty</h2>
+        <div class="adm-step">
+          <div class="field">
+            <label for="facultyName">Full name</label>
+            <input class="input" id="facultyName" type="text" autocomplete="off" aria-describedby="facultyName-msg" />
+            <p class="field-msg" id="facultyName-msg" hidden></p>
+          </div>
+          <div class="field">
+            <label for="facultyUsername">Username</label>
+            <input class="input" id="facultyUsername" type="text" autocomplete="off" autocapitalize="none" aria-describedby="facultyUsername-msg" />
+            <p class="field-msg" id="facultyUsername-msg" hidden></p>
+          </div>
+          <div class="field">
+            <label for="facultyPassword">Password</label>
+            <div class="input-group">
+              <input class="input" id="facultyPassword" type="password" autocomplete="new-password" aria-describedby="facultyPassword-msg" />
+              <button class="input-toggle" type="button" data-toggle-password="facultyPassword" aria-pressed="false">Show</button>
+            </div>
+            <p class="field-msg" id="facultyPassword-msg" hidden></p>
+          </div>
+          <div class="field">
+            <label for="facultySubject">Subject</label>
+            <input class="input" id="facultySubject" type="text" autocomplete="off" aria-describedby="facultySubject-msg" />
+            <p class="field-msg" id="facultySubject-msg" hidden></p>
+          </div>
+          <div class="field">
+            <label for="facultySection">Section</label>
+            <input class="input" id="facultySection" type="text" autocomplete="off" aria-describedby="facultySection-msg" />
+            <p class="field-msg" id="facultySection-msg" hidden></p>
+          </div>
+        </div>
+        <p id="facultyFormError" class="alert alert-danger" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button id="closeFacultyModalBtn" class="btn btn-secondary" type="button">Cancel</button>
+          <button id="saveFacultyBtn" class="btn btn-primary" type="submit">Save faculty</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Shared delete confirmation -->
+    <dialog id="deleteDialog" class="dialog" aria-labelledby="deleteTitle" aria-describedby="deleteText">
+      <h2 id="deleteTitle">Delete?</h2>
+      <p id="deleteText"></p>
+      <p id="deleteError" class="alert alert-danger" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button id="deleteCancelBtn" class="btn btn-secondary" type="button">Keep</button>
+        <button id="deleteConfirmBtn" class="btn btn-danger btn-solid" type="button">Delete</button>
+      </div>
+    </dialog>
+
+    <!-- Database row editor (fields are built in admin.js from the table's columns) -->
+    <dialog id="databaseRowModal" class="dialog adm-dialog" aria-labelledby="databaseRowModalTitle">
+      <form id="databaseRowForm">
+        <h2 id="databaseRowModalTitle">Add row</h2>
+        <div id="databaseRowFields" class="adm-step"></div>
+        <p id="databaseRowError" class="alert alert-danger" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button id="databaseCloseRowBtn" class="btn btn-secondary" type="button">Cancel</button>
+          <button id="databaseSaveRowBtn" class="btn btn-primary" type="submit">Save row</button>
+        </div>
+      </form>
+    </dialog>
+
     <script type="module" src="js/admin.js"></script>
   </body>
 </html>

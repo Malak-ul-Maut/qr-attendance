@@ -1,83 +1,74 @@
-main {
-  width: 26vw;
-  border: none;
-  border-radius: 1.2rem;
-  background-color: var(--bg);
-  margin-top: 16vh;
-  padding: 1.5rem 2rem;
+/* loginpage.css - styles used only by login-page.html */
 
+.login-page {
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
-  row-gap: 1rem;
-  justify-self: center;
   align-items: center;
-
-  position: relative;
-  box-shadow:
-    0px 4px 4px #00000030,
-    0px 12px 12px #00000015;
+  justify-content: center;
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-4);
+}
+.login-theme-toggle {
+  position: fixed;
+  top: var(--space-4);
+  right: var(--space-4);
+  z-index: 10;
 }
 
-.qr-logo {
-  width: 4rem;
+.login-brand img {
+  height: 56px;
+  width: auto;
 }
-.signInMsg {
+
+.login-card {
+  width: 100%;
+  max-width: 26rem;
+  overflow: hidden; /* keeps the photo strip inside the rounded corners */
+  box-shadow: var(--shadow-md);
+}
+
+/* Campus photo strip at the top of the card */
+.login-banner {
+  height: 7rem;
+  background-image: url('../icons/mit-building.jpg');
+  background-size: cover;
+  background-position: center 70%;
+}
+
+.login-body {
+  padding: var(--space-5) var(--space-5) var(--space-6);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.back-link {
+  justify-self: start;
+  font-size: var(--text-sm);
   font-weight: 600;
-  font-size: 1.5rem;
-  opacity: 0.8;
-  display: block;
+  text-decoration: none;
+  color: var(--ink-500);
 }
-
-input {
-  font-size: 0.9rem;
-  font-weight: 500;
-  opacity: 0.9;
-  width: 90%;
-  border-style: none;
-  border-radius: 0.6rem;
-  background-color: hsl(203, 23%, 89%);
-  padding: 0.8rem 1.2rem;
-}
-
-.view-password-icon {
-  position: absolute;
-  right: 3rem;
-  top: 61%;
-
-  width: 1.4rem;
-  opacity: 0.6;
-  cursor: pointer;
-}
-
-.forgot-password-link {
-  align-self: self-end;
-  color: royalblue;
-  margin: 0;
-}
-.forgot-password-link:hover {
-  cursor: pointer;
+.back-link:hover {
+  color: var(--ink-900);
   text-decoration: underline;
 }
 
-#loginBtn {
-  color: white;
-  background-color: hsl(220, 20%, 6%);
-  width: 100%;
-  margin-top: 8px;
-  border: 0.8px solid rgba(31, 35, 40, 0.15);
-  border-radius: 0.8rem;
+.signInMsg {
+  margin-top: var(--space-2);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
-#login-msg {
-  font-size: 1rem;
-  font-weight: 500;
-  opacity: 0.8;
-  text-align: center;
-  margin: 0;
+.login-sub {
+  color: var(--ink-500);
+  margin-bottom: var(--space-3);
 }
 
-/*----------- Stylings for mobile view ------------*/
-@media (max-width: 480px) {
-  main {
-    width: 70vw;
-  }
+#loginForm {
+  display: grid;
+  gap: var(--space-4);
+}
+#forgotPassword {
+  justify-self: center;
 }
