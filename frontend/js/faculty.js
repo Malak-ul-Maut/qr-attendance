@@ -285,7 +285,7 @@ function renderQR(data) {
   QRCode.toCanvas(qrCanvas, data.token, {
     width: qrCanvas.clientWidth,
     height: qrCanvas.clientWidth,
-    margin: 2,
+    margin: 1,
   });
   scheduleTokenRefresh(500); // the QR changes constantly so screenshots stop working
 }
