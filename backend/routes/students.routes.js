@@ -21,13 +21,14 @@ router.get('/', async (req, res) => {
       SELECT users.username, users.name, users.password,
         students.roll_number AS rollNumber,
         students.class_id AS classId,
-        classes.course_id AS courseId,
-        classes.branch_id AS branchId,
-        classes.semester,
+        curriculum.course_id AS courseId,
+        curriculum.branch_id AS branchId,
+        curriculum.semester,
         sections.label AS section
       FROM users
       JOIN students ON students.user_id = users.id
       JOIN classes ON classes.id = students.class_id
+      JOIN curriculum on curriculum.id = classes.curriculum_id
       JOIN sections ON sections.id = classes.section_id
       WHERE users.role = 'student'
       ORDER BY users.name
@@ -45,11 +46,12 @@ router.get('/meta', async (req, res) => {
       dbAll(`SELECT id, abbr AS label FROM courses ORDER BY abbr`),
       dbAll(`SELECT id, abbr AS label FROM branches ORDER BY abbr`),
       dbAll(`
-        SELECT classes.id, classes.course_id, classes.branch_id, classes.semester,
+        SELECT classes.id, curriculum.course_id, curriculum.branch_id, curriculum.semester,
           sections.label AS section
         FROM classes
         JOIN sections ON sections.id = classes.section_id
-        ORDER BY classes.course_id, classes.branch_id, classes.semester, classes.id
+        JOIN curriculum on curriculum.id = classes.curriculum_id
+        ORDER BY curriculum.course_id, curriculum.branch_id, curriculum.semester, classes.id
       `),
     ]);
     return res.json({ courses, branches, classes });
@@ -302,15 +304,15 @@ function resolveClassId(data) {
   const conditions = [];
   const params = [];
   if (data.courseId) {
-    conditions.push('classes.course_id = ?');
+    conditions.push('curriculum.course_id = ?');
     params.push(data.courseId);
   }
   if (data.branchId) {
-    conditions.push('classes.branch_id = ?');
+    conditions.push('curriculum.branch_id = ?');
     params.push(data.branchId);
   }
   if (data.semester) {
-    conditions.push('classes.semester = ?');
+    conditions.push('curriculum.semester = ?');
     params.push(data.semester);
   }
   if (data.sectionId) {

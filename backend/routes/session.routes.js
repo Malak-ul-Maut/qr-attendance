@@ -90,12 +90,13 @@ router.get('/classes', (req, res) => {
         classes.id AS class_id,
         courses.abbr AS course,
         branches.abbr AS branch,
-        classes.semester,
+        curriculum.semester,
         sections.label AS section
       FROM timetable
       JOIN classes on classes.room_id = timetable.room_id
-      JOIN courses ON courses.id = classes.course_id
-      JOIN branches ON branches.id = classes.branch_id
+      JOIN curriculum on curriculum.id = classes.curriculum_id
+      JOIN courses ON courses.id = curriculum.course_id
+      JOIN branches ON branches.id = curriculum.branch_id
       JOIN sections ON sections.id = classes.section_id
       WHERE timetable.day = ?
         AND timetable.slot_id = ?
