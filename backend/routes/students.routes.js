@@ -291,7 +291,9 @@ router.delete('/:studentId', async (req, res) => {
 function resolveClassId(data) {
   if (data.courseId && data.branchId && data.semester && data.classId) {
     return dbGet(
-      `SELECT id FROM classes WHERE id = ? AND course_id = ? AND branch_id = ? AND semester = ?`,
+      `SELECT classes.id  FROM classes
+      JOIN curriculum on curriculum.id = classes.curriculum_id
+      WHERE classes.id = ? AND curriculum.course_id = ? AND curriculum.branch_id = ? AND curriculum.semester = ?`,
       [data.classId, data.courseId, data.branchId, data.semester],
     ).then(row => row?.id);
   }

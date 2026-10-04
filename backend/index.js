@@ -19,6 +19,14 @@ import cctvRouter from './routes/cctv.routes.js';
 // ----------------- Server Config -----------------
 const app = express();
 
+// Cross-origin isolation: these two headers let the browser use SharedArrayBuffer,
+// which ONNX Runtime needs to run WASM on several CPU threads.
+app.use((req, res, next) => {
+  res.set('Cross-Origin-Opener-Policy', 'same-origin');
+  res.set('Cross-Origin-Embedder-Policy', 'require-corp');
+  next();
+});
+
 app.use(express.json({ limit: '35mb' }));
 app.use(
   cors({
@@ -61,6 +69,15 @@ const FRONTEND_DIR = path.join(__dirname, '../frontend');
 app.use(
   '/utils/models',
   express.static(path.join(FRONTEND_DIR, 'utils/models'), {
+    maxAge: '365d',
+    immutable: true,
+  }),
+);
+
+// Cache the self-hosted ONNX Runtime files (loader + WASM) in the browser for a year.
+app.use(
+  '/utils/ort',
+  express.static(path.join(FRONTEND_DIR, 'utils/ort'), {
     maxAge: '365d',
     immutable: true,
   }),

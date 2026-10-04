@@ -14,6 +14,7 @@ The faculty can display the QR Code using classroom projector so that present st
 - **Live Faculty Dashboard** — Enables faculty to view live attendance updates and remove proxy attendances based on count.
 - **Device Fingerprinting** — Prevents multiple entries from the same camera/device.
 - **Auto QR Refresh** — Tokens refresh every few seconds for high security.
+- **Face verification** — Student face checks use SCRFD detection, MiniFASNet liveness, and w600k_mbf recognition in the browser.
 - **SQLite Database** — Lightweight and portable for classroom use.
 
 ---
@@ -107,7 +108,6 @@ You should be able to:
 
 ## Future Improvements
 
-- Add identity verification via face recognization
 - Add attendance history section
 - Add analytics based on user behaviour
 

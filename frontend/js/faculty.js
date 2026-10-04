@@ -281,7 +281,6 @@ startBtn.addEventListener('click', async () => {
 
 function renderQR(data) {
   if (!sessionCode) return;
-  if (typeof QRCode === 'undefined') return ($('#qrError').hidden = false);
   QRCode.toCanvas(qrCanvas, data.token, {
     width: qrCanvas.clientWidth,
     height: qrCanvas.clientWidth,

@@ -247,13 +247,6 @@
 
     <!-- QR library: use the copy in utils/ (works on college networks that block CDNs). Only if that file is missing do we fall back to the CDN. -->
     <script src="/utils/qrcode.min.js"></script>
-    <script>
-      if (typeof QRCode === 'undefined') {
-        document.write(
-          '<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"><\/script>',
-        );
-      }
-    </script>
     <script src="/socket.io/socket.io.js"></script>
     <script src="js/faculty.js" type="module"></script>
   </body>
