@@ -71,6 +71,29 @@ let descriptor;
 const markBtn = $('#markAttendanceCard');
 markBtn.setAttribute('aria-busy', 'true'); // spinner until face check is ready
 
+// Liveness (MiniFasNetV2) client-side support
+let ortSession = null;
+const LIVENESS_MODEL_PATH = '/utils/models/minifasnetv2_quant.onnx';
+const LIVELINESS_FRAMES = 5; // number of frames to aggregate for liveness decision
+const LIVELINESS_THRESHOLD = 0.6; // model-dependent threshold (tune on real data)
+let livenessInProgress = false;
+let livenessScores = [];
+
+async function loadOrtModel() {
+  try {
+    if (!window.ort) {
+      console.warn('onnxruntime (ort) not available in this page');
+      return;
+    }
+    // create session; default backend will be used (wasm or webgl if available)
+    ortSession = await ort.InferenceSession.create(LIVENESS_MODEL_PATH);
+    console.log('Liveness model loaded', LIVENESS_MODEL_PATH);
+  } catch (e) {
+    console.error('Failed to load liveness model', e);
+    ortSession = null;
+  }
+}
+
 const faceReady = (async () => {
   await cacheModelsFromManifest('/utils/models/models-manifest.json');
   await Promise.all([
@@ -78,6 +101,9 @@ const faceReady = (async () => {
     faceapi.nets.faceLandmark68Net.loadFromUri('/utils/models'),
     faceapi.nets.faceRecognitionNet.loadFromUri('/utils/models'),
   ]);
+  // try to load liveness model for ONNX inference in browser (optional)
+  await loadOrtModel();
+
   descriptor = await loadDescriptors(studentId);
   if (!descriptor) {
     const res = await fetch(`/api/students/descriptors?id=${studentId}`);
@@ -218,6 +244,56 @@ async function sendAttendance(token, cameraFingerprint) {
   };
 }
 
+async function runLivenessOnResult(result) {
+  // Crop the detected face area from the video into a temporary canvas, resize to inputSize
+  const dims = faceapi.matchDimensions(canvas, video, true);
+  const resized = faceapi.resizeResults(result, dims);
+  const box = resized.detection.box;
+  const sx = Math.max(0, box.x);
+  const sy = Math.max(0, box.y);
+  const sw = Math.max(1, box.width);
+  const sh = Math.max(1, box.height);
+
+  const off = document.createElement('canvas');
+  off.width = inputSize;
+  off.height = inputSize;
+  const ctx = off.getContext('2d');
+  // draw the face region scaled to model input
+  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, inputSize, inputSize);
+  const img = ctx.getImageData(0, 0, inputSize, inputSize).data; // RGBA
+
+  // Convert RGBA to CHW float32 (RGB channels), matching the ONNX input type.
+  const hw = inputSize * inputSize;
+  const chw = new Float32Array(3 * hw);
+  // fill plane by plane
+  for (let y = 0; y < inputSize; y++) {
+    for (let x = 0; x < inputSize; x++) {
+      const idx = (y * inputSize + x) * 4;
+      const r = img[idx];
+      const g = img[idx + 1];
+      const b = img[idx + 2];
+      const pos = y * inputSize + x;
+      chw[pos] = r; // R plane
+      chw[hw + pos] = g; // G plane
+      chw[2 * hw + pos] = b; // B plane
+    }
+  }
+
+  if (!ortSession) throw new Error('Liveness model not loaded');
+  const inputName = (ortSession.inputNames && ortSession.inputNames[0]) || Object.keys(ortSession.inputMetadata || {})[0];
+  if (!inputName) throw new Error('Could not determine ONNX input name');
+
+  const feeds = {};
+  feeds[inputName] = new ort.Tensor('float32', chw, [1, 3, inputSize, inputSize]);
+  const results = await ortSession.run(feeds);
+  const outName = (ortSession.outputNames && ortSession.outputNames[0]) || Object.keys(results)[0];
+  const outTensor = results[outName];
+  const outData = outTensor.data || outTensor;
+  // assume single scalar score in output
+  const score = Array.isArray(outData) || outData.length ? outData[0] : outData;
+  return Number(score);
+}
+
 async function verifyFace(sessionId, section, cameraFingerprint) {
   if (!active) return;
   const again = () => requestAnimationFrame(() => verifyFace(sessionId, section, cameraFingerprint));
@@ -237,9 +313,43 @@ async function verifyFace(sessionId, section, cameraFingerprint) {
     return again();
   }
 
-  setStatus('Face matched. Now smile to confirm.');
-  if (!isSmiling(result.landmarks)) return again();
+  // At this point face matches the enrolled descriptor consistently
+  // Run liveness checks across a short sequence of frames using the ONNX model
+  if (!ortSession) {
+    // If the liveness model failed to load, notify the user and do not proceed
+    setStatus('Liveness model is not available. Try again later.', true);
+    return;
+  }
 
+  if (!livenessInProgress) {
+    livenessInProgress = true;
+    livenessScores = [];
+  }
+
+  try {
+    const score = await runLivenessOnResult(result);
+    livenessScores.push(score);
+    setStatus(`Verifying liveness... (${livenessScores.length}/${LIVELINESS_FRAMES})`);
+  } catch (err) {
+    console.error('Liveness inference error', err);
+    setStatus('Liveness check failed. Try again.', true);
+    livenessInProgress = false;
+    matchStreak = 0;
+    return again();
+  }
+
+  if (livenessScores.length < LIVELINESS_FRAMES) return again();
+
+  livenessInProgress = false;
+  const avg = livenessScores.reduce((a, b) => a + b, 0) / livenessScores.length;
+  if (avg < LIVELINESS_THRESHOLD) {
+    // failed liveness
+    setStatus('Liveness not detected. Try again.', true);
+    matchStreak = 0; // require the student to re-hold for match
+    return again();
+  }
+
+  // Passed liveness: submit attendance to backend
   stopCamera();
   setStatus('Submitting attendance...');
   const response = await postData('/api/attendance/verify', {

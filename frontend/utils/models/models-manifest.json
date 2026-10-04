@@ -6,7 +6,7 @@
   "/utils/models/face_recognition_model-weights_manifest.json",
   "/utils/models/face_recognition_model-shard1",
   "/utils/models/face_recognition_model-shard2",
-  "/utils/models/ssd_mobilenetv1_model-weights_manifest.json",
-  "/utils/models/ssd_mobilenetv1_model-shard1",
-  "/utils/models/ssd_mobilenetv1_model-shard2"
+  "/utils/models/minifasnetv2_quant.onnx",
+  "/utils/models/det_500m.onnx",
+  "/utils/models/w600k_mbf.onnx"
 ]
