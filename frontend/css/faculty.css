@@ -84,11 +84,6 @@
 }
 
 /* ---- Live session ---- */
-#afterStart:fullscreen {
-  overflow: auto;
-  padding: var(--space-5);
-  background: var(--canvas);
-}
 .live-grid {
   display: grid;
   gap: var(--space-5);
@@ -120,26 +115,78 @@
   width: min(100%, 78vh) !important;
   height: auto !important;
   aspect-ratio: 1;
+  image-rendering: pixelated; /* keep the squares sharp when the browser scales the bitmap */
 }
 #cctvPanel .skeleton {
   aspect-ratio: 16 / 9;
 }
-#cctvResultImage {
-  width: 100%;
+/* ---- CCTV result image with zoom ---- */
+.cctv-viewer {
+  display: grid;
+  gap: var(--space-3);
+}
+.zoom-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.zoom-level {
+  min-width: 3.5rem;
+  text-align: center;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-900);
+}
+.zoom-fs {
+  margin-left: auto;
+}
+/* Buttons at their limit stay focusable (so focus is never lost) but look off */
+.zoom-bar [aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.cctv-stage {
+  position: relative;
+  overflow: hidden;
   border-radius: var(--radius-md);
-  cursor: zoom-in;
+  background: var(--canvas);
+  user-select: none;
+  touch-action: pan-y; /* a finger can still scroll the page until the image is zoomed */
 }
-#cctvResultImage:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
+.cctv-stage.is-zoomed {
+  cursor: grab;
+  touch-action: none; /* now a finger drags the image instead */
 }
-#cctvResultImage:fullscreen {
-  width: 100vw;
-  height: 100vh;
-  object-fit: contain;
+.cctv-stage.is-panning {
+  cursor: grabbing;
+}
+#cctvResultImage {
+  display: block;
+  width: 100%;
+  max-width: none;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+.zoom-hint {
+  font-size: var(--text-sm);
+  color: var(--ink-500);
+}
+.cctv-viewer:fullscreen {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4);
+  background: var(--canvas);
+}
+.cctv-viewer:fullscreen .cctv-stage {
+  flex: 1;
+  min-height: 0;
   border-radius: 0;
   background: #000;
-  cursor: zoom-out;
+}
+.cctv-viewer:fullscreen #cctvResultImage {
+  height: 100%;
+  object-fit: contain;
 }
 
 .roster-panel {
@@ -156,6 +203,11 @@
   font-weight: 700;
   color: var(--ink-900);
   line-height: 1;
+}
+.count-total {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  color: var(--ink-500);
 }
 .count-label {
   font-size: var(--text-lg);
@@ -178,8 +230,8 @@
   padding: 0;
   display: grid;
   gap: var(--space-2);
-  max-height: calc(100vh - 20rem);
-  min-height: 6rem;
+  max-height: calc(100vh - 26rem);
+  min-height: 8rem;
   overflow-y: auto;
 }
 .roster-row {
@@ -191,7 +243,11 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
 }
+.roster-info {
+  min-width: 0;
+}
 .roster-name {
+  display: block;
   font-size: var(--text-lg);
   font-weight: 600;
   color: var(--ink-900);
@@ -201,20 +257,16 @@
   font-size: var(--text-sm);
   color: var(--ink-500);
 }
-.roster-row.is-absent .roster-name {
+.roster-roll {
+  margin-left: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 500;
   color: var(--ink-500);
+  white-space: nowrap;
 }
-/* Tap a status to flip it. Always icon + word, never colour alone. */
-.status-btn {
+.row-action {
+  flex: none;
   min-height: var(--touch-target);
-  min-width: 6.5rem;
-  border: 1px solid transparent;
-  cursor: pointer;
-  font: inherit;
-  font-weight: 700;
-}
-.status-btn:hover {
-  border-color: currentColor;
 }
 .empty {
   padding: var(--space-5);
@@ -225,6 +277,9 @@
 /* ---- History ---- */
 .section-title {
   font-size: var(--text-xl);
+  margin-bottom: var(--space-2);
+}
+.history-note {
   margin-bottom: var(--space-4);
 }
 .list {
@@ -293,7 +348,159 @@
     width: min(100%, 62vh) !important;
   }
 }
-/* In full screen the roster can use the whole height */
-#afterStart:fullscreen .roster {
-  max-height: calc(100vh - 14rem);
+
+/* ---- Added: warnings, connection state, QR status ---- */
+.alert-warning {
+  color: var(--warning-600);
+  background: var(--warning-50);
+}
+.alert-warning::before {
+  content: '!';
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: var(--surface);
+  background: var(--warning-600);
+  border-radius: 50%;
+}
+#connBanner {
+  margin-bottom: var(--space-4);
+}
+.slot-badge {
+  margin-left: var(--space-2);
+  vertical-align: middle;
+}
+
+/* Small status line under the QR. Dot + words, never colour alone. */
+.qr-live {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--ink-500);
+}
+.qr-live::before {
+  content: '';
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--success-600);
+  animation: live-pulse 1.6s ease-in-out infinite;
+}
+.qr-live[data-state='stale'] {
+  color: var(--warning-600);
+  font-weight: 600;
+}
+.qr-live[data-state='stale']::before {
+  background: var(--warning-600);
+  animation: none;
+}
+@keyframes live-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* ---- Added: CCTV failure with retry ---- */
+#cctvError {
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* ---- Added: roster tabs + search ---- */
+.roster-filter {
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+@media (min-width: 600px) {
+  .roster-filter {
+    grid-template-columns: minmax(12rem, 16rem) 1fr;
+  }
+}
+/* .segmented spans are grids; keep the label and its count on one line */
+.roster-tabs span {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---- Added: projector full screen (QR panel only) ---- */
+.fs-only {
+  display: none;
+}
+#qrPanel:fullscreen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  overflow: auto;
+  background: var(--canvas);
+  border: 0;
+  border-radius: 0;
+}
+#qrPanel:fullscreen .panel-head {
+  align-self: stretch;
+  margin-bottom: 0;
+}
+#qrPanel:fullscreen .fs-only {
+  display: block;
+}
+.fs-count {
+  font-size: var(--text-2xl);
+  color: var(--ink-500);
+}
+.fs-count b {
+  font-size: var(--text-4xl);
+  color: var(--ink-900);
+}
+#qrPanel:fullscreen #qrCanvas {
+  width: min(66vh, 90vw) !important;
+}
+
+/* ---- Added: manual dialog + submit dialog ---- */
+#manualSearch {
+  margin-top: var(--space-3);
+}
+.select-all {
+  margin-top: var(--space-2);
+  font-weight: 600;
+  color: var(--ink-900);
+}
+.check-row .roster-name {
+  font-size: var(--text-base);
+}
+#manualEmpty {
+  padding: var(--space-4) 0;
+}
+.absent-heading {
+  margin-top: var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink-900);
+}
+.absent-list {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-3);
+  max-height: 10rem;
+  overflow-y: auto;
+  font-size: var(--text-sm);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+.absent-list li {
+  padding: var(--space-1) 0;
+}
+#submitWarn {
+  margin-top: var(--space-3);
 }

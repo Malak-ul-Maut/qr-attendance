@@ -101,7 +101,8 @@ router.get('/:sessionCode', (req, res) => {
 
   db.all(
     `
-    SELECT DISTINCT students.id AS id, users.username, users.name
+    SELECT DISTINCT students.id AS id, users.username, users.name,
+      students.roll_number AS roll_number
     FROM sessions
     JOIN timetable ON timetable.id = sessions.timetable_id
     JOIN classes ON classes.room_id = timetable.room_id

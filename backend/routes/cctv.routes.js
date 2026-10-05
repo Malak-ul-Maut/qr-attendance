@@ -94,6 +94,7 @@ router.post('/run', async (req, res) => {
       students: allStudents.map(student => ({
         id: student.id,
         name: student.name,
+        roll_number: student.roll_number,
       })),
       annotatedImage: output.annotated_image || null,
       python: {
