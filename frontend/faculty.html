@@ -82,6 +82,11 @@
           <div class="field">
             <label for="date">Date</label>
             <input class="input" type="date" id="date" />
+            <p
+              id="dateWarn"
+              class="alert alert-warning"
+              role="status"
+              hidden></p>
           </div>
 
           <fieldset class="field">
@@ -138,15 +143,22 @@
             class="btn btn-primary btn-block"
             type="button"
             disabled>
-            Start session
+            Start QR session
           </button>
         </section>
 
         <section id="afterStart" hidden>
+          <!-- Shown only while the live-update connection is down -->
+          <p id="connBanner" class="alert alert-warning" role="status" hidden>
+            Live updates paused. Reconnecting... New scans will not appear until
+            it is back.
+          </p>
+
           <div class="live-grid">
-            <div class="card qr-panel">
+            <!-- Only this panel goes full screen, so student names never reach the projector -->
+            <div id="qrPanel" class="card qr-panel">
               <div class="panel-head">
-                <h2 id="panelTitle">Scan to mark attendance</h2>
+                <h2 id="panelTitle" tabindex="-1">Scan to mark attendance</h2>
                 <button
                   id="fullscreenBtn"
                   class="btn btn-secondary"
@@ -154,19 +166,101 @@
                   Full screen
                 </button>
               </div>
+              <p class="fs-only fs-count" aria-hidden="true">
+                <b id="fsCount">0</b> present
+              </p>
               <canvas id="qrCanvas" aria-label="Attendance QR code"></canvas>
+              <p id="qrLive" class="qr-live" data-state="live" role="status">
+                QR refreshes automatically
+              </p>
               <p id="qrError" class="alert alert-danger" role="alert" hidden>
                 The QR library could not load. Check the network and reload.
               </p>
               <div id="cctvPanel" hidden>
                 <div id="cctvSkeleton" class="skeleton"></div>
-                <img
-                  id="cctvResultImage"
-                  alt="CCTV attendance result"
-                  role="button"
-                  aria-label="View CCTV attendance result full screen"
-                  tabindex="0"
-                  hidden />
+                <div
+                  id="cctvError"
+                  class="alert alert-danger"
+                  role="alert"
+                  hidden>
+                  <span id="cctvErrorText"></span>
+                  <button
+                    id="cctvRetryBtn"
+                    class="btn btn-secondary btn-sm"
+                    type="button">
+                    Try again
+                  </button>
+                </div>
+                <!-- Only this block goes full screen, so the zoom controls stay available there -->
+                <div id="cctvViewer" class="cctv-viewer" hidden>
+                  <div
+                    class="zoom-bar"
+                    role="toolbar"
+                    aria-label="Zoom CCTV image">
+                    <button
+                      id="zoomOutBtn"
+                      class="icon-btn"
+                      type="button"
+                      aria-label="Zoom out">
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true">
+                        <path d="M5 12h14" />
+                      </svg>
+                    </button>
+                    <span id="zoomLevel" class="zoom-level" aria-live="polite"
+                      >100%</span
+                    >
+                    <button
+                      id="zoomInBtn"
+                      class="icon-btn"
+                      type="button"
+                      aria-label="Zoom in">
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true">
+                        <path d="M12 5v14M5 12h14" />
+                      </svg>
+                    </button>
+                    <button
+                      id="zoomResetBtn"
+                      class="btn btn-secondary btn-sm"
+                      type="button">
+                      Fit
+                    </button>
+                    <button
+                      id="cctvFullscreenBtn"
+                      class="btn btn-secondary btn-sm zoom-fs"
+                      type="button">
+                      Full screen
+                    </button>
+                  </div>
+                  <div
+                    id="cctvStage"
+                    class="cctv-stage"
+                    tabindex="0"
+                    role="group"
+                    aria-label="CCTV result image. Press plus or minus to zoom, 0 to fit, arrow keys to move.">
+                    <img
+                      id="cctvResultImage"
+                      alt="CCTV attendance result"
+                      draggable="false" />
+                  </div>
+                  <p class="zoom-hint">
+                    Pinch or Ctrl + scroll to zoom, drag to move, double-click
+                    to zoom in.
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -174,6 +268,7 @@
               <div class="roster-head">
                 <div>
                   <span id="studentCount" class="count">0</span
+                  ><span id="studentTotal" class="count-total"></span
                   ><span class="count-label"> present</span>
                 </div>
                 <p id="liveStatus" role="status"></p>
@@ -192,10 +287,43 @@
                   Submit attendance
                 </button>
               </div>
+
+              <div class="roster-filter">
+                <div
+                  class="segmented roster-tabs"
+                  role="radiogroup"
+                  aria-label="Show students who are">
+                  <label
+                    ><input
+                      type="radio"
+                      name="roster-filter"
+                      value="present"
+                      checked /><span
+                      >Present <b id="tabPresent">0</b></span
+                    ></label
+                  >
+                  <label
+                    ><input
+                      type="radio"
+                      name="roster-filter"
+                      value="absent" /><span
+                      >Absent <b id="tabAbsent">0</b></span
+                    ></label
+                  >
+                </div>
+                <input
+                  id="rosterSearch"
+                  class="input"
+                  type="search"
+                  placeholder="Search students"
+                  aria-label="Search students"
+                  autocomplete="off" />
+              </div>
+
               <ul id="studentList" class="roster"></ul>
-              <p id="rosterEmpty" class="empty">
-                Waiting for students to scan...
-              </p>
+              <p id="rosterEmpty" class="empty"></p>
+              <!-- Read aloud by screen readers when students are marked present -->
+              <p id="srAnnounce" class="visually-hidden" role="status"></p>
             </div>
           </div>
         </section>
@@ -204,6 +332,9 @@
       <!-- History tab -->
       <section id="view-history" class="view" hidden>
         <h1 class="section-title" tabindex="-1">Past sessions</h1>
+        <p class="muted history-note">
+          Sessions you submitted from this browser.
+        </p>
         <ul id="historyList" class="list"></ul>
         <div id="historyEmpty" class="card empty">
           <strong>No past sessions yet</strong><br />Sessions you submit will
@@ -218,15 +349,28 @@
       aria-labelledby="manualTitle">
       <h2 id="manualTitle">Add students manually</h2>
       <p class="muted">Tick the students who are present.</p>
+      <input
+        id="manualSearch"
+        class="input"
+        type="search"
+        placeholder="Search by name"
+        aria-label="Search students"
+        autocomplete="off" />
+      <label class="check-row select-all">
+        <input id="manualSelectAll" type="checkbox" />
+        <span>Select all shown</span>
+      </label>
       <ul id="manual-attendance-list"></ul>
-      <p id="manualEmpty" class="muted" hidden>
-        Everyone is already marked present.
-      </p>
+      <p id="manualEmpty" class="muted" hidden></p>
       <div class="dialog-actions">
         <button id="closeDialog" class="btn btn-secondary" type="button">
           Cancel
         </button>
-        <button id="add-selected-btn" class="btn btn-primary" type="button">
+        <button
+          id="add-selected-btn"
+          class="btn btn-primary"
+          type="button"
+          disabled>
           Add selected
         </button>
       </div>
@@ -235,6 +379,11 @@
     <dialog id="submit-dialog" class="dialog" aria-labelledby="submitTitle">
       <h2 id="submitTitle">Submit attendance?</h2>
       <p id="submitSummary"></p>
+      <p id="submitWarn" class="alert alert-warning" role="alert" hidden></p>
+      <div id="submitAbsentBox" hidden>
+        <p class="absent-heading">Will be marked absent</p>
+        <ul id="submitAbsentList" class="absent-list"></ul>
+      </div>
       <div class="dialog-actions">
         <button id="cancelSubmitBtn" class="btn btn-secondary" type="button">
           Keep editing
