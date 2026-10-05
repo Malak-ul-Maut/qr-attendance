@@ -6,6 +6,8 @@ const $ = sel => document.querySelector(sel);
 const currentUser = getCurrentUser() || {};
 const facultyId = currentUser.username;
 const baseTitle = document.title;
+const defaultSubjectLabel =
+  currentUser.subName || currentUser.subjectName || '';
 
 // ---------- Small helpers ----------
 const pad = n => String(n).padStart(2, '0');
@@ -83,8 +85,7 @@ const byName = (a, b) => a.name.localeCompare(b.name);
 
 // ---------- Page basics ----------
 $('.user-name b').textContent = currentUser.name || 'Teacher';
-$('#sub-name').textContent =
-  currentUser.subName || currentUser.subjectName || '';
+$('#sub-name').textContent = defaultSubjectLabel;
 $('.logout-btn').addEventListener('click', () => logout());
 
 // Tabs: Session / History
@@ -167,6 +168,7 @@ function notify(message, type = 'info') {
 // ---------- Elements and state ----------
 const beforeStart = $('#beforeStart');
 const afterStart = $('#afterStart');
+const liveGrid = $('.live-grid');
 const qrPanel = $('#qrPanel');
 const qrCanvas = $('#qrCanvas');
 const fullscreenBtn = $('#fullscreenBtn');
@@ -200,6 +202,10 @@ const rowEls = new Map(); // studentId -> <li> currently in the list
 const getMethod = () => $('input[name="method"]:checked').value;
 const getSlotId = () => $('input[name="slot"]:checked')?.value;
 const selectedSlot = () => slotInfo.get(String(getSlotId()));
+const updateSubjectHeader = () => {
+  $('#sub-name').textContent =
+    selectedSlot()?.subject_label || defaultSubjectLabel;
+};
 
 // ---------- Setup: date, slots, classes ----------
 dateInput.value ||= localISODate(); // today; teacher can change it
@@ -251,6 +257,7 @@ async function loadSlots() {
   $('#slotMsg').hidden = true;
   $('#slotEmpty').hidden = true;
   classesBox.replaceChildren();
+  updateSubjectHeader();
   startBtn.disabled = true;
   updateDateWarning();
 
@@ -273,21 +280,24 @@ async function loadSlots() {
         const label = document.createElement('label');
         label.className = 'slot-card';
         label.innerHTML =
-          '<input type="radio" name="slot"><span class="slot-body"><span class="slot-label"></span><span class="slot-time"></span></span>';
+          '<input type="radio" name="slot"><span class="slot-body"><span class="slot-time"></span><span class="slot-details"></span></span>';
         const input = label.querySelector('input');
         input.value = slot.id;
         input.checked = i === pick;
-        input.addEventListener('change', loadClasses);
-        const text = label.querySelector('.slot-label');
-        text.textContent = slot.label;
+        input.addEventListener('change', () => {
+          updateSubjectHeader();
+          loadClasses();
+        });
+        const time = label.querySelector('.slot-time');
+        time.textContent = `${slot.start_time} - ${slot.end_time}`;
         if (nowId !== null && String(slot.id) === String(nowId)) {
           const badge = document.createElement('span');
           badge.className = 'badge badge-success slot-badge';
           badge.textContent = 'Now';
-          text.append(badge);
+          time.append(' ', badge);
         }
-        label.querySelector('.slot-time').textContent =
-          `${slot.start_time} – ${slot.end_time}`;
+        label.querySelector('.slot-details').textContent =
+          `${slot.subject_abbr} (${slot.block}-${slot.room_number})`;
         return label;
       }),
     );
@@ -307,6 +317,7 @@ async function loadClasses() {
   const requestId = ++classRequestId; // a slow answer for an old slot must not win
   classesBox.replaceChildren();
   classIds = []; // reset every time so old ids never pile up
+  updateSubjectHeader();
   if (!getSlotId()) return updateClassVisibility();
 
   try {
@@ -1003,17 +1014,16 @@ cctvFullscreenBtn.addEventListener('click', async () => {
 window.addEventListener('resize', applyView);
 
 // ---------- Full screen (for projectors) ----------
-// Only the QR panel goes full screen, so student names are never shown to the class
 fullscreenBtn.addEventListener('click', () => {
   if (document.fullscreenElement) document.exitFullscreen();
   else
-    Promise.resolve(qrPanel.requestFullscreen?.()).catch(() =>
+    Promise.resolve(liveGrid.requestFullscreen?.()).catch(() =>
       notify('Full screen is not available on this device.', 'error'),
     );
 });
 document.addEventListener('fullscreenchange', () => {
   fullscreenBtn.textContent =
-    document.fullscreenElement === qrPanel ? 'Exit full screen' : 'Full screen';
+    document.fullscreenElement === liveGrid ? 'Exit full screen' : 'Full screen';
   cctvFullscreenBtn.textContent =
     document.fullscreenElement === cctvViewer
       ? 'Exit full screen'

@@ -18,12 +18,20 @@ router.get('/slots', (req, res) => {
       slots.id,
       slots.label,
       slots.start_time,
-      slots.end_time
+      slots.end_time,
+      rooms.block,
+      rooms.room_number,
+      subjects.name AS subject_label,
+      subjects.abbr AS subject_abbr
       FROM timetable
     JOIN slots
       ON timetable.slot_id = slots.id
+    JOIN rooms
+      ON rooms.id = timetable.room_id
     JOIN faculty
       ON faculty.id = timetable.faculty_id
+    LEFT JOIN subjects
+      ON subjects.id = faculty.subject_id
     JOIN users
       ON users.id = faculty.user_id
     WHERE timetable.day = ?
@@ -79,7 +87,7 @@ router.get('/classes', (req, res) => {
   const { date, slotId, faculty_id } = req.query;
   const day = convertToDay(date);
 
-  resolveFacultyId(faculty_id, (facultyErr, facultyId) => {
+  resolveFacultyId(faculty_id, day, slotId, (facultyErr, facultyId) => {
     if (facultyErr)
       return res.status(500).json({ ok: false, error: 'database_error' });
 
@@ -109,6 +117,9 @@ router.get('/classes', (req, res) => {
           console.error(err);
           return res.status(500).json({ ok: false, error: 'database_error' });
         }
+        console.log(req.query);
+        console.log(facultyId);
+        console.log(rows);
         return res.json(rows);
       },
     );
@@ -301,14 +312,25 @@ router.post('/finalize', (req, res) => {
   );
 });
 
-function resolveFacultyId(value, callback) {
+function resolveFacultyId(value, day, slotId, callback) {
   if (/^\d+$/.test(String(value || ''))) {
     return callback(null, Number(value));
   }
 
   db.get(
-    `SELECT faculty.id FROM faculty JOIN users ON users.id = faculty.user_id WHERE users.username = ? LIMIT 1`,
-    [value],
+    `
+    SELECT faculty.id
+    FROM faculty
+    JOIN users ON users.id = faculty.user_id
+    LEFT JOIN timetable
+      ON timetable.faculty_id = faculty.id
+      AND timetable.day = ?
+      AND timetable.slot_id = ?
+    WHERE users.username = ?
+    ORDER BY timetable.id IS NULL, timetable.id
+    LIMIT 1
+    `,
+    [day, slotId, value],
     (err, row) => {
       if (err) return callback(err);
       if (!row) return callback(new Error('faculty_not_found'));
