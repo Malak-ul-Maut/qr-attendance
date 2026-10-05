@@ -15,4 +15,18 @@ const db = new sqlite3.Database(
   },
 );
 
+db.serialize(() => {
+  // WAL mode: readers and writers no longer block each other.
+  // This setting is saved in the database file, so it sticks after the first run.
+  db.run('PRAGMA journal_mode = WAL');
+
+  // Lets SQLite wait for a lock instead of failing right away.
+  // This one resets on every new connection, so it must run every time.
+  db.configure('busyTimeout', 5000); // milliseconds
+
+  // Optional: enforce foreign keys (off by default in SQLite).
+  // Useful with your timetable/classes/rooms relationships.
+  db.run('PRAGMA foreign_keys = ON');
+});
+
 export default db;

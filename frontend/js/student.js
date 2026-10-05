@@ -130,7 +130,6 @@ const faceReady = (async () => {
 })();
 faceReady
   .catch(error => {
-    // Log the real reason, otherwise the toast hides what actually went wrong
     console.error('Face check setup failed', error);
     showToast('Could not prepare face check. Reload and try again.', error);
   })
@@ -144,10 +143,10 @@ const scannerSection = $('#scanner-section');
 const zoomRow = $('#zoomRow');
 
 const DETECTION_THRESHOLD = 0.5;
-const LIVE_FRAMES_REQUIRED = 3;
-const LIVE_LOGIT_THRESHOLD = Math.log(0.8 / 0.2);
+const LIVE_FRAMES_REQUIRED = 5;
+const LIVE_LOGIT_THRESHOLD = Math.log(0.8 / 0.2); // represents 80%
 const RECOGNITION_THRESHOLD = 0.45;
-const FRAME_INTERVAL_MS = 0;
+const FRAME_INTERVAL_MS = 100;
 const MIN_FACE_WIDTH = 110;
 const MIN_FACE_HEIGHT = 110;
 const MIN_SHARPNESS = 18;
