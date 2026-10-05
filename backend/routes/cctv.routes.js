@@ -1,7 +1,5 @@
 import express from 'express';
 import { spawn } from 'child_process';
-import fs from 'fs/promises';
-import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import db from '../utils/db.js';
@@ -11,13 +9,27 @@ const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const RECOGNIZE_SCRIPT =
-  process.env.CCTV_RECOGNIZE_SCRIPT ||
-  path.resolve(__dirname, '../recognize.py');
-const TEST_CLIP =
-  process.env.CCTV_TEST_CLIP || path.resolve(__dirname, '../f310.avi');
-const ANNOTATED_DIR =
-  process.env.CCTV_ANNOTATED_DIR || path.resolve(__dirname, '../results');
+// The face models now live in a long-running Python service (server.py) that is started once,
+// together with this Node server, instead of a new recognize.py process per request.
+const SERVICE_SCRIPT =
+  process.env.CCTV_SERVICE_SCRIPT || path.resolve(__dirname, '../server.py');
+const SERVICE_URL = process.env.CCTV_SERVICE_URL || 'http://127.0.0.1:8765';
+// Set CCTV_SPAWN_SERVICE=false if you run `python server.py` yourself (or on another machine).
+const SPAWN_SERVICE = process.env.CCTV_SPAWN_SERVICE !== 'false';
+// How long the first request may wait for the service to finish loading its models.
+const SERVICE_STARTUP_WAIT_MS = Number(
+  process.env.CCTV_SERVICE_STARTUP_WAIT_MS || 120_000,
+);
+// path.resolve turns a relative value (e.g. CCTV_TEST_CLIP=./backend/f310.avi) into an absolute
+// path based on the folder Node was started from. This matters now: the Python service runs from
+// the backend folder, so a relative path sent to it would be resolved from the wrong place.
+const TEST_CLIP = path.resolve(
+  process.env.CCTV_TEST_CLIP || path.resolve(__dirname, '../f310.avi'),
+);
+const ANNOTATED_DIR = path.resolve(
+  process.env.CCTV_ANNOTATED_DIR || path.resolve(__dirname, '../results'),
+);
+// Limit for one /run call, including any time spent waiting in the service's queue.
 const RECOGNIZE_TIMEOUT_MS = Number(
   process.env.CCTV_RECOGNIZE_TIMEOUT_MS || 60_000,
 );
@@ -29,6 +41,8 @@ router.post('/run', async (req, res) => {
   if (!sessionCode) {
     return res.status(400).json({ ok: false, error: 'missing_session_code' });
   }
+
+  const requestStartedAt = Date.now();
 
   try {
     // A CCTV session must represent exactly one camera.
@@ -51,40 +65,27 @@ router.post('/run', async (req, res) => {
       gallery_folder: `${student.id}_${student.username}_${student.roll_number}`,
     }));
 
-    const tempDir = await fs.mkdtemp(
-      path.join(os.tmpdir(), 'cctv-attendance-'),
-    );
-    const rosterPath = path.join(tempDir, 'roster.json');
-    const resultPath = path.join(tempDir, 'result.json');
     const annotatedPath = path.join(ANNOTATED_DIR, `${sessionCode}.jpg`);
-
-    await fs.writeFile(rosterPath, JSON.stringify(roster, null, 2), 'utf8');
 
     // Stable per room: everyone sharing a room shares one cache, whatever period it is.
     const cacheKey = `${context.block}_${context.room_number}`;
 
-    const args = [
-      RECOGNIZE_SCRIPT,
-      '--video',
-      TEST_CLIP,
-      '--students-json',
-      rosterPath,
-      '--class-id',
-      cacheKey,
-      '--json-out',
-      resultPath,
-      '--annotated-out',
-      annotatedPath,
-    ];
-
-    const result = await runPython(args, RECOGNIZE_TIMEOUT_MS);
-    console.log(result);
-    const output = JSON.parse(await fs.readFile(resultPath, 'utf8'));
-    console.log(output);
+    // The roster travels inside the request, so there are no temp files to write or clean up.
+    const output = await callRecognitionService({
+      video: TEST_CLIP,
+      roster,
+      class_id: cacheKey,
+      annotated_out: annotatedPath,
+    });
 
     const present = output.present_students || [];
 
-    await fs.rm(tempDir, { recursive: true, force: true });
+    console.log(
+      `[cctv] ${sessionCode}: ${present.length}/${allStudents.length} present, ` +
+        `${Date.now() - requestStartedAt} ms total ` +
+        `(scan ${Math.round((output.elapsed_seconds || 0) * 1000)} ms, ` +
+        `queue wait ${output.queue_wait_ms || 0} ms, stopped: ${output.stop_reason})`,
+    );
 
     return res.json({
       ok: true,
@@ -97,16 +98,20 @@ router.post('/run', async (req, res) => {
         roll_number: student.roll_number,
       })),
       annotatedImage: output.annotated_image || null,
+      timings: output.timings || null,
       python: {
-        stdout: result.stdout,
-        stderr: result.stderr,
+        stdout: (output.log || []).join('\n'),
+        stderr: '',
       },
     });
   } catch (error) {
     console.error('CCTV attendance failed:', error);
-    return res.status(500).json({
+    const unavailable = error.code === 'cctv_service_unavailable';
+    return res.status(unavailable ? 503 : 500).json({
       ok: false,
-      error: 'cctv_processing_failed',
+      error: unavailable
+        ? 'cctv_service_unavailable'
+        : 'cctv_processing_failed',
       message: error.message,
     });
   }
@@ -158,48 +163,143 @@ function getStudentsForRoom(roomId) {
   });
 }
 
-function runPython(args, timeoutMs) {
-  return new Promise((resolve, reject) => {
-    const python = process.env.CCTV_PYTHON || 'python';
-    const child = spawn(python, args, { windowsHide: true });
-    let stdout = '';
-    let stderr = '';
-    let timedOut = false;
+// ---------------------------------------------------------------------------
+// Python recognition service (server.py)
+// ---------------------------------------------------------------------------
 
-    // Without this, a hung recognize.py (a stuck camera read, a slow first-time model
-    // download) leaves the HTTP request open indefinitely.
-    const timer = timeoutMs
-      ? setTimeout(() => {
-          timedOut = true;
-          child.kill('SIGKILL');
-        }, timeoutMs)
-      : null;
+let serviceProcess = null; // the python child we started (null if we did not / it has stopped)
+let serviceReady = false; // true once /health has answered; reset if the service goes away
+let restartTimer = null;
+let shuttingDown = false;
 
-    child.stdout.on('data', chunk => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on('data', chunk => {
-      stderr += chunk.toString();
-    });
-    child.on('error', error => {
-      if (timer) clearTimeout(timer);
-      reject(error);
-    });
-    child.on('close', code => {
-      if (timer) clearTimeout(timer);
-      if (timedOut) {
-        return reject(new Error(`recognize.py timed out after ${timeoutMs}ms`));
-      }
-      if (code !== 0) {
-        return reject(
-          new Error(
-            `recognize.py exited with code ${code}: ${stderr || stdout}`,
-          ),
-        );
-      }
-      resolve({ stdout, stderr });
-    });
+function serviceUnavailable(message) {
+  const error = new Error(message);
+  error.code = 'cctv_service_unavailable';
+  return error;
+}
+
+// Forward each line the service prints to our console, tagged so it is easy to spot.
+function forwardLines(stream) {
+  let unfinished = '';
+  stream.on('data', chunk => {
+    const lines = (unfinished + chunk.toString()).split(/\r?\n/);
+    unfinished = lines.pop(); // the last piece may be a half-written line
+    for (const line of lines) {
+      if (line) console.log(`[cctv-service] ${line}`);
+    }
   });
 }
+
+function scheduleRestart() {
+  if (shuttingDown || restartTimer) return;
+  console.error('[cctv-service] stopped unexpectedly - restarting in 3 s');
+  restartTimer = setTimeout(() => {
+    restartTimer = null;
+    startRecognitionService();
+  }, 3000);
+}
+
+// Start server.py (models load in the background; requests wait for it via waitForService).
+// Called once when this module is loaded, i.e. at Node server startup. Safe to call again.
+export function startRecognitionService() {
+  if (!SPAWN_SERVICE || serviceProcess) return;
+
+  const python = process.env.CCTV_PYTHON || 'python';
+  const child = spawn(python, [SERVICE_SCRIPT], {
+    cwd: path.dirname(SERVICE_SCRIPT),
+    windowsHide: true,
+    env: {
+      ...process.env,
+      CCTV_SERVICE_PORT: new URL(SERVICE_URL).port || '8765',
+      // The service quits by itself when we exit (it watches the pipe on its stdin).
+      CCTV_EXIT_WITH_PARENT: '1',
+      // Without these, Python holds its output back when it is piped, and logs arrive late.
+      PYTHONUNBUFFERED: '1',
+      PYTHONIOENCODING: 'utf-8',
+    },
+  });
+  serviceProcess = child;
+  console.log(`[cctv-service] starting: ${python} ${SERVICE_SCRIPT}`);
+
+  forwardLines(child.stdout);
+  forwardLines(child.stderr);
+  child.on('error', error => {
+    console.error(`[cctv-service] could not start: ${error.message}`);
+    if (serviceProcess === child) serviceProcess = null;
+    serviceReady = false;
+    scheduleRestart();
+  });
+  child.on('close', code => {
+    console.error(`[cctv-service] exited with code ${code}`);
+    if (serviceProcess === child) serviceProcess = null;
+    serviceReady = false;
+    scheduleRestart();
+  });
+}
+
+process.once('exit', () => {
+  shuttingDown = true;
+  if (serviceProcess) serviceProcess.kill();
+});
+
+// Poll /health until the models have finished loading (or give up after the startup limit).
+async function waitForService() {
+  const deadline = Date.now() + SERVICE_STARTUP_WAIT_MS;
+  for (;;) {
+    try {
+      const response = await fetch(`${SERVICE_URL}/health`, {
+        signal: AbortSignal.timeout(2000),
+      });
+      if (response.ok) {
+        serviceReady = true;
+        return;
+      }
+    } catch {
+      // not up yet - keep waiting
+    }
+    if (Date.now() > deadline) {
+      throw serviceUnavailable(
+        `recognition service did not become ready within ${SERVICE_STARTUP_WAIT_MS} ms`,
+      );
+    }
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+}
+
+async function callRecognitionService(payload) {
+  if (!serviceReady) await waitForService();
+
+  let response;
+  try {
+    response = await fetch(`${SERVICE_URL}/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal:
+        RECOGNIZE_TIMEOUT_MS > 0
+          ? AbortSignal.timeout(RECOGNIZE_TIMEOUT_MS)
+          : undefined,
+    });
+  } catch (error) {
+    if (error.name === 'TimeoutError') {
+      // The service may still finish this scan in the background; we just stop waiting for it.
+      throw new Error(`recognition timed out after ${RECOGNIZE_TIMEOUT_MS} ms`);
+    }
+    serviceReady = false; // connection refused/reset: it probably died and will be restarted
+    throw serviceUnavailable(
+      `recognition service is not reachable (${error.message})`,
+    );
+  }
+
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(
+      `recognition service returned ${response.status}: ${body?.detail ?? response.statusText}`,
+    );
+  }
+  return body;
+}
+
+startRecognitionService();
 
 export default router;

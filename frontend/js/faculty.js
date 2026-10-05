@@ -177,8 +177,6 @@ const studentList = $('#studentList');
 const startBtn = $('#startSessionBtn');
 const dateInput = $('#date');
 const slotList = $('#slots');
-const classSelection = $('#class-selection');
-const classesBox = $('#classes');
 const manualDialog = $('#manual-attendance-dialog');
 const submitDialog = $('#submit-dialog');
 const cctvResultImage = $('#cctvResultImage');
@@ -256,7 +254,6 @@ async function loadSlots() {
   );
   $('#slotMsg').hidden = true;
   $('#slotEmpty').hidden = true;
-  classesBox.replaceChildren();
   updateSubjectHeader();
   startBtn.disabled = true;
   updateDateWarning();
@@ -315,10 +312,9 @@ async function loadSlots() {
 
 async function loadClasses() {
   const requestId = ++classRequestId; // a slow answer for an old slot must not win
-  classesBox.replaceChildren();
   classIds = []; // reset every time so old ids never pile up
   updateSubjectHeader();
-  if (!getSlotId()) return updateClassVisibility();
+  if (!getSlotId()) return;
 
   try {
     const res = await fetch(
@@ -329,20 +325,11 @@ async function loadClasses() {
     if (requestId !== classRequestId) return;
     classes.forEach(item => {
       classIds.push(item.class_id);
-      const chip = document.createElement('span');
-      chip.className = 'chip';
-      chip.textContent = `${item.course} (${item.branch}) · Sem ${item.semester} · Section ${item.section}`;
-      classesBox.appendChild(chip);
     });
   } catch {
     if (requestId === classRequestId)
       notify('Could not load the classes for this slot.', 'error');
   }
-  if (requestId === classRequestId) updateClassVisibility();
-}
-
-function updateClassVisibility() {
-  classSelection.hidden = getMethod() !== 'cctv' || classIds.length === 0;
 }
 
 dateInput.addEventListener('change', () => {
@@ -351,7 +338,6 @@ dateInput.addEventListener('change', () => {
 });
 document.querySelectorAll('input[name="method"]').forEach(r =>
   r.addEventListener('change', () => {
-    updateClassVisibility();
     updateStartLabel();
   }),
 );

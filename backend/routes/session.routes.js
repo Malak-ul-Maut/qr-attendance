@@ -117,9 +117,6 @@ router.get('/classes', (req, res) => {
           console.error(err);
           return res.status(500).json({ ok: false, error: 'database_error' });
         }
-        console.log(req.query);
-        console.log(facultyId);
-        console.log(rows);
         return res.json(rows);
       },
     );
