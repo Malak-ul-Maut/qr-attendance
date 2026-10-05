@@ -102,7 +102,7 @@ server.listen(PORT, '0.0.0.0', () =>
 
 // Host tunnel online
 const url = `https://localhost:${PORT}`;
-// hostTunnel(url);
+hostTunnel(url);
 
 function getServerIpAddress() {
   try {

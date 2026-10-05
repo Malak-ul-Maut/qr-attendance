@@ -790,7 +790,7 @@ async function runCCTV() {
   $('#cctvError').hidden = true;
   $('#cctvSkeleton').hidden = false;
   cctvViewer.hidden = true;
-  status.textContent = 'Processing CCTV image...';
+  status.textContent = 'Processing CCTV footage...';
 
   const response = await postData('/api/attendance/cctv/run', { sessionCode });
   if (!sessionCode) return; // session ended while we waited
