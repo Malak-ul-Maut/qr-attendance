@@ -73,6 +73,34 @@
     <main id="main" class="app-main wide">
       <!-- Session tab: setup card, then live view once started -->
       <section id="view-session" class="view">
+        <p id="resumeStatus" class="muted resume-status" role="status" hidden>
+          Restoring your session...
+        </p>
+
+        <!-- Sessions that were started but never submitted (refresh, closed tab, crash) -->
+        <section
+          id="resumeBox"
+          class="card resume"
+          aria-labelledby="resumeTitle"
+          hidden>
+          <h2 id="resumeTitle" class="resume-title">Unfinished session</h2>
+          <p id="resumeIntro" class="muted">
+            Pick up where you left off, or discard it if you started it by
+            mistake.
+          </p>
+          <ul id="resumeList" class="resume-list"></ul>
+          <p id="resumeMore" class="muted" hidden></p>
+          <div id="resumeCleanup" class="resume-cleanup" hidden>
+            <span id="resumeCleanupText"></span>
+            <button
+              id="cleanupBtn"
+              class="btn btn-secondary btn-sm"
+              type="button">
+              Clear them
+            </button>
+          </div>
+        </section>
+
         <section id="beforeStart" class="card setup">
           <div>
             <h1 id="sub-name" class="setup-title"></h1>
@@ -282,30 +310,14 @@
                   Submit attendance
                 </button>
               </div>
+              <button
+                id="discardSessionBtn"
+                class="link-btn discard-link"
+                type="button">
+                Discard session
+              </button>
 
               <div class="roster-filter">
-                <div
-                  class="segmented roster-tabs"
-                  role="radiogroup"
-                  aria-label="Show students who are">
-                  <label
-                    ><input
-                      type="radio"
-                      name="roster-filter"
-                      value="present"
-                      checked /><span
-                      >Present <b id="tabPresent">0</b></span
-                    ></label
-                  >
-                  <label
-                    ><input
-                      type="radio"
-                      name="roster-filter"
-                      value="absent" /><span
-                      >Absent <b id="tabAbsent">0</b></span
-                    ></label
-                  >
-                </div>
                 <input
                   id="rosterSearch"
                   class="input"
@@ -367,6 +379,22 @@
           type="button"
           disabled>
           Add selected
+        </button>
+      </div>
+    </dialog>
+
+    <dialog id="discard-dialog" class="dialog" aria-labelledby="discardTitle">
+      <h2 id="discardTitle">Discard this session?</h2>
+      <p id="discardSummary"></p>
+      <div class="dialog-actions">
+        <button id="cancelDiscardBtn" class="btn btn-secondary" type="button">
+          Keep it
+        </button>
+        <button
+          id="confirmDiscardBtn"
+          class="btn btn-danger btn-solid"
+          type="button">
+          Discard
         </button>
       </div>
     </dialog>

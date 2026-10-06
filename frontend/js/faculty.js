@@ -48,6 +48,18 @@ function toMinutes(text) {
   return hours * 60 + minutes;
 }
 
+// Scans are stored with the server's own date format, so only trust the clock part
+function timeFromStamp(stamp) {
+  const m = /(\d{1,2}:\d{2}(?::\d{2})?\s*(?:[ap]m)?)\s*$/i.exec(
+    String(stamp || ''),
+  );
+  const minutes = m ? toMinutes(m[1]) : null;
+  if (minutes === null) return '';
+  const d = new Date();
+  d.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+  return formatTime(d);
+}
+
 // The server sends short codes. Teachers should never see them.
 const ERROR_TEXT = {
   no_timetable_entry: 'No class is scheduled for that slot on that date.',
@@ -67,7 +79,7 @@ const friendlyError = code =>
 // The roll number, if the server sent one
 const idLabel = s => String(s.roll_number || s.rollNumber || '');
 
-// Puts the roll number right beside the student's name (list rows, dialogs, absent list)
+// Puts the roll number right beside the student's name in lists and dialogs
 function setNameCell(el, name, roll) {
   const key = `${name}|${roll}`;
   if (el.dataset.key === key) return; // unchanged: leave the DOM alone
@@ -180,6 +192,7 @@ const slotList = $('#slots');
 const manualDialog = $('#manual-attendance-dialog');
 const submitDialog = $('#submit-dialog');
 const cctvResultImage = $('#cctvResultImage');
+const resumeBox = $('#resumeBox');
 
 let sessionCode = null;
 let sessionMethod = null;
@@ -189,7 +202,6 @@ let renderTimer = null;
 let classIds = [];
 let slotRequestId = 0;
 let classRequestId = 0;
-let rosterFilter = 'present'; // 'present' | 'absent'
 let rosterQuery = '';
 
 const slotInfo = new Map(); // slotId -> slot from the server
@@ -342,6 +354,106 @@ document.querySelectorAll('input[name="method"]').forEach(r =>
   }),
 );
 
+// ---------- Saving and resuming ----------
+// The roster is saved to the server as it changes. After a refresh, a closed tab
+// or a crash, the teacher gets the same session back, QR and all.
+const ACTIVE_KEY = `faculty-active-session:${facultyId}`;
+const remember = code => {
+  try {
+    sessionStorage.setItem(ACTIVE_KEY, code);
+  } catch {
+    // Storage blocked: the Unfinished sessions list still finds it
+  }
+};
+const forget = () => {
+  try {
+    sessionStorage.removeItem(ACTIVE_KEY);
+  } catch {
+    // nothing to clean up
+  }
+};
+const remembered = () => {
+  try {
+    return sessionStorage.getItem(ACTIVE_KEY);
+  } catch {
+    return null;
+  }
+};
+
+let draftTimer = null;
+let draftVersion = 0; // bumps on every change, so a slow save never hides a newer one
+let unsaved = false;
+
+const draftBody = () => ({
+  sessionCode,
+  facultyId,
+  method: sessionMethod,
+  roster: Object.fromEntries(roster),
+});
+
+function saveDraftSoon() {
+  if (!sessionCode) return;
+  draftVersion++;
+  unsaved = true;
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(saveDraft, 800);
+}
+
+async function saveDraft() {
+  draftTimer = null;
+  if (!sessionCode) return;
+  const code = sessionCode;
+  const version = draftVersion;
+  const response = await postData('/api/session/draft', draftBody());
+  if (code !== sessionCode) return;
+  if (response?.ok) {
+    if (version === draftVersion) unsaved = false;
+    return;
+  }
+  if (response?.error === 'session_not_found') {
+    unsaved = false; // finished or discarded somewhere else: nothing left to save
+    return;
+  }
+  if (!draftTimer) draftTimer = setTimeout(saveDraft, 4000); // network hiccup: try again
+}
+
+// A refresh right after a change must not lose it: hand the last save to the browser
+window.addEventListener('pagehide', () => {
+  if (!sessionCode || !unsaved) return;
+  try {
+    navigator.sendBeacon(
+      '/api/session/draft',
+      new Blob([JSON.stringify(draftBody())], { type: 'application/json' }),
+    );
+  } catch {
+    // best effort
+  }
+});
+
+// Rebuild the roster after a reload. What the teacher last saw wins; scans the
+// server recorded after that last save are added as present.
+function restoreRoster({ roster: saved = {}, scans = [] }) {
+  roster.clear();
+  for (const [id, s] of Object.entries(saved)) {
+    roster.set(String(id), {
+      name: s.name,
+      time: s.time || '',
+      source: ['qr', 'cctv', 'manual'].includes(s.source) ? s.source : 'manual',
+      present: s.present === true,
+    });
+  }
+  for (const scan of scans) {
+    const id = String(scan.id);
+    if (roster.has(id)) continue;
+    roster.set(id, {
+      name: scan.name,
+      time: timeFromStamp(scan.timestamp),
+      source: 'qr',
+      present: true,
+    });
+  }
+}
+
 // ---------- Roster ----------
 const presentCount = () => {
   let n = 0;
@@ -357,6 +469,7 @@ function markPresent(id, name, source, time = formatTime()) {
   if (entry?.present) return false;
   if (entry) Object.assign(entry, { present: true, source, time });
   else roster.set(id, { name, time, source, present: true });
+  saveDraftSoon();
   return true;
 }
 
@@ -364,19 +477,15 @@ function markAbsent(id) {
   const entry = roster.get(String(id));
   if (!entry?.present) return false;
   entry.present = false;
+  saveDraftSoon();
   return true;
 }
 
 function updateCounts() {
   const present = presentCount();
   const total = allStudents.size;
-  const absent = total
-    ? [...allStudents.keys()].filter(id => !isPresent(id)).length
-    : 0;
   $('#studentCount').textContent = present;
   $('#studentTotal').textContent = total ? ` / ${total}` : '';
-  $('#tabPresent').textContent = present;
-  $('#tabAbsent').textContent = total ? absent : '–';
   const shown = total ? `${present} / ${total}` : String(present);
   $('#fsCount').textContent = shown;
   // Handy when the tab is in the background behind the slides
@@ -385,32 +494,16 @@ function updateCounts() {
 
 function buildRows() {
   const q = rosterQuery.trim().toLowerCase();
-  let rows;
-  if (rosterFilter === 'present') {
-    const via = { qr: 'QR', cctv: 'CCTV', manual: 'Manual' };
-    rows = [...roster]
-      .filter(([, s]) => s.present)
-      .map(([id, s]) => {
-        const label = idLabel(allStudents.get(id) || {});
-        return {
-          id,
-          name: s.name,
-          label,
-          present: true,
-          meta: [via[s.source], s.time].filter(Boolean).join(' · '),
-        };
-      });
-  } else {
-    rows = [...allStudents.values()]
-      .filter(s => !isPresent(s.id))
-      .map(s => ({
-        id: s.id,
-        name: s.name,
-        label: idLabel(s),
-        present: false,
-        meta: 'Not marked yet',
-      }));
-  }
+  const via = { qr: 'QR', cctv: 'CCTV', manual: 'Manual' };
+  const rows = [...roster].map(([id, student]) => ({
+    id,
+    name: student.name,
+    label: idLabel(allStudents.get(id) || {}),
+    present: student.present,
+    meta: [student.present ? null : 'Absent', via[student.source], student.time]
+      .filter(Boolean)
+      .join(' · '),
+  }));
   return q
     ? rows.filter(
         r =>
@@ -496,19 +589,14 @@ function renderRoster({ force = false } = {}) {
   if (rows.length === 0) {
     const q = rosterQuery.trim();
     if (q) empty.textContent = `No students match "${q}".`;
-    else if (rosterFilter === 'present')
-      empty.textContent =
-        sessionMethod === 'cctv'
-          ? 'Nobody was recognised.'
-          : 'Waiting for students to scan...';
     else
       empty.textContent = allStudents.size
-        ? 'Everyone is marked present.'
+        ? 'No students have been marked yet.'
         : 'The class list is not available.';
   }
 }
 
-// Marks students present from the absent list or the dialog
+// Marks students present from the manual dialog
 async function addManually(students) {
   const response = await postData('/api/attendance/manual', {
     sessionCode,
@@ -534,28 +622,20 @@ studentList.addEventListener('click', async event => {
   if (!li) return;
   const id = li.dataset.id;
 
-  if (li.dataset.mode === 'present') {
-    const index = [...studentList.children].indexOf(li);
+  if (isPresent(id)) {
     markAbsent(id);
-    renderRoster({ force: true });
-    // The row is gone, so keep keyboard users in the same place in the list
-    const buttons = studentList.querySelectorAll('.row-action');
-    buttons[Math.min(index, buttons.length - 1)]?.focus();
-    return;
+  } else {
+    const student = allStudents.get(id);
+    if (!student) return;
+    btn.disabled = true;
+    const ok = await addManually([{ id, name: student.name }]);
+    btn.disabled = false;
+    if (!ok) return;
   }
-  btn.setAttribute('aria-busy', 'true');
-  await addManually([{ id, name: allStudents.get(id)?.name || '' }]);
-  btn.removeAttribute('aria-busy');
+  renderRoster({ force: true });
+  rowEls.get(id)?.querySelector('.row-action')?.focus();
 });
 
-document.querySelectorAll('input[name="roster-filter"]').forEach(radio =>
-  radio.addEventListener('change', () => {
-    rosterFilter = radio.value;
-    rowEls.clear();
-    studentList.replaceChildren();
-    renderRoster({ force: true });
-  }),
-);
 $('#rosterSearch').addEventListener('input', event => {
   rosterQuery = event.target.value;
   renderRoster({ force: true });
@@ -621,8 +701,7 @@ socket.on('attendance_update', data => {
     80;
   renderRoster();
   // Follow new arrivals only if the teacher has not scrolled up to read
-  if (rosterFilter === 'present' && nearBottom)
-    studentList.scrollTop = studentList.scrollHeight;
+  if (nearBottom) studentList.scrollTop = studentList.scrollHeight;
   announcePresent(data.studentName);
 });
 
@@ -641,7 +720,7 @@ socket.on('connect', () => {
   if (socketWasDown) {
     socketWasDown = false;
     notify(
-      'Live updates are back. Anyone who scanned while you were offline may be missing, so check the Absent tab.',
+      'Live updates are back. Use Add manually for anyone who scanned while you were offline.',
       'info',
     );
   }
@@ -672,39 +751,18 @@ startBtn.addEventListener('click', async () => {
         'error',
       );
 
-    sessionCode = response.sessionCode;
-    sessionMethod = method;
-    sessionMeta = {
-      date: dateInput.value,
-      slot: selectedSlot()?.label || 'Class',
+    openSessionUI({
+      code: response.sessionCode,
       method,
-    };
-    roster.clear();
-    allStudents.clear();
-    rowEls.clear();
-    studentList.replaceChildren();
-    rosterFilter = 'present';
-    rosterQuery = '';
-    $('#rosterSearch').value = '';
-    $('input[name="roster-filter"][value="present"]').checked = true;
-    socket.emit('join_session', sessionCode);
-
-    beforeStart.hidden = true;
-    afterStart.hidden = false;
-    const isQr = method === 'qr';
-    qrCanvas.hidden = !isQr;
-    $('#qrLive').hidden = !isQr;
-    $('#cctvPanel').hidden = isQr;
-    fullscreenBtn.hidden = !isQr || !document.fullscreenEnabled;
-    $('#panelTitle').textContent = isQr
-      ? 'Scan to mark attendance'
-      : 'CCTV result';
-    $('#panelTitle').focus({ preventScroll: true });
-    $('#liveStatus').textContent = '';
-    setQrLive(true);
+      meta: {
+        date: dateInput.value,
+        slot: selectedSlot()?.label || 'Class',
+        method,
+      },
+    });
     renderRoster({ force: true });
     loadAllStudents(); // runs alongside; the list fills in when it arrives
-    if (isQr) renderQR(response);
+    if (method === 'qr') renderQR(response);
     else await runCCTV();
   } catch {
     notify('Could not reach the server. Try again.', 'error');
@@ -714,9 +772,40 @@ startBtn.addEventListener('click', async () => {
   }
 });
 
-// Closing the tab mid-class would lose the roster
+// Switch the page into live mode. Shared by starting and by resuming a session.
+function openSessionUI({ code, method, meta }) {
+  sessionCode = code;
+  sessionMethod = method;
+  sessionMeta = meta;
+  unsaved = false;
+  roster.clear();
+  allStudents.clear();
+  rowEls.clear();
+  studentList.replaceChildren();
+  rosterQuery = '';
+  $('#rosterSearch').value = '';
+  remember(code);
+  socket.emit('join_session', code);
+
+  resumeBox.hidden = true;
+  beforeStart.hidden = true;
+  afterStart.hidden = false;
+  const isQr = method === 'qr';
+  qrCanvas.hidden = !isQr;
+  $('#qrLive').hidden = !isQr;
+  $('#cctvPanel').hidden = isQr;
+  fullscreenBtn.hidden = !isQr || !document.fullscreenEnabled;
+  $('#panelTitle').textContent = isQr
+    ? 'Scan to mark attendance'
+    : 'CCTV result';
+  $('#panelTitle').focus({ preventScroll: true });
+  $('#liveStatus').textContent = '';
+  setQrLive(true);
+}
+
+// A refresh is safe now, so only warn when a change has not reached the server yet
 window.addEventListener('beforeunload', event => {
-  if (!sessionCode) return;
+  if (!sessionCode || !unsaved) return;
   event.preventDefault();
   event.returnValue = '';
 });
@@ -800,10 +889,10 @@ async function runCCTV() {
     return;
   }
 
-  // The camera's class list doubles as the absent list
+  // Keep missed students available through the Add manually dialog.
   addStudents(response.students);
 
-  // Only recognized CCTV students are marked present; everyone else shows in the Absent tab
+  // Only recognized CCTV students are marked present.
   const presentIds = new Set(
     response.presentStudents.map(s => String(s.student_id)),
   );
@@ -813,6 +902,16 @@ async function runCCTV() {
     .forEach(s => markPresent(s.id, s.name, 'cctv', time));
   renderRoster({ force: true });
 
+  showCctvImage();
+  status.textContent = `${presentCount()} of ${allStudents.size} recognised. Use Add manually for anyone the camera missed.`;
+}
+
+// Shows the annotated picture the recogniser saved for this session. After a
+// resume a missing picture offers to run the recognition again.
+function showCctvImage({ offerRetry = false } = {}) {
+  $('#cctvError').hidden = true;
+  $('#cctvSkeleton').hidden = false;
+  cctvViewer.hidden = true;
   cctvResultImage.onload = () => {
     $('#cctvSkeleton').hidden = true;
     cctvViewer.hidden = false;
@@ -820,10 +919,13 @@ async function runCCTV() {
   };
   cctvResultImage.onerror = () => {
     $('#cctvSkeleton').hidden = true;
-    notify('The annotated CCTV image could not be loaded.', 'error');
+    if (offerRetry) {
+      $('#cctvErrorText').textContent =
+        'The CCTV result picture could not be loaded. You can run the recognition again.';
+      $('#cctvError').hidden = false;
+    } else notify('The annotated CCTV image could not be loaded.', 'error');
   };
   cctvResultImage.src = `/results/${sessionCode}.jpg?t=${Date.now()}`;
-  status.textContent = `${presentCount()} of ${allStudents.size} recognised. Check the Absent tab for anyone the camera missed.`;
 }
 
 $('#cctvRetryBtn').addEventListener('click', async event => {
@@ -1009,7 +1111,9 @@ fullscreenBtn.addEventListener('click', () => {
 });
 document.addEventListener('fullscreenchange', () => {
   fullscreenBtn.textContent =
-    document.fullscreenElement === liveGrid ? 'Exit full screen' : 'Full screen';
+    document.fullscreenElement === liveGrid
+      ? 'Exit full screen'
+      : 'Full screen';
   cctvFullscreenBtn.textContent =
     document.fullscreenElement === cctvViewer
       ? 'Exit full screen'
@@ -1189,6 +1293,10 @@ $('#confirmSubmitBtn').addEventListener('click', async event => {
 function endSessionUI() {
   clearTimeout(qrTimer);
   clearTimeout(renderTimer);
+  clearTimeout(draftTimer);
+  draftTimer = null;
+  unsaved = false;
+  forget();
   sessionCode = null;
   sessionMethod = null;
   sessionMeta = null;
@@ -1196,10 +1304,8 @@ function endSessionUI() {
   allStudents.clear();
   rowEls.clear();
   studentList.replaceChildren();
-  rosterFilter = 'present';
   rosterQuery = '';
   $('#rosterSearch').value = '';
-  $('input[name="roster-filter"][value="present"]').checked = true;
   document.title = baseTitle;
   if (document.fullscreenElement) document.exitFullscreen();
   cctvViewer.hidden = true;
@@ -1212,8 +1318,225 @@ function endSessionUI() {
   refreshFailures = 0;
   afterStart.hidden = true;
   beforeStart.hidden = false;
+  refreshResumeList(); // anything else still unfinished shows up again
+}
+
+// ---------- Unfinished sessions (resume / discard / clean up) ----------
+let unfinished = []; // from the server, newest first
+
+// Worth showing: today's or later, or anything that already recorded scans.
+// Older sessions with no scans are just leftovers from closed tabs.
+const worthListing = s => s.date >= localISODate() || s.scanCount > 0;
+
+function renderResumeList() {
+  const shown = unfinished.filter(worthListing);
+  const leftovers = unfinished.length - shown.length;
+  const listed = shown.slice(0, 5);
+  resumeBox.hidden = Boolean(sessionCode) || (!listed.length && !leftovers);
+
+  $('#resumeTitle').textContent = !listed.length
+    ? 'Old unfinished sessions'
+    : listed.length > 1
+      ? 'Unfinished sessions'
+      : 'Unfinished session';
+  $('#resumeIntro').hidden = !listed.length;
+
+  $('#resumeList').replaceChildren(
+    ...listed.map(s => {
+      const li = document.createElement('li');
+      li.className = 'resume-row';
+      li.dataset.code = s.sessionCode;
+
+      const info = document.createElement('div');
+      info.className = 'roster-info';
+      const title = document.createElement('span');
+      title.className = 'roster-name';
+      title.textContent = `${s.slotLabel} · ${formatDate(s.date)}`;
+      const started = timeFromStamp(s.startedAt);
+      const meta = document.createElement('span');
+      meta.className = 'roster-meta';
+      meta.textContent = [
+        s.method.toUpperCase(),
+        started && `Started ${started}`,
+        s.scanCount > 0 && `${s.scanCount} scanned`,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      info.append(title, meta);
+
+      const actions = document.createElement('div');
+      actions.className = 'resume-actions';
+      const resume = document.createElement('button');
+      resume.type = 'button';
+      resume.className = 'btn btn-primary btn-sm resume-btn';
+      resume.textContent = 'Resume';
+      resume.setAttribute('aria-label', `Resume ${title.textContent}`);
+      const discard = document.createElement('button');
+      discard.type = 'button';
+      discard.className = 'btn btn-danger btn-sm discard-btn';
+      discard.textContent = 'Discard';
+      discard.setAttribute('aria-label', `Discard ${title.textContent}`);
+      actions.append(resume, discard);
+
+      li.append(info, actions);
+      return li;
+    }),
+  );
+
+  $('#resumeMore').hidden = shown.length <= listed.length;
+  $('#resumeMore').textContent =
+    `${shown.length - listed.length} older unfinished sessions are not shown.`;
+  $('#resumeCleanup').hidden = leftovers === 0;
+  $('#resumeCleanupText').textContent =
+    `${leftovers} old unfinished session${leftovers === 1 ? '' : 's'} with no scans, left behind by closed tabs.`;
+}
+
+// Returns false when the server could not be reached
+async function refreshResumeList() {
+  try {
+    const res = await fetch(
+      `/api/session/active?faculty_id=${encodeURIComponent(facultyId)}`,
+    );
+    if (!res.ok) throw new Error();
+    unfinished = await res.json();
+  } catch {
+    return false;
+  }
+  renderResumeList();
+  return true;
+}
+
+async function resumeSession(code, btn) {
+  btn?.setAttribute('aria-busy', 'true');
+  try {
+    const res = await fetch(
+      `/api/session/resume?sessionCode=${encodeURIComponent(code)}&faculty_id=${encodeURIComponent(facultyId)}`,
+    );
+    const data = await res.json().catch(() => null);
+    if (!data?.ok) {
+      notify(
+        `Could not resume the session. ${friendlyError(data?.error)}`,
+        'error',
+      );
+      if (data?.error === 'session_not_found') refreshResumeList(); // finished or discarded elsewhere
+      return false;
+    }
+
+    openSessionUI({
+      code: data.sessionCode,
+      method: data.method,
+      meta: {
+        date: data.date,
+        slot: data.slotLabel || 'Class',
+        method: data.method,
+      },
+    });
+    restoreRoster(data);
+    renderRoster({ force: true });
+    loadAllStudents();
+    if (data.method === 'qr')
+      scheduleTokenRefresh(0); // the QR comes straight back
+    else showCctvImage({ offerRetry: true });
+    showToast('Session restored.', 'success');
+    return true;
+  } catch {
+    notify('Could not reach the server. Try again.', 'error');
+    return false;
+  } finally {
+    btn?.removeAttribute('aria-busy');
+  }
+}
+
+$('#resumeList').addEventListener('click', event => {
+  const btn = event.target.closest('button');
+  const li = btn?.closest('.resume-row');
+  if (!li) return;
+  if (btn.classList.contains('resume-btn')) resumeSession(li.dataset.code, btn);
+  else if (btn.classList.contains('discard-btn'))
+    askDiscard(li.dataset.code, li.querySelector('.roster-name').textContent);
+});
+
+// Discard: used for a listed session and for the one on screen
+const discardDialog = $('#discard-dialog');
+let discardTarget = null;
+
+function askDiscard(code, label) {
+  discardTarget = { code, label };
+  $('#discardSummary').textContent =
+    `${label} will be deleted along with any scans recorded so far. Nothing will be saved to attendance. This cannot be undone.`;
+  discardDialog.showModal();
+}
+
+$('#discardSessionBtn').addEventListener('click', () =>
+  askDiscard(
+    sessionCode,
+    `${sessionMeta.slot} · ${formatDate(sessionMeta.date)}`,
+  ),
+);
+$('#cancelDiscardBtn').addEventListener('click', () => discardDialog.close());
+
+$('#confirmDiscardBtn').addEventListener('click', async event => {
+  const btn = event.currentTarget;
+  const { code } = discardTarget;
+  btn.setAttribute('aria-busy', 'true');
+  const response = await postData('/api/session/cancel', {
+    sessionCode: code,
+    facultyId,
+  });
+  btn.removeAttribute('aria-busy');
+  discardDialog.close();
+
+  // Already gone (finished or discarded elsewhere) counts as done
+  if (!response?.ok && response?.error !== 'session_not_found')
+    return notify(
+      `Could not discard the session. ${friendlyError(response?.error)}`,
+      'error',
+    );
+  showToast('Session discarded.', 'success');
+  if (code === sessionCode) endSessionUI();
+  else refreshResumeList();
+});
+
+$('#cleanupBtn').addEventListener('click', async event => {
+  const btn = event.currentTarget;
+  btn.setAttribute('aria-busy', 'true');
+  const response = await postData('/api/session/cleanup', {
+    facultyId,
+    before: localISODate(),
+  });
+  btn.removeAttribute('aria-busy');
+  if (!response?.ok)
+    return notify(
+      `Could not clear them. ${friendlyError(response?.error)}`,
+      'error',
+    );
+  showToast(
+    `${response.removed} old session${response.removed === 1 ? '' : 's'} cleared.`,
+    'success',
+  );
+  refreshResumeList();
+});
+
+// On load: after a refresh go straight back into the session; otherwise just list
+// anything unfinished so the teacher can resume or discard it.
+async function restoreOnLoad() {
+  const wasInSession = remembered();
+  if (wasInSession) {
+    beforeStart.hidden = true;
+    $('#resumeStatus').hidden = false;
+  }
+  const loaded = await refreshResumeList();
+  $('#resumeStatus').hidden = true;
+
+  const stillOpen =
+    wasInSession && unfinished.some(s => s.sessionCode === wasInSession);
+  if (stillOpen && (await resumeSession(wasInSession))) return;
+  // Submitted or discarded somewhere else, so there is nothing to go back to
+  if (loaded && wasInSession && !stillOpen) forget();
+  beforeStart.hidden = false;
 }
 
 updateStartLabel();
 renderHistory(loadHistory());
 loadSlots();
+restoreOnLoad();

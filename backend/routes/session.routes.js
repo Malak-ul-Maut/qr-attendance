@@ -7,6 +7,18 @@ import { getIO } from '../utils/socket-io.js';
 const router = express.Router();
 const sessions = {};
 
+// What a refresh needs to put the teacher back where they were: how the session
+// was started, and the roster as the teacher last saw it. Manual additions, CCTV
+// results and "mark absent" changes live only in the browser until this saves them.
+db.run(`
+  CREATE TABLE IF NOT EXISTS session_drafts (
+    session_code TEXT PRIMARY KEY,
+    method TEXT NOT NULL DEFAULT 'qr',
+    roster TEXT NOT NULL DEFAULT '{}',
+    updated_at TEXT
+  )
+`);
+
 // Get slots
 router.get('/slots', (req, res) => {
   const { date, faculty_id } = req.query;
@@ -200,14 +212,26 @@ router.post('/start', (req, res) => {
                   ? createSessionToken(sessionCode, 3, rows[0]?.section)
                   : null;
 
-              return res.json({
-                ok: true,
-                sessionCode,
-                method,
-                classIds: [...new Set(rows.map(row => row.class_id))], // Returns an array of unique classIds found
-                timetableIds: rows.map(row => row.id),
-                token,
-              });
+              // Remember how this session was started so a refresh can resume it
+              return db.run(
+                `INSERT OR REPLACE INTO session_drafts (session_code, method, roster, updated_at) VALUES (?, ?, '{}', ?)`,
+                [
+                  sessionCode,
+                  method === 'cctv' ? 'cctv' : 'qr',
+                  new Date().toISOString(),
+                ],
+                draftErr => {
+                  if (draftErr) console.error(draftErr);
+                  return res.json({
+                    ok: true,
+                    sessionCode,
+                    method,
+                    classIds: [...new Set(rows.map(row => row.class_id))], // Returns an array of unique classIds found
+                    timetableIds: rows.map(row => row.id),
+                    token,
+                  });
+                },
+              );
             }
           },
         );
@@ -301,13 +325,286 @@ router.post('/finalize', (req, res) => {
             return res.status(500).json({ ok: false, error: 'database_error' });
           }
 
-          getIO().to(sessionCode).emit('session_finalized', { sessionCode });
-          return res.json({ ok: true, message: 'Finalized' });
+          // The session is closed, so its saved draft is no longer needed.
+          // Answer only once it is gone, so nothing can resume a finished session.
+          db.run(
+            `DELETE FROM session_drafts WHERE session_code = ?`,
+            [sessionCode],
+            draftErr => {
+              if (draftErr) console.error(draftErr);
+              getIO()
+                .to(sessionCode)
+                .emit('session_finalized', { sessionCode });
+              return res.json({ ok: true, message: 'Finalized' });
+            },
+          );
         },
       );
     },
   );
 });
+
+// ---------- Resume, discard and clean up ----------
+// A faculty member's own unfinished sessions. Everything below only ever touches
+// sessions that belong to the given faculty username and have no end_time yet.
+const OPEN_SESSIONS = `
+  FROM sessions
+  JOIN timetable ON timetable.id = sessions.timetable_id
+  JOIN slots ON slots.id = timetable.slot_id
+  JOIN faculty ON faculty.id = timetable.faculty_id
+  JOIN users ON users.id = faculty.user_id
+  LEFT JOIN session_drafts ON session_drafts.session_code = sessions.session_code
+  WHERE users.username = ?
+    AND sessions.end_time IS NULL`;
+
+// List unfinished sessions, newest first
+router.get('/active', async (req, res) => {
+  const { faculty_id } = req.query;
+  if (!faculty_id)
+    return res.status(400).json({ ok: false, error: 'missing_faculty' });
+
+  try {
+    const rows = await dbAll(
+      `
+      SELECT
+        sessions.session_code AS sessionCode,
+        MIN(sessions.date) AS date,
+        MIN(sessions.start_time) AS startedAt,
+        slots.id AS slotId,
+        slots.label AS slotLabel,
+        COALESCE(session_drafts.method, 'qr') AS method,
+        (
+          SELECT COUNT(*)
+          FROM attendance
+          JOIN sessions scanned ON scanned.id = attendance.session_id
+          WHERE scanned.session_code = sessions.session_code
+        ) AS scanCount
+      ${OPEN_SESSIONS}
+      GROUP BY sessions.session_code, slots.id, session_drafts.method
+      ORDER BY MAX(sessions.id) DESC
+      LIMIT 200
+      `,
+      [faculty_id],
+    );
+    return res.json(rows);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ ok: false, error: 'database_error' });
+  }
+});
+
+// Everything needed to rebuild the live screen: the saved roster plus every scan
+// the server recorded (some may have arrived after the last save).
+router.get('/resume', async (req, res) => {
+  const { sessionCode, faculty_id } = req.query;
+
+  try {
+    const session =
+      sessionCode && faculty_id
+        ? await findOpenSession(sessionCode, faculty_id)
+        : null;
+    if (!session)
+      return res.status(404).json({ ok: false, error: 'session_not_found' });
+
+    const draft = await dbGet(
+      `SELECT method, roster FROM session_drafts WHERE session_code = ?`,
+      [sessionCode],
+    );
+    let roster = {};
+    try {
+      roster = JSON.parse(draft?.roster || '{}');
+    } catch {
+      // A damaged draft is not fatal: the scans below still rebuild most of it
+    }
+
+    const scans = await dbAll(
+      `
+      SELECT attendance.student_id AS id, users.name, attendance.timestamp
+      FROM attendance
+      JOIN sessions ON sessions.id = attendance.session_id
+      JOIN students ON students.id = attendance.student_id
+      JOIN users ON users.id = students.user_id
+      WHERE sessions.session_code = ?
+        AND attendance.status = 'present'
+      `,
+      [sessionCode],
+    );
+
+    return res.json({
+      ok: true,
+      sessionCode,
+      date: session.date,
+      slotId: session.slotId,
+      slotLabel: session.slotLabel,
+      method: draft?.method === 'cctv' ? 'cctv' : 'qr',
+      roster,
+      scans,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ ok: false, error: 'database_error' });
+  }
+});
+
+// Save the roster as the teacher currently sees it
+router.post('/draft', async (req, res) => {
+  const { sessionCode, facultyId, method, roster } = req.body || {};
+  if (
+    !sessionCode ||
+    !roster ||
+    typeof roster !== 'object' ||
+    Array.isArray(roster)
+  )
+    return res.status(400).json({ ok: false, error: 'invalid_roster' });
+
+  try {
+    if (!(await findOpenSession(sessionCode, facultyId)))
+      return res.status(404).json({ ok: false, error: 'session_not_found' });
+
+    await dbRun(
+      `
+      INSERT INTO session_drafts (session_code, method, roster, updated_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(session_code) DO UPDATE SET
+        method = excluded.method,
+        roster = excluded.roster,
+        updated_at = excluded.updated_at
+      `,
+      [
+        sessionCode,
+        method === 'cctv' ? 'cctv' : 'qr',
+        JSON.stringify(cleanRoster(roster)),
+        new Date().toISOString(),
+      ],
+    );
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ ok: false, error: 'database_error' });
+  }
+});
+
+// Throw away a session that was started by mistake. Only open sessions can go,
+// so submitted attendance is never touched.
+router.post('/cancel', async (req, res) => {
+  const { sessionCode, facultyId } = req.body || {};
+
+  try {
+    if (
+      !sessionCode ||
+      !facultyId ||
+      !(await findOpenSession(sessionCode, facultyId))
+    )
+      return res.status(404).json({ ok: false, error: 'session_not_found' });
+
+    await dbRun(
+      `DELETE FROM attendance WHERE session_id IN (
+         SELECT id FROM sessions WHERE session_code = ? AND end_time IS NULL
+       )`,
+      [sessionCode],
+    );
+    await dbRun(
+      `DELETE FROM sessions WHERE session_code = ? AND end_time IS NULL`,
+      [sessionCode],
+    );
+    await dbRun(`DELETE FROM session_drafts WHERE session_code = ?`, [
+      sessionCode,
+    ]);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ ok: false, error: 'database_error' });
+  }
+});
+
+// Remove old unfinished sessions that never recorded a single scan. Nothing was
+// ever recorded in them, so nothing is lost. Sessions with any attendance stay.
+router.post('/cleanup', async (req, res) => {
+  const { facultyId, before } = req.body || {};
+  if (!facultyId || !/^\d{4}-\d{2}-\d{2}$/.test(String(before)))
+    return res.status(400).json({ ok: false, error: 'invalid_request' });
+
+  const EMPTY_OLD = `
+    sessions.end_time IS NULL
+    AND sessions.date < ?
+    AND sessions.timetable_id IN (
+      SELECT timetable.id
+      FROM timetable
+      JOIN faculty ON faculty.id = timetable.faculty_id
+      JOIN users ON users.id = faculty.user_id
+      WHERE users.username = ?
+    )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM attendance
+      JOIN sessions scanned ON scanned.id = attendance.session_id
+      WHERE scanned.session_code = sessions.session_code
+    )`;
+
+  try {
+    const { removed } = await dbGet(
+      `SELECT COUNT(DISTINCT sessions.session_code) AS removed FROM sessions WHERE ${EMPTY_OLD}`,
+      [before, facultyId],
+    );
+    await dbRun(`DELETE FROM sessions WHERE ${EMPTY_OLD}`, [before, facultyId]);
+    await dbRun(
+      `DELETE FROM session_drafts WHERE session_code NOT IN (SELECT session_code FROM sessions)`,
+    );
+    return res.json({ ok: true, removed });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ ok: false, error: 'database_error' });
+  }
+});
+
+// Is this session still open, and does it belong to this faculty member?
+function findOpenSession(sessionCode, username) {
+  return dbGet(
+    `
+    SELECT sessions.id, sessions.date, slots.id AS slotId, slots.label AS slotLabel
+    ${OPEN_SESSIONS}
+      AND sessions.session_code = ?
+    LIMIT 1
+    `,
+    [username, sessionCode],
+  );
+}
+
+// The browser sends this, so keep only what the roster is supposed to contain
+function cleanRoster(roster) {
+  const clean = {};
+  for (const [id, s] of Object.entries(roster).slice(0, 2000)) {
+    if (!/^\d+$/.test(id) || !s || typeof s !== 'object') continue;
+    clean[id] = {
+      name: String(s.name || '').slice(0, 100),
+      time: String(s.time || '').slice(0, 20),
+      source: ['qr', 'cctv', 'manual'].includes(s.source) ? s.source : 'manual',
+      present: s.present === true,
+    };
+  }
+  return clean;
+}
+
+function dbAll(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows)));
+  });
+}
+
+function dbGet(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => (err ? reject(err) : resolve(row)));
+  });
+}
+
+function dbRun(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function (err) {
+      if (err) return reject(err);
+      resolve({ changes: this.changes, lastID: this.lastID });
+    });
+  });
+}
 
 function resolveFacultyId(value, day, slotId, callback) {
   if (/^\d+$/.test(String(value || ''))) {
