@@ -2,36 +2,54 @@ import express from 'express';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import db from '../utils/db.js';
+import { dbAll, dbGet, dbRun, withTransaction } from '../utils/db.js';
+import { galleryFolderName } from '../utils/gallery.js';
+import { getSessionStudents } from '../utils/timetable.js';
 
 const router = express.Router();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const GALLERY_DIR = path.resolve(__dirname, '../gallery');
 
-db.run(`
-  CREATE TABLE IF NOT EXISTS face_descriptors (
-    student_id INTEGER PRIMARY KEY REFERENCES students(id),
-    descriptor TEXT NOT NULL
-  )
-`);
+// A student can be mapped to several classes over time (one row per class).
+// The admin list shows the newest one: latest academic session, then highest semester.
+const CURRENT_MAPPING_JOIN = `
+  LEFT JOIN students_mapping
+    ON students_mapping.id = (
+      SELECT sm.id
+      FROM students_mapping sm
+      JOIN classes c ON c.id = sm.class_id
+      WHERE sm.student_id = students.id
+      ORDER BY c.academic_session DESC, c.semester DESC, sm.id DESC
+      LIMIT 1
+    )
+  LEFT JOIN classes ON classes.id = students_mapping.class_id
+  LEFT JOIN branches ON branches.id = classes.branch_id
+`;
 
+// Students list. Inactive (soft-deleted) students are hidden unless ?includeInactive=1.
 router.get('/', async (req, res) => {
+  const includeInactive = req.query.includeInactive === '1';
   try {
     const rows = await dbAll(`
-      SELECT users.username, users.name, users.password,
+      SELECT
+        students.username,
+        students.name,
+        students.password_hash AS password,
         students.roll_number AS rollNumber,
-        students.class_id AS classId,
-        curriculum.course_id AS courseId,
-        curriculum.branch_id AS branchId,
-        curriculum.semester,
-        sections.label AS section
-      FROM users
-      JOIN students ON students.user_id = users.id
-      JOIN classes ON classes.id = students.class_id
-      JOIN curriculum on curriculum.id = classes.curriculum_id
-      JOIN sections ON sections.id = classes.section_id
-      WHERE users.role = 'student'
-      ORDER BY users.name
+        students.college_email AS collegeEmail,
+        students.phone_number AS phoneNumber,
+        students.year_of_passing AS yearOfPassing,
+        students.active,
+        students_mapping.class_id AS classId,
+        students_mapping.batch,
+        branches.course_id AS courseId,
+        classes.branch_id AS branchId,
+        classes.semester,
+        classes.section
+      FROM students
+      ${CURRENT_MAPPING_JOIN}
+      ${includeInactive ? '' : 'WHERE students.active = 1'}
+      ORDER BY students.name
     `);
     return res.json(rows);
   } catch (err) {
@@ -44,14 +62,15 @@ router.get('/meta', async (req, res) => {
   try {
     const [courses, branches, classes] = await Promise.all([
       dbAll(`SELECT id, abbr AS label FROM courses ORDER BY abbr`),
-      dbAll(`SELECT id, abbr AS label FROM branches ORDER BY abbr`),
+      dbAll(
+        `SELECT id, abbr AS label, course_id FROM branches ORDER BY abbr`,
+      ),
       dbAll(`
-        SELECT classes.id, curriculum.course_id, curriculum.branch_id, curriculum.semester,
-          sections.label AS section
+        SELECT classes.id, branches.course_id, classes.branch_id, classes.semester,
+          classes.section, classes.academic_session
         FROM classes
-        JOIN sections ON sections.id = classes.section_id
-        JOIN curriculum on curriculum.id = classes.curriculum_id
-        ORDER BY curriculum.course_id, curriculum.branch_id, curriculum.semester, classes.id
+        JOIN branches ON branches.id = classes.branch_id
+        ORDER BY branches.course_id, classes.branch_id, classes.semester, classes.id
       `),
     ]);
     return res.json({ courses, branches, classes });
@@ -66,7 +85,8 @@ router.get('/username-available', async (req, res) => {
   if (!username) return res.json({ available: false });
 
   try {
-    const existing = await dbGet(`SELECT id FROM users WHERE username = ?`, [
+    // students.username is case-insensitive in the database, and so is this check.
+    const existing = await dbGet(`SELECT id FROM students WHERE username = ?`, [
       username,
     ]);
     return res.json({ available: !existing });
@@ -76,49 +96,31 @@ router.get('/username-available', async (req, res) => {
   }
 });
 
+// The student's saved face template, as a plain array of numbers.
 router.get('/descriptors', async (req, res) => {
   try {
     const row = await dbGet(
-      `
-      SELECT face_descriptors.descriptor
-      FROM face_descriptors
-      JOIN students ON students.id = face_descriptors.student_id
-      JOIN users ON users.id = students.user_id
-      WHERE users.username = ?
-      `,
+      `SELECT face_embedding FROM students WHERE username = ? AND active = 1`,
       [req.query.id],
     );
-    if (!row) return res.status(404).json({ ok: false, error: 'not_found' });
-    return res.json(JSON.parse(row.descriptor));
+    if (!row?.face_embedding)
+      return res.status(404).json({ ok: false, error: 'not_found' });
+    return res.json(decodeEmbedding(row.face_embedding));
   } catch (err) {
     console.error(err);
     return res.status(500).json({ ok: false, error: 'database_error' });
   }
 });
 
-router.get('/:sessionCode', (req, res) => {
-  const sessionCode = req.params.sessionCode;
-
-  db.all(
-    `
-    SELECT DISTINCT students.id AS id, users.username, users.name,
-      students.roll_number AS roll_number
-    FROM sessions
-    JOIN timetable ON timetable.id = sessions.timetable_id
-    JOIN classes ON classes.room_id = timetable.room_id
-    JOIN students ON students.class_id = classes.id
-    JOIN users ON users.id = students.user_id
-    WHERE sessions.session_code = ?`,
-    [sessionCode],
-    (err, rows) => {
-      if (err) {
-        console.error(err);
-        return res.status(500).json({ ok: false });
-      }
-
-      return res.json(rows);
-    },
-  );
+// The students of a session (everyone it was opened for).
+router.get('/:sessionCode', async (req, res) => {
+  try {
+    const rows = await getSessionStudents(req.params.sessionCode);
+    return res.json(rows);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ ok: false });
+  }
 });
 
 router.post('/', async (req, res) => {
@@ -126,7 +128,6 @@ router.post('/', async (req, res) => {
   const name = String(req.body.name || '').trim();
   const { password, faceDescriptor } = req.body;
   let galleryPath;
-  let transactionStarted = false;
 
   try {
     const classId = await resolveClassId(req.body);
@@ -152,62 +153,81 @@ router.post('/', async (req, res) => {
     )
       return res.status(400).json({ ok: false, error: 'face_images_required' });
 
-    const existing = await dbGet(`SELECT id FROM users WHERE username = ?`, [
+    let embedding = null;
+    if (faceDescriptor) {
+      embedding = encodeEmbedding(faceDescriptor);
+      if (!embedding)
+        return res
+          .status(400)
+          .json({ ok: false, error: 'invalid_face_descriptor' });
+    }
+
+    // year_of_passing is required by the database. Use the one in the request, or the
+    // one the rest of this class already has.
+    const yearOfPassing = await resolveYearOfPassing(req.body, classId);
+    if (!yearOfPassing)
+      return res
+        .status(400)
+        .json({ ok: false, error: 'year_of_passing_required' });
+
+    const existing = await dbGet(`SELECT id FROM students WHERE username = ?`, [
       username,
     ]);
     if (existing)
       return res.status(409).json({ ok: false, error: 'username_taken' });
 
-    await dbRun('BEGIN TRANSACTION');
-    transactionStarted = true;
-    const user = await dbRun(
-      `INSERT INTO users (username, name, password, role) VALUES (?, ?, ?, 'student')`,
-      [username, name, password || 'password'],
-    );
-    const student = await dbRun(
-      `INSERT INTO students (user_id, roll_number, class_id) VALUES (?, ?, ?)`,
-      [user.lastID, rollNumber, classId],
-    );
+    const created = await withTransaction(async () => {
+      const student = await dbRun(
+        `INSERT INTO students
+           (name, roll_number, college_email, phone_number, year_of_passing,
+            face_embedding, username, password_hash)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          name,
+          rollNumber,
+          optionalText(req.body.collegeEmail),
+          optionalText(req.body.phoneNumber),
+          yearOfPassing,
+          embedding,
+          username,
+          password || 'password',
+        ],
+      );
+      await dbRun(
+        `INSERT INTO students_mapping (student_id, class_id, batch) VALUES (?, ?, ?)`,
+        [student.lastID, classId, optionalText(req.body.batch)],
+      );
 
-    const safeUsername = safePathPart(username);
-    const safeRollNumber = safePathPart(rollNumber);
-    const galleryFolder = `${student.lastID}_${safeUsername}_${safeRollNumber}`;
-    galleryPath = path.join(GALLERY_DIR, galleryFolder);
-    await fs.mkdir(galleryPath, { recursive: true });
-    await Promise.all(
-      uploadedImages.map((image, index) =>
-        fs.writeFile(
-          path.join(galleryPath, `image_${index + 1}${image.extension}`),
-          image.buffer,
+      const galleryFolder = galleryFolderName({
+        id: student.lastID,
+        username,
+        roll_number: rollNumber,
+      });
+      galleryPath = path.join(GALLERY_DIR, galleryFolder);
+      await fs.mkdir(galleryPath, { recursive: true });
+      await Promise.all(
+        uploadedImages.map((image, index) =>
+          fs.writeFile(
+            path.join(galleryPath, `image_${index + 1}${image.extension}`),
+            image.buffer,
+          ),
         ),
-      ),
-    );
+      );
+      return { id: student.lastID, galleryFolder };
+    });
 
-    if (faceDescriptor) {
-      await saveDescriptor(student.lastID, faceDescriptor);
-    }
-    await dbRun('COMMIT');
-    transactionStarted = false;
     return res.json({
       success: true,
-      studentId: student.lastID,
-      galleryFolder,
+      studentId: created.id,
+      galleryFolder: created.galleryFolder,
     });
   } catch (err) {
-    if (transactionStarted) {
-      try {
-        await dbRun('ROLLBACK');
-      } catch (rollbackError) {
-        console.error(rollbackError);
-      }
-    }
     if (galleryPath) await fs.rm(galleryPath, { recursive: true, force: true });
     console.error(err);
-    return res.status(err.code === 'SQLITE_CONSTRAINT' ? 409 : 500).json({
-      ok: false,
-      error:
-        err.code === 'SQLITE_CONSTRAINT' ? 'username_taken' : 'database_error',
-    });
+    if (err.code === 'SQLITE_CONSTRAINT') {
+      return res.status(409).json({ ok: false, error: conflictName(err) });
+    }
+    return res.status(500).json({ ok: false, error: 'database_error' });
   }
 });
 
@@ -216,10 +236,9 @@ router.put('/:username', async (req, res) => {
   const { name, password, faceDescriptor } = req.body;
 
   try {
-    const student = await dbGet(
-      `SELECT students.id, students.class_id, users.id AS user_id FROM students JOIN users ON users.id = students.user_id WHERE users.username = ? AND users.role = 'student'`,
-      [username],
-    );
+    const student = await dbGet(`SELECT id FROM students WHERE username = ?`, [
+      username,
+    ]);
     if (!student)
       return res.status(404).json({ ok: false, error: 'not_found' });
 
@@ -229,59 +248,113 @@ router.put('/:username', async (req, res) => {
       req.body.courseId !== undefined ||
       req.body.branchId !== undefined ||
       req.body.semester !== undefined ||
-      req.body.sectionId !== undefined ||
       req.body.section !== undefined;
-    const classId = hasClassChange
-      ? await resolveClassId(req.body)
-      : student.class_id;
-    if (!classId)
-      return res.status(400).json({ ok: false, error: 'invalid_class' });
+    let classId = null;
+    if (hasClassChange) {
+      classId = await resolveClassId(req.body);
+      if (!classId)
+        return res.status(400).json({ ok: false, error: 'invalid_class' });
+    }
 
-    await dbRun(
-      `UPDATE users SET name = ?, password = COALESCE(?, password) WHERE id = ?`,
-      [name || null, password || null, student.user_id],
-    );
-    if (classId !== student.class_id) {
-      await dbRun(`UPDATE students SET class_id = ? WHERE id = ?`, [
-        classId,
-        student.id,
-      ]);
+    let embedding = null;
+    if (faceDescriptor) {
+      embedding = encodeEmbedding(faceDescriptor);
+      if (!embedding)
+        return res
+          .status(400)
+          .json({ ok: false, error: 'invalid_face_descriptor' });
     }
-    if (req.body.rollNumber !== undefined) {
-      await dbRun(`UPDATE students SET roll_number = ? WHERE id = ?`, [
-        String(req.body.rollNumber).trim(),
-        student.id,
-      ]);
-    }
-    if (faceDescriptor) await saveDescriptor(student.id, faceDescriptor);
+
+    await withTransaction(async () => {
+      await dbRun(
+        `UPDATE students SET
+           name = COALESCE(?, name),
+           password_hash = COALESCE(?, password_hash),
+           roll_number = COALESCE(?, roll_number),
+           college_email = CASE WHEN ? THEN ? ELSE college_email END,
+           phone_number = CASE WHEN ? THEN ? ELSE phone_number END,
+           year_of_passing = COALESCE(?, year_of_passing),
+           face_embedding = COALESCE(?, face_embedding),
+           active = COALESCE(?, active)
+         WHERE id = ?`,
+        [
+          name || null,
+          password || null,
+          req.body.rollNumber !== undefined
+            ? String(req.body.rollNumber).trim() || null
+            : null,
+          req.body.collegeEmail !== undefined ? 1 : 0,
+          optionalText(req.body.collegeEmail),
+          req.body.phoneNumber !== undefined ? 1 : 0,
+          optionalText(req.body.phoneNumber),
+          Number.isInteger(Number(req.body.yearOfPassing))
+            ? Number(req.body.yearOfPassing)
+            : null,
+          embedding,
+          req.body.active === undefined ? null : req.body.active ? 1 : 0,
+          student.id,
+        ],
+      );
+
+      if (classId || req.body.batch !== undefined) {
+        const current = await dbGet(
+          `
+          SELECT students_mapping.id, students_mapping.class_id
+          FROM students_mapping
+          JOIN classes ON classes.id = students_mapping.class_id
+          WHERE students_mapping.student_id = ?
+          ORDER BY classes.academic_session DESC, classes.semester DESC,
+            students_mapping.id DESC
+          LIMIT 1
+          `,
+          [student.id],
+        );
+        const batch =
+          req.body.batch !== undefined ? optionalText(req.body.batch) : undefined;
+
+        if (!current) {
+          if (classId)
+            await dbRun(
+              `INSERT INTO students_mapping (student_id, class_id, batch) VALUES (?, ?, ?)`,
+              [student.id, classId, batch ?? null],
+            );
+        } else {
+          await dbRun(
+            `UPDATE students_mapping SET
+               class_id = ?,
+               batch = CASE WHEN ? THEN ? ELSE batch END
+             WHERE id = ?`,
+            [
+              classId || current.class_id,
+              batch === undefined ? 0 : 1,
+              batch ?? null,
+              current.id,
+            ],
+          );
+        }
+      }
+    });
     return res.json({ success: true });
   } catch (err) {
     console.error(err);
-    return res.status(err.code === 'SQLITE_CONSTRAINT' ? 400 : 500).json({
-      ok: false,
-      error:
-        err.code === 'SQLITE_CONSTRAINT'
-          ? 'student_conflict'
-          : 'database_error',
-    });
+    if (err.code === 'SQLITE_CONSTRAINT') {
+      return res.status(409).json({ ok: false, error: conflictName(err) });
+    }
+    return res.status(500).json({ ok: false, error: 'database_error' });
   }
 });
 
-router.delete('/:studentId', async (req, res) => {
+// "Delete" = make the student inactive. The row, class mapping, face data and past
+// attendance all stay, so history is kept and the student can be switched back on.
+router.delete('/:username', async (req, res) => {
   try {
-    const student = await dbGet(
-      `SELECT students.id, users.id AS user_id FROM students JOIN users ON users.id = students.user_id WHERE users.username = ? AND users.role = 'student'`,
-      [req.params.studentId],
-    );
+    const student = await dbGet(`SELECT id FROM students WHERE username = ?`, [
+      req.params.username,
+    ]);
     if (!student)
       return res.status(404).json({ ok: false, error: 'not_found' });
 
-    await dbRun(`DELETE FROM attendance WHERE student_id = ?`, [student.id]);
-    await dbRun(`DELETE FROM face_descriptors WHERE student_id = ?`, [
-      student.id,
-    ]);
-    await dbRun(`DELETE FROM students WHERE id = ?`, [student.id]);
-    await dbRun(`DELETE FROM users WHERE id = ?`, [student.user_id]);
+    await dbRun(`UPDATE students SET active = 0 WHERE id = ?`, [student.id]);
     return res.json({ success: true });
   } catch (err) {
     console.error(err);
@@ -289,53 +362,87 @@ router.delete('/:studentId', async (req, res) => {
   }
 });
 
-function resolveClassId(data) {
-  if (data.courseId && data.branchId && data.semester && data.classId) {
-    return dbGet(
-      `SELECT classes.id  FROM classes
-      JOIN curriculum on curriculum.id = classes.curriculum_id
-      WHERE classes.id = ? AND curriculum.course_id = ? AND curriculum.branch_id = ? AND curriculum.semester = ?`,
-      [data.classId, data.courseId, data.branchId, data.semester],
-    ).then(row => row?.id);
+// Which class does the request mean? Either an exact classId (checked against the
+// course/branch/semester when those are sent too), or course + branch + semester + section.
+async function resolveClassId(data) {
+  const classId = data.classId || data.class_id;
+
+  if (classId && data.courseId && data.branchId && data.semester) {
+    const row = await dbGet(
+      `SELECT classes.id FROM classes
+       JOIN branches ON branches.id = classes.branch_id
+       WHERE classes.id = ? AND branches.course_id = ?
+         AND classes.branch_id = ? AND classes.semester = ?`,
+      [classId, data.courseId, data.branchId, data.semester],
+    );
+    return row?.id;
   }
-  if (data.classId || data.class_id) {
-    return dbGet(`SELECT id FROM classes WHERE id = ?`, [
-      data.classId || data.class_id,
-    ]).then(row => row?.id);
+  if (classId) {
+    const row = await dbGet(`SELECT id FROM classes WHERE id = ?`, [classId]);
+    return row?.id;
   }
 
-  const conditions = [];
-  const params = [];
+  if (!data.section) return null;
+  const conditions = ['classes.section = ?'];
+  const params = [data.section];
   if (data.courseId) {
-    conditions.push('curriculum.course_id = ?');
+    conditions.push('branches.course_id = ?');
     params.push(data.courseId);
   }
   if (data.branchId) {
-    conditions.push('curriculum.branch_id = ?');
+    conditions.push('classes.branch_id = ?');
     params.push(data.branchId);
   }
   if (data.semester) {
-    conditions.push('curriculum.semester = ?');
+    conditions.push('classes.semester = ?');
     params.push(data.semester);
   }
-  if (data.sectionId) {
-    conditions.push('classes.section_id = ?');
-    params.push(data.sectionId);
-  } else if (data.section) {
-    conditions.push('(sections.label = ? OR sections.name = ?)');
-    params.push(data.section, data.section);
-  } else {
-    return Promise.resolve(null);
-  }
-
-  return dbAll(
-    `SELECT classes.id FROM classes JOIN sections ON sections.id = classes.section_id WHERE ${conditions.join(' AND ')} ORDER BY classes.id`,
+  const rows = await dbAll(
+    `SELECT classes.id FROM classes
+     JOIN branches ON branches.id = classes.branch_id
+     WHERE ${conditions.join(' AND ')} ORDER BY classes.id`,
     params,
-  ).then(rows => (rows.length === 1 ? rows[0].id : null));
+  );
+  // Several academic sessions can match; only an unambiguous answer is accepted.
+  return rows.length === 1 ? rows[0].id : null;
 }
 
-function safePathPart(value) {
-  return String(value).replace(/[^a-zA-Z0-9._-]/g, '_');
+async function resolveYearOfPassing(data, classId) {
+  const given = Number(data.yearOfPassing);
+  if (Number.isInteger(given) && given > 0) return given;
+
+  const row = await dbGet(
+    `
+    SELECT students.year_of_passing AS year
+    FROM students_mapping
+    JOIN students ON students.id = students_mapping.student_id
+    WHERE students_mapping.class_id = ?
+    GROUP BY students.year_of_passing
+    ORDER BY COUNT(*) DESC
+    LIMIT 1
+    `,
+    [classId],
+  );
+  return row?.year ?? null;
+}
+
+// Empty or missing text becomes NULL, which matters for the UNIQUE email/phone columns:
+// two empty strings would clash, two NULLs do not.
+function optionalText(value) {
+  if (value === undefined || value === null) return null;
+  const text = String(value).trim();
+  return text ? text : null;
+}
+
+// Which UNIQUE column was hit, so the admin sees a useful message.
+function conflictName(err) {
+  const message = String(err.message);
+  if (message.includes('students.username')) return 'username_taken';
+  if (message.includes('students.roll_number')) return 'roll_number_taken';
+  if (message.includes('students.college_email')) return 'email_taken';
+  if (message.includes('students.phone_number')) return 'phone_taken';
+  if (message.includes('students_mapping')) return 'class_already_assigned';
+  return 'student_conflict';
 }
 
 function imageExtension(mimetype) {
@@ -358,35 +465,34 @@ function decodeUploadedImage(image) {
   return { buffer, extension: imageExtension(match[1]) };
 }
 
-function saveDescriptor(studentId, descriptor) {
-  return dbRun(
-    `INSERT INTO face_descriptors (student_id, descriptor) VALUES (?, ?) ON CONFLICT(student_id) DO UPDATE SET descriptor = excluded.descriptor`,
-    [
-      studentId,
-      typeof descriptor === 'string' ? descriptor : JSON.stringify(descriptor),
-    ],
-  );
+// ---------------------------------------------------------------------------
+// face_embedding is a BLOB holding the descriptor as little-endian float32 numbers
+// (512 numbers = 2048 bytes). The app still sends and receives plain number arrays.
+// ---------------------------------------------------------------------------
+function encodeEmbedding(descriptor) {
+  let values = descriptor;
+  if (typeof values === 'string') {
+    try {
+      values = JSON.parse(values);
+    } catch {
+      return null;
+    }
+  }
+  if (!Array.isArray(values) || values.length === 0) return null;
+  const numbers = values.map(Number);
+  if (numbers.some(value => !Number.isFinite(value))) return null;
+  const buffer = Buffer.alloc(numbers.length * 4);
+  numbers.forEach((value, index) => buffer.writeFloatLE(value, index * 4));
+  return buffer;
 }
 
-function dbAll(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows)));
-  });
-}
-
-function dbGet(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.get(sql, params, (err, row) => (err ? reject(err) : resolve(row)));
-  });
-}
-
-function dbRun(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function (err) {
-      if (err) return reject(err);
-      resolve({ changes: this.changes, lastID: this.lastID });
-    });
-  });
+function decodeEmbedding(raw) {
+  const buffer = Buffer.from(raw.buffer, raw.byteOffset, raw.length);
+  const values = [];
+  for (let offset = 0; offset + 4 <= buffer.length; offset += 4) {
+    values.push(buffer.readFloatLE(offset));
+  }
+  return values;
 }
 
 export default router;

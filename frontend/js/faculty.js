@@ -51,6 +51,16 @@ function toMinutes(text) {
 // The server sends short codes. Teachers should never see them.
 const ERROR_TEXT = {
   no_timetable_entry: 'No class is scheduled for that slot on that date.',
+  invalid_date: 'That date is not valid. Pick the date again.',
+  faculty_not_found: 'Your faculty account could not be found. Sign in again.',
+  subject_does_not_take_attendance:
+    'This subject does not take attendance, so a session cannot be started.',
+  date_outside_timetable:
+    'This class is not in the timetable on that date.',
+  session_already_ended:
+    'Attendance for this class was already submitted today.',
+  session_method_mismatch:
+    'A session for this class is already open with a different method.',
   database_error: 'The server had a problem. Please try again.',
   session_insert_failed: 'The session could not be created. Please try again.',
   invalid_session: 'This session no longer exists. Start a new one.',

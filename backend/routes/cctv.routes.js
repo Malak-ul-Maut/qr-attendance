@@ -2,8 +2,14 @@ import express from 'express';
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import db from '../utils/db.js';
-import { getIO } from '../utils/socket-io.js';
+import { createHash } from 'crypto';
+import { dbGet, dbRun } from '../utils/db.js';
+import { galleryFolderName } from '../utils/gallery.js';
+import {
+  getSessionRows,
+  getSessionStudents,
+  isSessionEnded,
+} from '../utils/timetable.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -45,13 +51,18 @@ router.post('/run', async (req, res) => {
   const requestStartedAt = Date.now();
 
   try {
-    // A CCTV session must represent exactly one camera.
-    const context = await getSessionContext(sessionCode);
-    if (!context) {
+    // A CCTV session represents exactly one camera (one room). Its students are the ones
+    // the session was opened for: the linked classes, narrowed by batch.
+    const sessionRows = await getSessionRows(sessionCode);
+    if (sessionRows.length === 0) {
       return res.status(404).json({ ok: false, error: 'session_not_found' });
     }
+    if (isSessionEnded(sessionRows)) {
+      return res.status(400).json({ ok: false, error: 'session_ended' });
+    }
+    const context = await getSessionContext(sessionCode);
 
-    const allStudents = await getStudentsForRoom(context.room_id);
+    const allStudents = await getSessionStudents(sessionCode);
 
     if (allStudents.length === 0) {
       return res
@@ -62,13 +73,21 @@ router.post('/run', async (req, res) => {
     const roster = allStudents.map(student => ({
       student_id: student.id,
       name: student.name,
-      gallery_folder: `${student.id}_${student.username}_${student.roll_number}`,
+      gallery_folder: galleryFolderName(student),
     }));
 
     const annotatedPath = path.join(ANNOTATED_DIR, `${sessionCode}.jpg`);
 
-    // Stable per room: everyone sharing a room shares one cache, whatever period it is.
-    const cacheKey = `${context.block}_${context.room_number}`;
+    // Same room + same group of students = same cache. A room whose roster changes between
+    // periods (a lab batch, a combined lecture) gets a separate cache for each roster
+    // instead of rebuilding one cache over and over.
+    const rosterHash = createHash('sha1')
+      .update(allStudents.map(student => student.id).join(','))
+      .digest('hex')
+      .slice(0, 10);
+    const cacheKey = context.room_number
+      ? `${context.block}_${context.room_number}_${rosterHash}`
+      : `timetable${context.timetable_id}_${rosterHash}`;
 
     // The roster travels inside the request, so there are no temp files to write or clean up.
     const output = await callRecognitionService({
@@ -79,6 +98,13 @@ router.post('/run', async (req, res) => {
     });
 
     const present = output.present_students || [];
+
+    // Save who the camera recognised. Faculty can still add or remove people before
+    // submitting; finalize applies their final list on top of this.
+    await markPresentByCctv(
+      sessionCode,
+      present.map(record => Number(record.student_id)),
+    );
 
     console.log(
       `[cctv] ${sessionCode}: ${present.length}/${allStudents.length} present, ` +
@@ -117,50 +143,43 @@ router.post('/run', async (req, res) => {
   }
 });
 
+// First session row of the code, with its room (room can be empty for a one-off period).
 function getSessionContext(sessionCode) {
-  return new Promise((resolve, reject) => {
-    db.get(
-      `
-      SELECT
-        sessions.id AS session_id,
-        sessions.timetable_id,
-        timetable.room_id,
-        rooms.block,
-        rooms.room_number
-      FROM sessions
-      JOIN timetable ON timetable.id = sessions.timetable_id
-      JOIN rooms on rooms.id = timetable.room_id
-      WHERE sessions.session_code = ?
-      LIMIT 1
-      `,
-      [sessionCode],
-      (err, row) => (err ? reject(err) : resolve(row)),
-    );
-  });
+  return dbGet(
+    `
+    SELECT
+      sessions.id AS session_id,
+      sessions.timetable_id,
+      timetable.room_id,
+      rooms.block,
+      rooms.number AS room_number
+    FROM sessions
+    JOIN timetable ON timetable.id = sessions.timetable_id
+    LEFT JOIN rooms ON rooms.id = timetable.room_id
+    WHERE sessions.session_code = ?
+    ORDER BY sessions.id
+    LIMIT 1
+    `,
+    [sessionCode],
+  );
 }
 
-// Everyone whose class shares this room (classes.room_id) - covers a solo class and a combined
-// lecture the same way, since a solo class is just a room with one class in it.
-function getStudentsForRoom(roomId) {
-  return new Promise((resolve, reject) => {
-    db.all(
-      `
-      SELECT
-        students.id,
-        students.roll_number,
-        students.class_id,
-        users.username,
-        users.name
-      FROM students
-      JOIN classes ON classes.id = students.class_id
-      JOIN users ON users.id = students.user_id
-      WHERE classes.room_id = ?
-      ORDER BY students.class_id, students.id
-      `,
-      [roomId],
-      (err, rows) => (err ? reject(err) : resolve(rows)),
-    );
-  });
+// Marks recognised students present with method 'cctv'. Students who are already marked
+// are left alone, and ids that are not in this session match nothing.
+async function markPresentByCctv(sessionCode, studentIds) {
+  const ids = [...new Set(studentIds)].filter(id => Number.isSafeInteger(id));
+  if (ids.length === 0) return;
+  const marks = ids.map(() => '?').join(', ');
+  await dbRun(
+    `
+    UPDATE attendance
+    SET marked_at = datetime('now'), method = 'cctv'
+    WHERE marked_at IS NULL
+      AND student_id IN (${marks})
+      AND session_id IN (SELECT id FROM sessions WHERE session_code = ?)
+    `,
+    [...ids, sessionCode],
+  );
 }
 
 // ---------------------------------------------------------------------------

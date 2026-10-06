@@ -68,7 +68,7 @@ const FRONTEND_DIR = path.join(__dirname, '../frontend');
 // Cache models locally
 app.use(
   '/utils/models',
-  express.static(path.join(FRONTEND_DIR, 'utils/models'), {
+  express.static(path.join(FRONTEND_DIR, 'models'), {
     maxAge: '365d',
     immutable: true,
   }),

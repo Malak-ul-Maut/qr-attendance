@@ -32,7 +32,7 @@ export function requireAdmin(req, res, next) {
   }
 
   db.get(
-    `SELECT id FROM users WHERE username = ? AND role = 'admin'`,
+    `SELECT id FROM admins WHERE username = ?`,
     [claims.username],
     (error, admin) => {
       if (error) {

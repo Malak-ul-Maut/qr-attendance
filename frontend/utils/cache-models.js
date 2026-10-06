@@ -40,6 +40,65 @@ function contentTypeFromUrl(url) {
   return 'application/octet-stream';
 }
 
+async function fetchModelInChunks(url) {
+  const head = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+  if (!head.ok) throw new Error(`Model metadata fetch failed ${url}: ${head.status}`);
+
+  const size = Number(head.headers.get('content-length'));
+  if (!Number.isSafeInteger(size) || size <= 0)
+    throw new Error(`Model size is unavailable for chunked download: ${url}`);
+
+  const chunkSize = 1024 * 1024;
+  const chunks = [];
+  for (let start = 0; start < size; start += chunkSize) {
+    const end = Math.min(start + chunkSize, size) - 1;
+    const resp = await fetch(url, {
+      cache: 'no-store',
+      headers: { Range: `bytes=${start}-${end}` },
+    });
+    const contentRange = resp.headers.get('content-range');
+    if (
+      resp.status !== 206 ||
+      contentRange !== `bytes ${start}-${end}/${size}`
+    ) {
+      throw new Error(
+        `Invalid model chunk response for ${url}: expected bytes ${start}-${end}/${size}, received ${contentRange || resp.status}`,
+      );
+    }
+
+    const chunk = await resp.blob();
+    if (chunk.size !== end - start + 1)
+      throw new Error(`Incomplete model chunk received for ${url}`);
+    chunks.push(chunk);
+  }
+
+  return new Blob(chunks, { type: 'application/octet-stream' });
+}
+
+async function fetchModelBlob(url) {
+  let resp;
+  try {
+    resp = await fetch(url, { cache: 'no-store' });
+  } catch (error) {
+    console.warn('Model download failed; retrying in chunks', url, error);
+    return fetchModelInChunks(url);
+  }
+
+  if (!resp.ok) {
+    if (resp.status < 500)
+      throw new Error(`Model fetch failed ${url}: ${resp.status}`);
+    console.warn(`Model fetch returned ${resp.status}; retrying in chunks`, url);
+    return fetchModelInChunks(url);
+  }
+
+  try {
+    return await resp.blob();
+  } catch (error) {
+    console.warn('Model response was interrupted; retrying in chunks', url, error);
+    return fetchModelInChunks(url);
+  }
+}
+
 // ================== prefetch & store models from manifest ==================
 async function cacheModelsFromManifest(
   manifestUrl = '/utils/models/models-manifest.json',
@@ -69,10 +128,7 @@ async function cacheModelsFromManifest(
         continue;
       }
       console.log('cacheModelsFromManifest: downloading', url);
-      // fetch and store as blob
-      const resp = await fetch(url, { cache: 'no-store' });
-      if (!resp.ok) throw new Error('Model fetch failed ' + url);
-      const blob = await resp.blob();
+      const blob = await fetchModelBlob(url);
       await idbPut(url, blob);
       console.log('Cached model', url);
     }

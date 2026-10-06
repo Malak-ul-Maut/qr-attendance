@@ -1,23 +1,21 @@
 import express from 'express';
-import db from '../utils/db.js';
+import { dbGet, dbRun } from '../utils/db.js';
 import utils from '../utils/in-memory-db.js';
 import { getIO } from '../utils/socket-io.js';
+import { getSessionRows, isSessionEnded } from '../utils/timetable.js';
 
 const router = express.Router();
 
-// Verify student scan
+// Verify student scan.
+// A session creates an attendance row for every student when it starts, so "marking" a
+// student means filling in marked_at (+ method) on the row that already exists.
 router.post('/verify', async (req, res) => {
   const currentDate = new Date();
-  const timestamp = currentDate.toLocaleString();
 
-  let {
-    studentId,
-    token,
-    sessionId,
-    section,
-    cameraFingerprint,
-    isFaceScanned,
-  } = req.body;
+  // studentId is the student's username. `section` is still sent by the app, but
+  // eligibility now comes from the session's own attendance rows, so it is not needed.
+  const { studentId, token, sessionId, cameraFingerprint, isFaceScanned } =
+    req.body;
 
   if (!isFaceScanned) {
     const tokenData = utils.activeTokens[token];
@@ -29,11 +27,12 @@ router.post('/verify', async (req, res) => {
     try {
       const student = await getEligibleStudent(
         tokenData.sessionCode,
-        tokenData.section,
         studentId,
       );
       if (!student)
         return res.status(400).json({ ok: false, error: 'not_your_section' });
+      if (student.marked_at)
+        return res.status(400).json({ ok: false, error: 'already_marked' });
 
       return res.json({
         ok: true,
@@ -47,39 +46,39 @@ router.post('/verify', async (req, res) => {
   }
 
   try {
-    const student = await getEligibleStudent(sessionId, section, studentId);
+    const student = await getEligibleStudent(sessionId, studentId);
     if (!student)
       return res.status(400).json({ ok: false, error: 'not_your_section' });
-
-    const existing = await getDb(
-      `
-      SELECT student_id, camera_fingerprint
-      FROM attendance
-      WHERE session_id = ?
-        AND (
-          student_id = ?
-          OR (? IS NOT NULL AND camera_fingerprint = ?)
-        )
-      `,
-      [
-        student.session_id,
-        student.student_id,
-        cameraFingerprint || null,
-        cameraFingerprint || null,
-      ],
-    );
-    if (existing?.student_id === student.student_id)
+    if (student.marked_at)
       return res.status(400).json({ ok: false, error: 'already_marked' });
-    if (existing)
-      return res
-        .status(400)
-        .json({ ok: false, error: 'duplicate_device_entry' });
 
-    const changes = await insertAttendance(
-      student.session_id,
-      student.student_id,
-      timestamp,
-      cameraFingerprint,
+    // Same phone already used by someone else in this session?
+    if (cameraFingerprint) {
+      const sameDevice = await dbGet(
+        `
+        SELECT 1 AS found
+        FROM attendance
+        JOIN sessions ON sessions.id = attendance.session_id
+        WHERE sessions.session_code = ?
+          AND attendance.camera_fingerprint = ?
+          AND attendance.student_id <> ?
+          AND attendance.marked_at IS NOT NULL
+        LIMIT 1
+        `,
+        [sessionId, cameraFingerprint, student.student_id],
+      );
+      if (sameDevice)
+        return res
+          .status(400)
+          .json({ ok: false, error: 'duplicate_device_entry' });
+    }
+
+    // marked_at IS NULL in the WHERE makes a double scan a no-op instead of an overwrite.
+    const { changes } = await dbRun(
+      `UPDATE attendance
+       SET marked_at = datetime('now'), method = 'qr', camera_fingerprint = ?
+       WHERE id = ? AND marked_at IS NULL`,
+      [cameraFingerprint || null, student.attendance_id],
     );
     if (changes === 0)
       return res.status(400).json({ ok: false, error: 'already_marked' });
@@ -98,8 +97,8 @@ router.post('/verify', async (req, res) => {
   }
 });
 
-// Add faculty-selected students to the pending attendance checklist.
-// Resolve each student to the session row whose timetable class matches the student.
+// Mark faculty-selected students present by hand.
+// Only students who belong to the session (they have an attendance row) are accepted.
 router.post('/manual', async (req, res) => {
   const { sessionCode, students = [] } = req.body;
   const time = new Date().toLocaleTimeString();
@@ -107,42 +106,49 @@ router.post('/manual', async (req, res) => {
   if (!sessionCode) {
     return res.status(400).json({ ok: false, error: 'missing_session_code' });
   }
+  if (!Array.isArray(students)) {
+    return res.status(400).json({ ok: false, error: 'invalid_students' });
+  }
 
   try {
-    const sessionRows = await allDb(
-      `
-      SELECT sessions.id AS session_id, classes.id AS class_id
-      FROM sessions
-      JOIN timetable ON timetable.id = sessions.timetable_id
-      JOIN classes ON classes.room_id = timetable.room_id
-      WHERE sessions.session_code = ?
-      `,
-      [sessionCode],
-    );
-
+    const sessionRows = await getSessionRows(sessionCode);
     if (sessionRows.length === 0) {
       return res.status(404).json({ ok: false, error: 'session_not_found' });
+    }
+    if (isSessionEnded(sessionRows)) {
+      return res.status(400).json({ ok: false, error: 'session_ended' });
     }
 
     const io = getIO();
     let added = 0;
 
     for (const student of students) {
-      const dbStudent = await getDb(
-        `SELECT id, class_id FROM students WHERE id = ?`,
-        [student.id],
+      const row = await dbGet(
+        `
+        SELECT attendance.id, attendance.marked_at, students.id AS student_id,
+          students.name
+        FROM attendance
+        JOIN sessions ON sessions.id = attendance.session_id
+        JOIN students ON students.id = attendance.student_id
+        WHERE sessions.session_code = ? AND attendance.student_id = ?
+        LIMIT 1
+        `,
+        [sessionCode, Number(student?.id)],
       );
-      if (!dbStudent) continue;
+      if (!row) continue; // not part of this session
 
-      const session = sessionRows.find(
-        row => row.class_id === dbStudent.class_id,
-      );
-      if (!session) continue;
+      if (!row.marked_at) {
+        await dbRun(
+          `UPDATE attendance SET marked_at = datetime('now'), method = 'manual'
+           WHERE id = ? AND marked_at IS NULL`,
+          [row.id],
+        );
+      }
 
       added++;
       io.to(sessionCode).emit('attendance_update', {
-        studentId: dbStudent.id,
-        studentName: student.name,
+        studentId: row.student_id,
+        studentName: student.name || row.name,
         sessionCode,
         time,
         method: 'manual',
@@ -156,61 +162,36 @@ router.post('/manual', async (req, res) => {
   }
 });
 
-function allDb(sql, params) {
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows)));
-  });
-}
-
-function getEligibleStudent(sessionCode, section, username) {
-  return getDb(
+// The student's row in an open session, found by session code + username.
+function getEligibleStudent(sessionCode, username) {
+  return dbGet(
     `
     SELECT
-      sessions.id AS session_id,
+      attendance.id AS attendance_id,
+      attendance.marked_at,
       students.id AS student_id,
-      users.name AS student_name,
-      sections.label AS section
+      students.name AS student_name,
+      (
+        SELECT classes.section
+        FROM students_mapping
+        JOIN classes ON classes.id = students_mapping.class_id
+        JOIN timetable_classes
+          ON timetable_classes.class_id = classes.id
+          AND timetable_classes.timetable_id = sessions.timetable_id
+        WHERE students_mapping.student_id = students.id
+        LIMIT 1
+      ) AS section
     FROM sessions
-    JOIN timetable ON timetable.id = sessions.timetable_id
-    JOIN classes ON classes.room_id = timetable.room_id
-    JOIN sections ON sections.id = classes.section_id
-    JOIN students ON students.class_id = classes.id
-    JOIN users ON users.id = students.user_id
+    JOIN attendance ON attendance.session_id = sessions.id
+    JOIN students ON students.id = attendance.student_id
     WHERE sessions.session_code = ?
-      AND sections.label = ?
-      AND users.username = ?
-      AND users.role = 'student'
+      AND students.username = ?
+      AND students.active = 1
       AND sessions.end_time IS NULL
     LIMIT 1
     `,
-    [sessionCode, section, username],
+    [sessionCode, String(username ?? '')],
   );
-}
-
-function getDb(sql, params) {
-  return new Promise((resolve, reject) => {
-    db.get(sql, params, (err, row) => (err ? reject(err) : resolve(row)));
-  });
-}
-
-function insertAttendance(
-  sessionId,
-  studentId,
-  timestamp,
-  cameraFingerprint = null,
-) {
-  return new Promise((resolve, reject) => {
-    db.run(
-      `INSERT OR IGNORE INTO attendance
-        (session_id, student_id, status, timestamp, camera_fingerprint)
-       VALUES (?, ?, 'present', ?, ?)`,
-      [sessionId, studentId, timestamp, cameraFingerprint || null],
-      function (err) {
-        if (err) return reject(err);
-        resolve(this.changes);
-      },
-    );
-  });
 }
 
 export default router;
