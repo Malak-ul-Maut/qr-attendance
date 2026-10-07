@@ -98,22 +98,72 @@ router.post('/entry', wrap(async (req, res) => {
   res.status(201).json({ ok: true, draft: await status() });
 }));
 
-// Edit a group of rows (one entry that may span several periods).
+// Edit a group of rows (one entry that may span several periods). With `moveTo` ({ day, slotIds })
+// the whole entry also moves to another day / period (same number of periods, in order).
 router.put('/entry', wrap(async (req, res) => {
   const ids = (req.body.ids || []).map(String);
   if (!ids.length) throw new HttpError(400, 'invalid_value', 'Nothing to edit.');
   const entry = parseEntry(req.body, { needDay: false });
+  const moveTo = req.body.moveTo || null;
+  if (moveTo) {
+    if (!DAYS.includes(moveTo.day)) throw new HttpError(400, 'invalid_value', 'Choose a weekday to move to.');
+    const slotIds = (moveTo.slotIds || []).map(Number);
+    if (slotIds.length !== ids.length || slotIds.some(n => !Number.isInteger(n))) throw new HttpError(400, 'invalid_value', 'Choose the period to move to.');
+    moveTo.slotIds = slotIds;
+  }
   const L = await lookups();
   await mutate(rows => {
-    for (const id of ids) {
+    const group = ids.map(id => {
       const row = rows.find(r => r.id === id);
       if (!row) throw new HttpError(404, 'not_found', 'This entry no longer exists. Reload the timetable.');
+      return row;
+    });
+    if (moveTo) {
+      // the rows are matched to the new periods in their current period order
+      const order = [...group].sort((a, b) => [...L.slot.keys()].indexOf(a.slotId) - [...L.slot.keys()].indexOf(b.slotId));
+      const found = conflictsFor(rows, L, { day: moveTo.day, slotIds: moveTo.slotIds, ...entry, excludeIds: ids });
+      if (found.length) throw conflictError(found);
+      return rows.map(r => {
+        const at = order.findIndex(x => x.id === r.id);
+        return at < 0 ? r : { ...r, day: moveTo.day, slotId: moveTo.slotIds[at], subjectId: entry.subjectId, facultyId: entry.facultyId, roomId: entry.roomId, links: entry.links };
+      });
+    }
+    for (const row of group) {
       const found = conflictsFor(rows, L, { day: row.day, slotIds: [row.slotId], ...entry, excludeIds: ids });
       if (found.length) throw conflictError(found);
     }
     return rows.map(r => (ids.includes(r.id) ? { ...r, subjectId: entry.subjectId, facultyId: entry.facultyId, roomId: entry.roomId, links: entry.links } : r));
   });
   res.json({ ok: true, draft: await status() });
+}));
+
+// Copy one day of a classroom's timetable onto other days (draft only). With `replace`, what the
+// classroom already has on those days is removed first; otherwise any clash stops the whole copy.
+router.post('/copy-day', wrap(async (req, res) => {
+  const { roomId, fromDay, toDays, replace } = req.body || {};
+  if (!DAYS.includes(fromDay)) throw new HttpError(400, 'invalid_value', 'Choose the day to copy from.');
+  const targets = [...new Set(Array.isArray(toDays) ? toDays : [])].filter(d => DAYS.includes(d) && d !== fromDay);
+  if (!targets.length) throw new HttpError(400, 'invalid_value', 'Choose at least one other day to copy to.');
+  if (!Number(roomId)) throw new HttpError(400, 'invalid_value', 'Choose a classroom.');
+  const L = await lookups();
+  let copied = 0;
+  await mutate((rows, newId) => {
+    const scope = r => inScope(r, { roomId }, L);
+    const source = rows.filter(r => r.day === fromDay && scope(r));
+    if (!source.length) throw new HttpError(409, 'nothing_to_do', `${fromDay} has nothing to copy.`);
+    let next = replace ? rows.filter(r => !(targets.includes(r.day) && scope(r))) : rows;
+    const added = [];
+    for (const day of targets) {
+      for (const r of source) {
+        const found = conflictsFor([...next, ...added], L, { day, slotIds: [r.slotId], facultyId: r.facultyId, roomId: r.roomId, links: r.links });
+        if (found.length) throw conflictError(found.map(c => ({ ...c, message: `${day}: ${c.message}` })));
+        added.push({ ...r, id: newId(), origin: null, day, links: r.links.map(l => ({ ...l })) });
+      }
+    }
+    copied = added.length;
+    return [...next, ...added];
+  });
+  res.json({ ok: true, copied, draft: await status() });
 }));
 
 router.delete('/entry', wrap(async (req, res) => {

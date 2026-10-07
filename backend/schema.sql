@@ -78,7 +78,7 @@ CREATE TABLE classes (
   branch_id INTEGER NOT NULL REFERENCES branches(id),
   semester INTEGER NOT NULL,
   room_id INTEGER REFERENCES rooms(id),          -- the class's home room (e.g. F-307)
-  section TEXT CHECK(section IN ('A','B','C','D','E')) NOT NULL,
+  section TEXT NOT NULL,                         -- any short label: A, B, 3 ...
   academic_session TEXT NOT NULL,                -- e.g. '2026-2027 ODD'
   counsellor TEXT,                               -- class counsellor, printed on the timetable sheet
   UNIQUE (branch_id, semester, section, academic_session)

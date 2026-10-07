@@ -21,6 +21,17 @@ export function h(tag, attrs = {}, ...children) {
   return node;
 }
 
+// Screen-reader announcements for things that appear without a page change (loading, empty, results).
+// One permanent live region is reused, because regions that are inserted together with their text are often not read.
+let announceTimer = null;
+export function announce(text) {
+  const region = document.getElementById('liveRegion');
+  if (!region) return;
+  clearTimeout(announceTimer);
+  region.textContent = '';
+  announceTimer = setTimeout(() => { region.textContent = text; }, 60);
+}
+
 // Calls the admin API with the admin token. On failure throws an Error whose .code is the
 // server's `error` value and whose .message is a sentence that can be shown to the person.
 export async function api(url, options = {}) {
@@ -134,15 +145,20 @@ export function createDataTable({
   pageSize = 10,
   onRetry,
   emptyHint = '',
+  selectable = false, // adds a checkbox column; rows need an `id`
+  onSelect,
+  defaultSort = null, // { key, dir: 1 | -1 }
 }) {
   const state = {
+    selected: new Set(),
+    pending: null, // the row button last used, so focus can come back after the table redraws
     rows: [],
     loading: true,
     error: false,
     query: '',
     filter: null,
-    sortKey: null,
-    sortDir: 1,
+    sortKey: defaultSort?.key ?? null,
+    sortDir: defaultSort?.dir ?? 1,
     page: 0,
     focusSort: null,
     focusSortSelect: false,
@@ -181,6 +197,7 @@ export function createDataTable({
   function render() {
     // Loading: grey placeholder rows (only on first load; later refreshes keep the old rows visible)
     if (state.loading && !state.rows.length) {
+      announce(`Loading ${noun}s…`);
       mount.replaceChildren(
         h(
           'div',
@@ -212,6 +229,7 @@ export function createDataTable({
       return;
     }
     if (!state.rows.length) {
+      announce(`No ${noun}s yet. ${emptyHint}`);
       mount.replaceChildren(
         h(
           'div',
@@ -232,6 +250,7 @@ export function createDataTable({
     );
 
     if (!rows.length) {
+      announce(`No ${noun}s match the current search or filters.`);
       mount.replaceChildren(
         h(
           'div',
@@ -243,9 +262,16 @@ export function createDataTable({
       return;
     }
 
+    const allBox = selectable
+      ? h('input', { type: 'checkbox', 'aria-label': `Select all ${rows.length} matching ${noun}s`, onchange: event => {
+          for (const row of rows) event.target.checked ? state.selected.add(row.id) : state.selected.delete(row.id);
+          syncChecks();
+        } })
+      : null;
     const head = h(
       'tr',
       {},
+      ...(selectable ? [h('th', { scope: 'col', class: 'adm-th-select' }, allBox)] : []),
       ...columns.map(col => {
         const th = h('th', { scope: 'col', role: 'columnheader' });
         if (col.sortable) {
@@ -267,6 +293,7 @@ export function createDataTable({
             }),
           );
         } else th.textContent = col.label;
+        if (col.help) th.append(h('span', { class: 'adm-th-help', text: col.help }));
         return th;
       }),
     );
@@ -276,7 +303,12 @@ export function createDataTable({
       ...pageRows.map(row =>
         h(
           'tr',
-          { role: 'row' },
+          { role: 'row', 'data-row-id': row.id ?? false },
+          ...(selectable ? [h('td', { class: 'adm-td-select', 'data-label': 'Select' }, h('input', {
+            type: 'checkbox', 'data-select-id': row.id, checked: state.selected.has(row.id) || false,
+            'aria-label': `Select ${row.name || row.label || row.abbr || `#${row.id}`}`,
+            onchange: event => { event.target.checked ? state.selected.add(row.id) : state.selected.delete(row.id); syncChecks(); },
+          }))] : []),
           ...columns.map(col => {
             const td = h('td', {
               'data-label': col.label,
@@ -372,11 +404,49 @@ export function createDataTable({
     );
     if (state.focusSortSelect) mount.querySelector('.adm-sortbar select')?.focus();
     state.focusSortSelect = false;
+    syncChecks(false);
     // After re-sorting, put keyboard focus back on the heading button that was used
     if (state.focusSort)
       mount.querySelector(`[data-sort="${state.focusSort}"]`)?.focus();
     state.focusSort = null;
+    restoreFocus();
   }
+
+  // Keeps the header checkbox (all / some / none) and the row boxes in step with the selection
+  function syncChecks(notify = true) {
+    if (!selectable) return;
+    const ids = visibleRows().map(r => r.id);
+    const count = ids.filter(id => state.selected.has(id)).length;
+    mount.querySelectorAll('[data-select-id]').forEach(box => { box.checked = state.selected.has(Number(box.dataset.selectId)) || state.selected.has(box.dataset.selectId); });
+    const all = mount.querySelector('.adm-th-select input');
+    if (all) { all.checked = ids.length > 0 && count === ids.length; all.indeterminate = count > 0 && count < ids.length; }
+    if (notify) onSelect?.([...state.selected]);
+  }
+
+  // After a dialog closes (or a row button redraws the table) the button that was used is gone.
+  // Put focus on the same row's button, or on the row that took its place, so keyboard users keep their spot.
+  function restoreFocus() {
+    const p = state.pending;
+    if (!p) return;
+    if (Date.now() - p.at > 60000) { state.pending = null; return; }
+    if (document.querySelector('dialog[open]')) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && document.contains(active)) { state.pending = null; return; }
+    const trs = [...mount.querySelectorAll('tbody tr')];
+    const tr = trs.find(t => p.id != null && t.dataset.rowId === String(p.id)) || trs[Math.min(p.index, trs.length - 1)];
+    const target = tr?.querySelectorAll('td:not(.adm-td-select) button')[tr.dataset.rowId === String(p.id) ? p.button : 0]
+      || tr?.querySelector('button') || mount.querySelector('.adm-table-wrap');
+    target?.focus();
+    state.pending = null;
+  }
+  mount.addEventListener('click', event => {
+    const button = event.target.closest('tbody button');
+    const tr = button?.closest('tr');
+    if (!tr) return;
+    const trs = [...tr.parentElement.children];
+    state.pending = { id: tr.dataset.rowId ?? null, index: trs.indexOf(tr), button: [...tr.querySelectorAll('td:not(.adm-td-select) button')].indexOf(button), at: Date.now() };
+  }, true);
+  tables.add({ restoreFocus });
 
   function sortBy(key) {
     state.sortDir = state.sortKey === key ? -state.sortDir : 1;
@@ -393,6 +463,10 @@ export function createDataTable({
     render,
     setRows(rows) {
       state.rows = rows;
+      const ids = new Set(rows.map(r => r.id));
+      let pruned = false;
+      for (const id of [...state.selected]) if (!ids.has(id)) { state.selected.delete(id); pruned = true; }
+      if (pruned) onSelect?.([...state.selected]);
       state.loading = false;
       state.error = false;
       render();
@@ -420,8 +494,21 @@ export function createDataTable({
     get rows() {
       return visibleRows();
     },
+    get selected() {
+      return [...state.selected];
+    },
+    clearSelection() {
+      state.selected.clear();
+      syncChecks();
+    },
+    restoreFocus,
   };
 }
+// Every table registers here so a closing dialog can ask them to repair lost focus
+const tables = new Set();
+document.addEventListener('close', event => {
+  if (event.target.tagName === 'DIALOG') requestAnimationFrame(() => tables.forEach(t => t.restoreFocus()));
+}, true);
 
 // ==================== Confirm dialog (shared) ====================
 const deleteDialog = $('#deleteDialog');
@@ -431,7 +518,15 @@ let deleteFailText = 'Could not complete that. Try again.';
 // run: async function that does the work; the dialog stays open (with a spinner) until it finishes.
 // confirmLabel / cancelLabel name the buttons after what they do ("Deactivate", "Reset", "Split batches").
 // danger: red button for things that destroy or hide data; false for ordinary confirmations.
-export function askConfirm({ title, text, run, confirmLabel = 'Delete', cancelLabel = 'Keep', danger = true, failText = 'Could not complete that. Try again.' }) {
+export function askConfirm({ title, text, run, confirmLabel = 'Delete', cancelLabel = 'Keep', danger = true, failText = 'Could not complete that. Try again.', reasons = null }) {
+  // reasons: ['Wrong person', ..., 'Other'] asks for a reason first; run(reasonText) receives it
+  const reasonField = $('#deleteReasonField');
+  reasonField.hidden = !reasons;
+  if (reasons) {
+    fillSelect($('#deleteReason'), reasons.map(r => ({ value: r, label: r })), 'Choose a reason…');
+    $('#deleteReasonNote').value = '';
+    $('#deleteReasonNote').hidden = true;
+  }
   $('#deleteTitle').textContent = title;
   $('#deleteText').textContent = text;
   const confirm = $('#deleteConfirmBtn');
@@ -446,15 +541,29 @@ export function askConfirm({ title, text, run, confirmLabel = 'Delete', cancelLa
 // Kept for the existing callers
 export const askDelete = options => askConfirm({ failText: 'Could not delete. Try again.', ...options });
 $('#deleteCancelBtn').addEventListener('click', () => deleteDialog.close());
+$('#deleteReason').addEventListener('change', event => {
+  $('#deleteReasonNote').hidden = event.target.value !== 'Other';
+  if (!$('#deleteReasonNote').hidden) $('#deleteReasonNote').focus();
+});
+const chosenReason = () => {
+  if ($('#deleteReasonField').hidden) return { ok: true, text: '' };
+  const picked = $('#deleteReason').value;
+  const note = $('#deleteReasonNote').value.trim();
+  if (!picked) return { ok: false, message: 'Choose a reason.', focus: $('#deleteReason') };
+  if (picked === 'Other' && !note) return { ok: false, message: 'Write the reason in the box.', focus: $('#deleteReasonNote') };
+  return { ok: true, text: picked === 'Other' ? note : picked + (note ? `: ${note}` : '') };
+};
 deleteDialog.addEventListener('cancel', event => {
   if ($('#deleteConfirmBtn').getAttribute('aria-busy')) event.preventDefault(); // don't close mid-action
 });
 $('#deleteConfirmBtn').addEventListener('click', async event => {
   const button = event.currentTarget;
+  const reason = chosenReason();
+  if (!reason.ok) { setBox('deleteError', reason.message); reason.focus.focus(); return; }
   setBusy(button, true);
   setBox('deleteError', '');
   try {
-    await deleteAction();
+    await deleteAction(reason.text);
     deleteDialog.close();
   } catch (error) {
     setBox(
@@ -577,4 +686,97 @@ export async function copyText(text) {
   } catch {
     return false;
   }
+}
+
+// A real combobox (ARIA 1.2 list pattern) in place of a native <datalist>. It sits on top of a hidden <select>,
+// which keeps holding the value, so existing code that reads select.value keeps working.
+// The list opens on focus, narrows as you type (all words must match), and works with arrow keys, Enter and Esc.
+export function createCombobox(select, { placeholder = '', allowNone = false, noneLabel = 'None' } = {}) {
+  const id = select.id;
+  const input = h('input', { class: 'input adm-combo-input', type: 'text', id: `${id}Text`, role: 'combobox', autocomplete: 'off', spellcheck: 'false',
+    'aria-autocomplete': 'list', 'aria-expanded': 'false', 'aria-controls': `${id}-listbox`, placeholder });
+  const list = h('ul', { class: 'adm-combo-list', id: `${id}-listbox`, role: 'listbox', hidden: true });
+  const arrow = h('button', { class: 'adm-combo-btn', type: 'button', tabindex: '-1', 'aria-hidden': 'true', text: '▾',
+    onmousedown: event => { event.preventDefault(); if (list.hidden) { input.focus(); open(false); } else close(); } });
+  const wrap = h('div', { class: 'adm-combo' }, input, arrow, list);
+  select.hidden = true;
+  select.after(wrap);
+  document.querySelector(`label[for="${id}"]`)?.setAttribute('for', input.id);
+  let shown = [];
+  let active = -1;
+  let typed = false; // false: show every option (just opened); true: filter by the text
+
+  const options = () => [...select.options].filter(o => o.value).map(o => ({ value: o.value, label: o.textContent }));
+  const labelOfValue = () => (select.value ? select.selectedOptions[0]?.textContent || '' : '');
+
+  function filtered() {
+    const words = input.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    let items = options();
+    if (typed && words.length) {
+      items = items.filter(o => words.every(w => o.label.toLowerCase().includes(w)));
+      const q = input.value.trim().toLowerCase();
+      items.sort((a, b) => Number(b.label.toLowerCase().startsWith(q)) - Number(a.label.toLowerCase().startsWith(q)));
+    }
+    return allowNone && !(typed && words.length) ? [{ value: '', label: noneLabel }, ...items] : items;
+  }
+  function draw() {
+    shown = filtered();
+    list.replaceChildren(...(shown.length
+      ? shown.map((o, i) => h('li', { class: 'adm-combo-opt', role: 'option', id: `${id}-opt-${i}`, 'aria-selected': String(o.value === select.value && (o.value || !select.value)), text: o.label,
+        onmousedown: event => { event.preventDefault(); choose(i); } }))
+      : [h('li', { class: 'adm-combo-empty', role: 'presentation', text: 'No match. Keep typing or clear the box.' })]));
+    setActive(shown.length ? Math.max(0, typed ? 0 : shown.findIndex(o => o.value === select.value)) : -1);
+  }
+  function setActive(i) {
+    active = i;
+    list.querySelectorAll('.adm-combo-opt').forEach((li, k) => li.classList.toggle('active', k === i));
+    if (i >= 0) { input.setAttribute('aria-activedescendant', `${id}-opt-${i}`); list.children[i]?.scrollIntoView({ block: 'nearest' }); }
+    else input.removeAttribute('aria-activedescendant');
+  }
+  function open(fromTyping) {
+    typed = fromTyping;
+    draw();
+    list.hidden = false;
+    input.setAttribute('aria-expanded', 'true');
+    if (fromTyping) announce(shown.length ? `${shown.length} match${shown.length === 1 ? '' : 'es'}` : 'No matches');
+  }
+  function close() {
+    list.hidden = true;
+    input.setAttribute('aria-expanded', 'false');
+    input.removeAttribute('aria-activedescendant');
+  }
+  function choose(i) {
+    const o = shown[i];
+    if (!o) return;
+    select.value = o.value;
+    input.value = o.value ? o.label : '';
+    close();
+    select.dispatchEvent(new Event('input', { bubbles: true }));
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  input.addEventListener('focus', () => input.select()); // the list opens on click, typing, the arrow button or the Down key
+  input.addEventListener('click', () => { if (list.hidden) open(false); });
+  input.addEventListener('input', () => {
+    open(true);
+    if (!input.value.trim() && allowNone) { select.value = ''; select.dispatchEvent(new Event('input', { bubbles: true })); }
+  });
+  input.addEventListener('keydown', event => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (list.hidden) return open(false);
+      if (shown.length) setActive((active + (event.key === 'ArrowDown' ? 1 : -1) + shown.length) % shown.length);
+    } else if (event.key === 'Enter' && !list.hidden) {
+      event.preventDefault(); // choosing must not submit the dialog
+      if (active >= 0) choose(active);
+    } else if (event.key === 'Escape' && !list.hidden) {
+      event.preventDefault();
+      event.stopPropagation(); // closes the list, not the dialog
+      input.value = labelOfValue();
+      close();
+    } else if (event.key === 'Tab' && !list.hidden && typed && active >= 0 && shown.length === 1) choose(active);
+  });
+  input.addEventListener('blur', () => { close(); input.value = labelOfValue(); }); // typed text that was never picked is dropped
+  select.comboInput = input;
+  select.syncCombo = () => { input.value = labelOfValue(); close(); };
+  return input;
 }

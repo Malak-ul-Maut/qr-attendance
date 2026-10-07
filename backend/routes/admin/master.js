@@ -4,7 +4,14 @@ import { todayLocal } from '../../utils/dates.js';
 import { HttpError, wrap, clean, makeUniqueAbbr, generatePassword, checkPassword, checkEmail, checkPhone, checkUsername, YEAR_MIN, yearMax } from './common.js';
 
 const router = express.Router();
-const SECTIONS = ['A', 'B', 'C', 'D', 'E'];
+const SESSION_RE = /^(\d{4})-(\d{4}) (ODD|EVEN)$/;
+// Sections are free text (A, B, 3 ...): stored upper-case, up to 8 letters, numbers, spaces, dashes.
+function checkSection(value) {
+  const section = String(value ?? '').trim().toUpperCase();
+  if (!section) throw new HttpError(400, 'required_value_missing', 'Section is required.');
+  if (!/^[A-Z0-9][A-Z0-9 _-]{0,7}$/.test(section)) throw new HttpError(400, 'invalid_value', 'Section can be up to 8 letters or numbers, like A or 3.');
+  return section;
+}
 const ROOM_TYPES = ['classroom', 'seminar_hall', 'lab'];
 
 const text = (name, label, extra = {}) => ({ name, label, type: 'text', required: true, ...extra });
@@ -82,7 +89,7 @@ const ENTITIES = {
     fields: [
       { name: 'branch_id', label: 'Branch', type: 'select', ref: 'branches', required: true },
       text('semester', 'Semester', { type: 'number', min: 1, max: 8 }),
-      { name: 'section', label: 'Section', type: 'select', options: SECTIONS, required: true },
+      text('section', 'Section', { hint: 'Any short label, e.g. A, B or 3.' }),
       text('academic_session', 'Academic session', { hint: 'e.g. 2026-2027 ODD' }),
       { name: 'room_id', label: 'Home room', type: 'select', ref: 'rooms', required: false },
       opt('counsellor', 'Class counsellor', { hint: 'Printed on the timetable sheet.' }),
@@ -210,6 +217,7 @@ function buildValues(entity, body, isInsert, out = {}) {
     if (f.type === 'email') checkEmail(v);
     if (f.type === 'tel') checkPhone(v);
     if (f.name === 'username') checkUsername(v);
+    if (f.name === 'section') { values.section = checkSection(v); continue; }
     if (f.type === 'number' || f.ref) {
       const n = Number(v);
       if (!Number.isInteger(n)) throw new HttpError(400, 'invalid_value', `${f.label} must be a whole number.`);
@@ -283,7 +291,11 @@ router.delete('/entity/:name/:id', wrap(async (req, res) => {
 router.post('/term-setup', wrap(async (req, res) => {
   const session = clean(req.body?.session);
   const items = Array.isArray(req.body?.items) ? req.body.items : [];
-  if (!session) throw new HttpError(400, 'invalid_session', 'Enter the academic session, e.g. 2026-2027 ODD.');
+  if (!session) throw new HttpError(400, 'invalid_session', 'Choose the academic session, e.g. 2026-2027 ODD.');
+  const known = await dbGet(`SELECT 1 AS x FROM classes WHERE academic_session = ?`, [session]);
+  const m = SESSION_RE.exec(session);
+  if (!known && (!m || Number(m[2]) !== Number(m[1]) + 1))
+    throw new HttpError(400, 'invalid_session', 'Use the format 2026-2027 ODD (two consecutive years, then ODD or EVEN).');
   if (!items.length) throw new HttpError(400, 'nothing_to_create', 'Add at least one branch and semester.');
   let created = 0;
   let existing = 0;
@@ -297,10 +309,10 @@ router.post('/term-setup', wrap(async (req, res) => {
         throw new HttpError(400, 'invalid_value', 'Semester must be 1 to 8.');
       const roomId = Number(item.roomId) || null;
       for (const section of item.sections || []) {
-        if (!SECTIONS.includes(section)) throw new HttpError(400, 'invalid_value', 'Unknown section.');
+        const label = checkSection(section);
         const result = await dbRun(
           `INSERT OR IGNORE INTO classes (branch_id, semester, room_id, section, academic_session) VALUES (?, ?, ?, ?, ?)`,
-          [branchId, semester, roomId, section, session],
+          [branchId, semester, roomId, label, session],
         );
         if (result.changes) created++;
         else existing++;
@@ -314,25 +326,57 @@ router.post('/term-setup', wrap(async (req, res) => {
 // in its timetable. Only fills students who have no batch yet unless ?overwrite=1.
 router.post('/assign-batches', wrap(async (req, res) => {
   const session = clean(req.body.session);
-  const overwrite = Boolean(req.body.overwrite);
-  const classes = await dbAll(
-    `SELECT c.id FROM classes c WHERE c.academic_session = ?
-       AND EXISTS (SELECT 1 FROM timetable_classes x WHERE x.class_id = c.id AND x.batch IS NOT NULL)`, [session]);
+  const classId = Number(req.body.classId) || null;
+  const g2Start = Number(req.body.g2StartStudentId) || null; // this student and everyone after them (by roll number) get G2
+  const overwrite = Boolean(req.body.overwrite) || Boolean(g2Start);
+  const classes = classId
+    ? await dbAll(`SELECT c.id FROM classes c WHERE c.id = ? AND c.academic_session = ?`, [classId, session])
+    : await dbAll(
+      `SELECT c.id FROM classes c WHERE c.academic_session = ?
+         AND EXISTS (SELECT 1 FROM timetable_classes x WHERE x.class_id = c.id AND x.batch IS NOT NULL)`, [session]);
+  if (classId && !classes.length) throw new HttpError(404, 'not_found', 'That class is not in this session.');
   let updated = 0;
   await withTransaction(async () => {
     for (const { id } of classes) {
       const students = await dbAll(
-        `SELECT sm.id, sm.batch FROM students_mapping sm JOIN students s ON s.id = sm.student_id AND s.active = 1
+        `SELECT sm.id, sm.batch, sm.student_id FROM students_mapping sm JOIN students s ON s.id = sm.student_id AND s.active = 1
           WHERE sm.class_id = ? ORDER BY s.roll_number, s.name`, [id]);
-      const half = Math.ceil(students.length / 2);
+      let split = Math.ceil(students.length / 2);
+      if (g2Start) {
+        split = students.findIndex(st => st.student_id === g2Start);
+        if (split < 0) throw new HttpError(400, 'invalid_value', 'That student is not in this class.');
+      }
       for (const [i, st] of students.entries()) {
         if (st.batch && !overwrite) continue;
-        await dbRun(`UPDATE students_mapping SET batch = ? WHERE id = ?`, [i < half ? 'G1' : 'G2', st.id]);
+        await dbRun(`UPDATE students_mapping SET batch = ? WHERE id = ?`, [i < split ? 'G1' : 'G2', st.id]);
         updated++;
       }
     }
   });
   res.json({ ok: true, updated, classes: classes.length });
+}));
+
+// Bulk actions on students: deactivate, reactivate, or move to a class (optionally with a batch).
+router.post('/students-bulk', wrap(async (req, res) => {
+  const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map(Number).filter(Number.isInteger))];
+  const action = req.body?.action;
+  if (!ids.length) throw new HttpError(400, 'invalid_value', 'Select at least one student.');
+  if (ids.length > 1000) throw new HttpError(400, 'invalid_value', 'Select at most 1000 students at a time.');
+  if (!['deactivate', 'reactivate', 'set_class'].includes(action)) throw new HttpError(400, 'invalid_value', 'Unknown action.');
+  const classId = Number(req.body.classId) || null;
+  const batch = clean(req.body.batch);
+  if (action === 'set_class' && !(await dbGet(`SELECT 1 AS x FROM classes WHERE id = ?`, [classId])))
+    throw new HttpError(400, 'invalid_reference', 'Choose a class.');
+  await withTransaction(async () => {
+    for (const id of ids) {
+      if (action === 'set_class') {
+        const existing = await dbGet(`SELECT id FROM students_mapping WHERE student_id = ? AND class_id = ?`, [id, classId]);
+        if (existing) await dbRun(`UPDATE students_mapping SET batch = ? WHERE id = ?`, [batch, existing.id]);
+        else await dbRun(`INSERT INTO students_mapping (student_id, class_id, batch) VALUES (?, ?, ?)`, [id, classId, batch]);
+      } else await dbRun(`UPDATE students SET active = ? WHERE id = ?`, [action === 'reactivate' ? 1 : 0, id]);
+    }
+  });
+  res.json({ ok: true, updated: ids.length });
 }));
 
 router.get('/term-status', wrap(async (req, res) => {

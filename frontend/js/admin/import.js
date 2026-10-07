@@ -31,13 +31,33 @@ let kind = null;
 let rows = [];
 let onDone = null;
 
-function renderPreview(result) {
+const PAGE = 200;
+let lastResult = null;
+let shownCount = PAGE;
+
+// The rows that failed, exactly as they were in the file plus an "error" column, so they can be fixed and re-imported
+function downloadErrorRows(result) {
+  const bad = result.results.filter(r => r.status === 'error');
+  const header = Object.keys(rows[0] || {});
+  downloadCsv(`${kind}-error-rows-${new Date().toISOString().slice(0, 10)}.csv`, [...header, 'error'],
+    bad.map(r => [...header.map(key => rows[r.line - 2]?.[key] ?? ''), r.message]));
+  showToast(`${bad.length} error row${bad.length === 1 ? '' : 's'} downloaded.`, 'success');
+}
+const errorButton = result => (result.errors
+  ? h('button', { class: 'btn btn-secondary btn-sm', type: 'button', text: `Download error rows (${result.errors})`, onclick: () => downloadErrorRows(result) })
+  : null);
+
+function renderPreview(result, { keepFocus = false } = {}) {
+  if (result !== lastResult) shownCount = PAGE;
+  lastResult = result;
   const summary = h('p', { class: 'adm-import-summary' },
     h('span', { class: 'badge badge-success', text: `${result.created} new` }), ' ',
     h('span', { class: 'badge badge-info', text: `${result.updated} updated` }), ' ',
     h('span', { class: `badge ${result.errors ? 'badge-danger' : 'badge-success'}`, text: `${result.errors} with errors` }),
-    result.errors ? h('span', { class: 'adm-help', text: ' Rows with errors are skipped.' }) : null);
-  const shown = [...result.results].sort((a, b) => (b.status === 'error') - (a.status === 'error')).slice(0, 200);
+    result.errors ? h('span', { class: 'adm-help', text: ' Rows with errors are skipped.' }) : null, ' ', errorButton(result));
+  const sorted = [...result.results].sort((a, b) => (b.status === 'error') - (a.status === 'error'));
+  const shown = sorted.slice(0, shownCount);
+  const more = Math.min(PAGE, sorted.length - shown.length);
   $('#importPreview').replaceChildren(summary,
     h('div', { class: 'adm-table-wrap adm-import-table', tabindex: '0', role: 'region', 'aria-label': 'Import preview' },
       h('table', { class: 'adm-table' },
@@ -46,29 +66,38 @@ function renderPreview(result) {
           h('td', { class: 'adm-num', text: r.line }),
           h('td', {}, h('span', { class: `badge ${{ create: 'badge-success', update: 'badge-info', error: 'badge-danger' }[r.status]}`, text: { create: '+ New', update: '↻ Update', error: '✕ Error' }[r.status] })),
           h('td', { text: r.message })))))),
-    result.results.length > shown.length ? h('p', { class: 'adm-help', text: `Showing ${shown.length} of ${result.results.length} rows (errors first).` }) : null);
+    h('p', { class: 'adm-help', role: 'status' },
+      sorted.length > shown.length ? `Showing ${shown.length} of ${sorted.length} rows (errors first). ` : sorted.length > PAGE ? `Showing all ${sorted.length} rows. ` : '',
+      more > 0 ? h('button', { class: 'link-btn', id: 'importMoreBtn', type: 'button', text: `Show ${more} more`, onclick: () => { shownCount += PAGE; renderPreview(result, { keepFocus: true }); } }) : null));
+  if (keepFocus) ($('#importMoreBtn') || $('#importPreview .adm-import-table')).focus();
   $('#importCommitBtn').disabled = result.created + result.updated === 0;
   $('#importCommitBtn').textContent = `Import ${result.created + result.updated} row${result.created + result.updated === 1 ? '' : 's'}`;
 }
 
-function showCredentialList(credentials, summary) {
+// After importing: stays open when there is something to take away (generated passwords, rows that were skipped)
+function showCommitSummary(result, summary) {
+  const credentials = result.credentials || [];
   const download = () => {
     downloadCsv(`new-${kind}-passwords-${new Date().toISOString().slice(0, 10)}.csv`, ['name', 'username', 'password'], credentials.map(c => [c.name, c.username, c.password]));
   };
   $('#importPreview').replaceChildren(
     h('p', { class: 'adm-big', text: summary }),
-    h('p', { text: `${credentials.length} new account${credentials.length === 1 ? ' was' : 's were'} given a generated password. The passwords cannot be shown again, so download the list now and share each one privately.` }),
-    h('button', { class: 'btn btn-primary', id: 'importPwBtn', type: 'button', text: 'Download passwords (CSV)', onclick: download }));
+    credentials.length ? h('p', { text: `${credentials.length} new account${credentials.length === 1 ? ' was' : 's were'} given a generated password. The passwords cannot be shown again, so download the list now and share each one privately.` }) : null,
+    result.errors ? h('p', { text: `${result.errors} row${result.errors === 1 ? ' was' : 's were'} skipped. Download them, fix the problems and import that file again.` }) : null,
+    h('div', { class: 'adm-actions' },
+      credentials.length ? h('button', { class: 'btn btn-primary', id: 'importPwBtn', type: 'button', text: 'Download passwords (CSV)', onclick: download }) : null,
+      result.errors ? h('button', { class: 'btn btn-secondary', id: 'importErrBtn', type: 'button', text: `Download error rows (${result.errors})`, onclick: () => downloadErrorRows(result) }) : null));
   $('#importCommitBtn').hidden = true;
   $('#importCancelBtn').textContent = 'Done';
-  $('#importPwBtn').focus();
-  showToast(summary, 'success');
+  ($('#importPwBtn') || $('#importErrBtn')).focus();
+  showToast(summary, result.errors ? 'info' : 'success');
 }
 
 export function openImport(which, done) {
   kind = which;
   onDone = done;
   rows = [];
+  lastResult = null;
   $('#importTitle').textContent = KINDS[which].title;
   $('#importHelp').textContent = KINDS[which].help;
   $('#importFile').value = '';
@@ -111,10 +140,10 @@ $('#importCommitBtn').addEventListener('click', async event => {
     const result = await api(`/api/admin/import/${kind}`, { method: 'POST', body: { rows, commit: true } });
     onDone?.();
     const summary = `Imported ${result.created + result.updated} rows${result.errors ? `, ${result.errors} skipped` : ''}.`;
-    if (result.credentials?.length) {
-      // New accounts got generated passwords. They are not stored anywhere readable,
-      // so keep this dialog open until the admin has saved the list.
-      showCredentialList(result.credentials, summary);
+    if (result.credentials?.length || result.errors) {
+      // New accounts got generated passwords (not stored anywhere readable) and skipped rows would be lost,
+      // so keep this dialog open until the admin has saved what they need.
+      showCommitSummary(result, summary);
       return;
     }
     dialog.close();

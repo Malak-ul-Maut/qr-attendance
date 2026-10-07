@@ -29,6 +29,36 @@ db.serialize(() => {
     if (err && !/duplicate column/i.test(err.message)) console.error('Could not add classes.counsellor:', err);
   });
 
+  // Stage 4: sections are free text now (any value). Older databases carry a CHECK that only
+  // allows A-E, and SQLite cannot drop a CHECK in place, so the table is rebuilt once.
+  db.get(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'classes'`, (err, row) => {
+    if (err || !row || !/CHECK\s*\(\s*section\s+IN/i.test(row.sql)) return;
+    db.serialize(() => {
+      db.run('PRAGMA foreign_keys = OFF');
+      db.run('PRAGMA legacy_alter_table = ON');
+      db.run('BEGIN');
+      db.run(`CREATE TABLE classes_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        branch_id INTEGER NOT NULL REFERENCES branches(id),
+        semester INTEGER NOT NULL,
+        room_id INTEGER REFERENCES rooms(id),
+        section TEXT NOT NULL,
+        academic_session TEXT NOT NULL,
+        counsellor TEXT,
+        UNIQUE (branch_id, semester, section, academic_session))`);
+      db.run(`INSERT INTO classes_new (id, branch_id, semester, room_id, section, academic_session, counsellor)
+              SELECT id, branch_id, semester, room_id, section, academic_session, counsellor FROM classes`);
+      db.run('DROP TABLE classes');
+      db.run('ALTER TABLE classes_new RENAME TO classes');
+      db.run('COMMIT', e => {
+        if (e) { console.error('Could not free up classes.section:', e); db.run('ROLLBACK'); }
+        else console.log('classes.section is now free text');
+      });
+      db.run('PRAGMA legacy_alter_table = OFF');
+      db.run('PRAGMA foreign_keys = ON');
+    });
+  });
+
   // Enforce foreign keys (off by default in SQLite, and per connection).
   db.run('PRAGMA foreign_keys = ON');
 });

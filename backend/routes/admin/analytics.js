@@ -1,7 +1,7 @@
 import express from 'express';
 import { dbAll, dbGet } from '../../utils/db.js';
 import { addDays, todayLocal } from '../../utils/dates.js';
-import { wrap } from './common.js';
+import { HttpError, wrap } from './common.js';
 
 const router = express.Router();
 
@@ -69,13 +69,13 @@ router.get('/', wrap(async (req, res) => {
   );
 
   const lowStudents = await dbAll(
-    `SELECT st.name, st.roll_number AS roll, COUNT(*) AS total, SUM(a.marked_at IS NOT NULL) AS present
+    `SELECT st.id, st.name, st.roll_number AS roll, COUNT(*) AS total, SUM(a.marked_at IS NOT NULL) AS present
      FROM attendance a
      JOIN sessions s ON s.id = a.session_id
      JOIN students st ON st.id = a.student_id
      WHERE s.date BETWEEN ? AND ? AND st.active = 1
      GROUP BY st.id HAVING total >= 3 AND present * 100.0 / total < 75
-     ORDER BY present * 1.0 / total ASC, total DESC LIMIT 10`,
+     ORDER BY present * 1.0 / total ASC, total DESC LIMIT 500`,
     range,
   );
 
@@ -101,6 +101,41 @@ router.get('/', wrap(async (req, res) => {
   );
 
   res.json({ ok: true, days, from, to: today, totals, overall, daily, byMethod, byClass, bySubject, lowStudents, recent });
+}));
+
+// ---- detail views behind the rows on Home ----
+// One session (all its timetable rows): who was marked present and who was not.
+router.get('/session/:code', wrap(async (req, res) => {
+  const code = String(req.params.code);
+  const info = await dbGet(
+    `SELECT MIN(s.date) AS date, MIN(s.start_time) AS startTime, MAX(s.end_time) AS endTime, MAX(s.end_time IS NULL) AS live,
+            MIN(s.method) AS method, MIN(sub.name) AS subject, MIN(f.name) AS faculty
+     FROM sessions s JOIN timetable t ON t.id = s.timetable_id JOIN subjects sub ON sub.id = t.subject_id
+     LEFT JOIN faculties f ON f.id = t.faculty_id WHERE s.session_code = ?`, [code]);
+  if (!info || !info.date) throw new HttpError(404, 'not_found', 'That session no longer exists.');
+  const students = await dbAll(
+    `SELECT st.id, st.name, st.roll_number AS roll, MAX(a.marked_at) AS markedAt, MIN(a.method) AS method
+     FROM attendance a JOIN sessions s ON s.id = a.session_id JOIN students st ON st.id = a.student_id
+     WHERE s.session_code = ? GROUP BY st.id ORDER BY st.roll_number, st.name`, [code]);
+  res.json({ ok: true, code, ...info, students });
+}));
+
+// One student's attendance history inside the chosen range.
+router.get('/student/:id', wrap(async (req, res) => {
+  const days = Math.min(365, Math.max(1, Number.parseInt(req.query.days, 10) || 30));
+  const today = todayLocal();
+  const from = addDays(today, -(days - 1));
+  const student = await dbGet(`SELECT id, name, roll_number AS roll FROM students WHERE id = ?`, [req.params.id]);
+  if (!student) throw new HttpError(404, 'not_found', 'That student no longer exists.');
+  const sessions = await dbAll(
+    `SELECT s.session_code AS code, s.date, s.start_time AS startTime, sub.abbr AS subject, f.abbr AS faculty,
+            (a.marked_at IS NOT NULL) AS present, a.marked_at AS markedAt
+     FROM attendance a JOIN sessions s ON s.id = a.session_id
+     JOIN timetable t ON t.id = s.timetable_id JOIN subjects sub ON sub.id = t.subject_id
+     LEFT JOIN faculties f ON f.id = t.faculty_id
+     WHERE a.student_id = ? AND s.date BETWEEN ? AND ? ORDER BY s.date DESC, s.start_time DESC`,
+    [student.id, from, today]);
+  res.json({ ok: true, student, from, to: today, sessions: sessions.map(r => ({ ...r, present: Boolean(r.present) })) });
 }));
 
 export default router;

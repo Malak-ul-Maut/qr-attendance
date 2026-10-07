@@ -432,3 +432,70 @@ fieldset.field legend { padding: 0; font-weight: 600; font-size: var(--text-sm);
   .adm-pw .btn { flex: 1 1 0; }
   .adm-url-cell .adm-url { white-space: normal; overflow-wrap: anywhere; }
 }
+
+/* ================= Stage 4 ================= */
+/* ---- Home: trend + a stacked side column; warning card; worst-first bars ---- */
+.adm-home-top { display: grid; grid-template-columns: minmax(0, 2fr) minmax(15rem, 1fr); gap: var(--space-4); align-items: start; }
+.adm-home-top > .adm-panel { min-width: 0; align-content: start; }
+.adm-home-side { display: grid; gap: var(--space-4); }
+.adm-home-side .adm-panel { align-content: start; }
+@media (max-width: 800px) { .adm-home-top { grid-template-columns: 1fr; } }
+.adm-sub { font-size: var(--text-sm); font-weight: 500; color: var(--ink-500); margin-left: var(--space-2); }
+.adm-stat-warn { border-color: var(--warning-600); background: var(--warning-50); }
+.adm-stat-warn .adm-stat-value, .adm-stat-warn .adm-stat-label, .adm-stat-warn .adm-stat-note { color: var(--ink-900); }
+.adm-stat-alert { font-size: var(--text-sm); font-weight: 700; color: var(--warning-600); }
+.adm-bars li:has(.adm-bar-btn) { display: block; }
+.adm-bar-btn { display: grid; grid-template-columns: minmax(4.5rem, 7rem) 1fr 3rem; align-items: center; gap: var(--space-3); width: 100%; padding: var(--space-1) var(--space-2); margin: 0 calc(var(--space-2) * -1); box-sizing: content-box; font: inherit; color: inherit; text-align: left; background: none; border: 1px solid transparent; border-radius: var(--radius-md); cursor: pointer; }
+.adm-bar-btn:hover { border-color: var(--line-strong); background: var(--canvas); }
+@media (max-width: 600px) { .adm-bar-btn { grid-template-columns: minmax(3.5rem, 5rem) 1fr 2.75rem; } }
+.adm-low-list { grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); column-gap: var(--space-6); }
+.adm-low-list li:nth-child(2) { border-top: none; }
+@media (max-width: 760px) { .adm-low-list li:nth-child(2) { border-top: 1px solid var(--line); } }
+.adm-filter-chip { margin: 0 0 var(--space-3); padding: var(--space-2) var(--space-3); font-size: var(--text-sm); background: var(--info-50); border-radius: var(--radius-md); }
+.adm-filter-chip[hidden] { display: none; }
+
+/* ---- Setup: folded term checklist, filters, bulk bar, wizard sections ---- */
+.adm-term-summary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin: 0; color: var(--success-600); font-weight: 600; }
+.adm-term-summary[hidden], #termSteps[hidden], .adm-master-filters[hidden], .adm-bulk[hidden] { display: none; }
+.adm-master-filters { margin-bottom: var(--space-3); }
+.adm-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); margin-bottom: var(--space-3); background: var(--info-50); border: 1px solid var(--info-600); border-radius: var(--radius-md); }
+.adm-bulk-move { display: inline-flex; gap: var(--space-2); align-items: center; }
+.adm-bulk-move select { min-height: 2.25rem; }
+.adm-wiz-sections { display: flex; gap: var(--space-2); align-items: center; }
+.adm-wiz-sections .input { flex: 1; }
+.adm-th-select, .adm-td-select { width: 2.5rem; }
+.adm-th-select input, .adm-td-select input { width: 1.15rem; height: 1.15rem; }
+.adm-th-help { display: block; font-size: var(--text-xs, 0.75rem); font-weight: 400; color: var(--ink-500); white-space: normal; }
+
+/* ---- Real combobox (replaces <datalist>) ---- */
+.adm-combo { position: relative; }
+.adm-combo-input { padding-right: 2.25rem; }
+.adm-combo-btn { position: absolute; top: 0; right: 0; bottom: 0; width: 2.25rem; border: 0; background: none; color: var(--ink-500); font-size: var(--text-lg); cursor: pointer; }
+.adm-combo-list { position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 2px); margin: 0; padding: var(--space-1); list-style: none; max-height: 14rem; overflow-y: auto; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-md); box-shadow: 0 8px 24px rgb(0 0 0 / 0.18); }
+.adm-combo-list[hidden] { display: none; }
+.adm-combo-opt, .adm-combo-empty { padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm, 6px); font-size: var(--text-sm); }
+.adm-combo-opt { cursor: pointer; }
+.adm-combo-opt.active { background: var(--info-50); outline: 1px solid var(--info-600); }
+.adm-combo-opt[aria-selected='true'] { font-weight: 700; }
+.adm-combo-empty { color: var(--ink-500); }
+
+/* ---- Timetable: draft/published switch, move, folded version picker ---- */
+#ttVersionField[hidden] { display: none !important; }
+.adm-move { border: 1px solid var(--line); border-radius: var(--radius-md); padding: var(--space-3); margin: 0; }
+.adm-move legend { padding: 0 var(--space-2); font-weight: 600; font-size: var(--text-sm); }
+
+/* ---- Face photos preview ---- */
+.adm-photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: var(--space-3); max-height: 60vh; overflow-y: auto; }
+.adm-photo { margin: 0; display: grid; gap: var(--space-1); text-align: center; font-size: var(--text-sm); color: var(--ink-500); }
+.adm-photo img, .adm-photo-ph { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--radius-md); background: var(--canvas); border: 1px solid var(--line); display: grid; place-items: center; }
+
+/* ---- Timetable sheet in the dark theme ----
+   Decision: the sheet keeps its white paper look (it replicates the printed sheet), but on screen in dark mode it is
+   dimmed and sits in a soft dark frame so it does not glare. Printing is never dimmed. */
+:root[data-theme='dark'] .adm-tt-wrap { background: var(--canvas); border-color: var(--line-strong); }
+:root[data-theme='dark'] .adm-tt { filter: brightness(0.86) contrast(0.96); border-radius: 2px; box-shadow: 0 0 0 6px rgb(255 255 255 / 0.04); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .adm-tt-wrap { background: var(--canvas); border-color: var(--line-strong); }
+  :root:not([data-theme='light']) .adm-tt { filter: brightness(0.86) contrast(0.96); border-radius: 2px; box-shadow: 0 0 0 6px rgb(255 255 255 / 0.04); }
+}
+@media print { .adm-tt { filter: none !important; box-shadow: none !important; } }

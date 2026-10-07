@@ -1,6 +1,6 @@
 // timetable.js - replica of the department's printed timetable sheet, per classroom (section),
 // with add / edit / delete and live clash detection. Classroom view is editable; faculty view is read-only.
-import { $, h, api, askDelete, setBusy, setBox, errorText, fillSelect, showToast } from './core.js';
+import { $, h, api, askDelete, setBusy, setBox, errorText, fillSelect, showToast, createCombobox, announce } from './core.js';
 import { openImport } from './import.js';
 
 let meta = null;
@@ -9,6 +9,8 @@ let removed = [];
 let mode = 'room';
 let loaded = false;
 let rooms = [];
+let space = 'published'; // 'draft' (editable) or 'published' (read-only versions)
+let pendingCell = null; // the cell last edited, so focus can return to it after the sheet is redrawn
 
 const toMin = t => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
 const clock = t => { const hr = Number(t.slice(0, 2)); return `${String(hr > 12 ? hr - 12 : hr).padStart(2, '0')}:${t.slice(3)}`; };
@@ -27,12 +29,12 @@ const deptTitle = classes => {
 };
 const subjectOf = id => meta.subjects.find(x => x.id === id);
 
-const sel = () => $('#ttDate').value;
+const sel = () => (space === 'draft' ? 'draft' : $('#ttDate').value);
 const TT = '/api/admin/timetable';
 const viewParam = () => (sel() === 'draft' ? 'draft=1' : `date=${sel()}`);
-const onLatest = () => !meta.versions.length || sel() === meta.latest;
-// Editing happens in the draft; the newest published version can be edited when no draft exists yet.
-const canEdit = () => mode === 'room' && (sel() === 'draft' || (!meta.draft && onLatest()));
+const onLatest = () => !meta.versions.length || $('#ttDate').value === meta.latest;
+// Every edit goes into the draft; published versions are read-only (switch to Draft to change them).
+const canEdit = () => mode === 'room' && space === 'draft';
 
 // One option per classroom that is somebody's home room (A–E), so shared rooms (D) appear once.
 function buildRooms() {
@@ -67,7 +69,7 @@ function fillTargets() {
   $('label[for="ttTarget"]').textContent = mode === 'room' ? 'Classroom' : 'Faculty';
   if (mode === 'room') fillSelect(select, rooms.map(r => ({ value: r.id, label: roomTitle(r) })));
   else fillSelect(select, meta.faculties.map(f => ({ value: f.id, label: `${f.abbr} – ${f.name}` })));
-  $('#ttHint').textContent = mode === 'room' ? 'Click a period to edit it, or an empty period to add a class.' : 'Read-only. Click a period to open its classroom.';
+  $('#ttHint').textContent = mode === 'faculty' ? 'Read-only. Click a period to open its classroom.' : space === 'draft' ? 'Click a period to edit it, or an empty period to add a class.' : 'Read-only. Switch to Draft to make changes.';
 }
 
 function fillVersions(prefer) {
@@ -75,13 +77,29 @@ function fillVersions(prefer) {
   const previous = select.value;
   const current = meta.versions.find(d => d <= meta.today);
   const tag = d => (d === current ? ' (current)' : d > meta.today ? ' (upcoming)' : '');
-  const options = [];
-  if (meta.draft) options.push({ value: 'draft', label: `Draft – ${meta.draft.changes} unpublished change${meta.draft.changes === 1 ? '' : 's'}` });
-  meta.versions.forEach(d => options.push({ value: d, label: `w.e.f. ${fmtDate(d)}${tag(d)}` }));
-  if (!options.length) options.push({ value: meta.today, label: 'No timetable yet' });
+  const options = meta.versions.map(d => ({ value: d, label: `w.e.f. ${fmtDate(d)}${tag(d)}` }));
+  if (!options.length) options.push({ value: meta.today, label: 'No published timetable yet' });
   fillSelect(select, options);
-  const wanted = [prefer, previous].find(v => v && options.some(o => String(o.value) === v));
-  select.value = wanted ?? (meta.draft ? 'draft' : String(options[0].value));
+  const wanted = [prefer, previous].find(v => v && v !== 'draft' && options.some(o => String(o.value) === v));
+  select.value = wanted ?? (current && options.some(o => o.value === current) ? current : String(options[0].value));
+}
+
+function syncSpace() {
+  document.querySelectorAll('#ttSpaceSeg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.space === space)));
+  $('#ttVersionField').hidden = space === 'draft';
+  const draftBtn = $('#ttSpaceSeg [data-space="draft"]');
+  const n = meta?.draft?.changes || 0;
+  draftBtn.textContent = n ? `Draft (${n})` : 'Draft';
+  draftBtn.setAttribute('aria-label', n ? `Draft, ${n} unpublished change${n === 1 ? '' : 's'}` : 'Draft');
+  $('#ttCopyDayBtn').disabled = !canEdit();
+  $('#ttCopyDayBtn').title = canEdit() ? '' : mode === 'room' ? 'Switch to Draft to copy a day' : 'Copy day works in the classroom view';
+}
+function setSpace(next) {
+  if (space === next) return;
+  space = next;
+  fillTargets();
+  syncSpace();
+  loadGrid();
 }
 
 // Re-read rooms, versions and the draft state (also picks up rooms/classes created in Master).
@@ -101,22 +119,22 @@ function updateToolbar() {
   $('#ttRedoBtn').disabled = !d?.canRedo;
   $('#ttUndoBtn').title = d?.canUndo ? 'Undo (Ctrl+Z)' : 'Nothing to undo';
   $('#ttRedoBtn').title = d?.canRedo ? 'Redo (Ctrl+Shift+Z)' : 'Nothing to redo';
+  syncSpace();
   const banner = $('#ttBanner');
   const button = (text, onclick, primary) => h('button', { class: `btn btn-sm ${primary ? 'btn-primary' : 'btn-secondary'}`, type: 'button', text, onclick });
-  if (sel() === 'draft' && d) {
+  if (space === 'draft') {
     banner.replaceChildren(
-      h('span', { text: d.changes ? `Draft: ${d.changes} unpublished change${d.changes === 1 ? '' : 's'} since ${fmtDate(d.baseDate)}. Nothing is live until you publish.` : `Draft started from the ${fmtDate(d.baseDate)} version. No changes yet.` }),
-      h('span', { class: 'adm-banner-actions' }, button('Discard draft', discardDraft, false), button('Review & publish', openPublish, true)));
+      h('span', { text: d?.changes ? `Draft: ${d.changes} unpublished change${d.changes === 1 ? '' : 's'} since ${fmtDate(d.baseDate)}. Nothing is live until you publish.` : d ? `Draft started from the ${fmtDate(d.baseDate)} version. No changes yet.` : `No changes yet. Your edits are saved to a draft that starts from ${meta.latest ? `the ${fmtDate(meta.latest)} version` : 'an empty timetable'}.` }),
+      h('span', { class: 'adm-banner-actions' }, ...(d ? [button('Discard draft', discardDraft, false), button('Review & publish', openPublish, true)] : [])));
     banner.hidden = false;
-  } else if (d) {
-    banner.replaceChildren(h('span', { text: `You have ${d.changes} unpublished change${d.changes === 1 ? '' : 's'}. This is the published timetable.` }),
-      h('span', { class: 'adm-banner-actions' }, button('Open draft', () => { $('#ttDate').value = 'draft'; updateToolbar(); loadGrid(); }, true)));
+  } else {
+    banner.replaceChildren(
+      h('span', { text: `Published timetable${onLatest() ? '' : ' (older version)'}: read-only.${d?.changes ? ` You have ${d.changes} unpublished change${d.changes === 1 ? '' : 's'} in the draft.` : ''}` }),
+      h('span', { class: 'adm-banner-actions' },
+        ...(!onLatest() ? [button('Go to latest version', () => { $('#ttDate').value = meta.latest; updateToolbar(); loadGrid(); }, false)] : []),
+        ...(mode === 'room' ? [button(d ? 'Open draft' : 'Edit in draft', () => setSpace('draft'), true)] : [])));
     banner.hidden = false;
-  } else if (!onLatest()) {
-    banner.replaceChildren(h('span', { text: 'You are viewing an older version. It is read-only.' }),
-      h('span', { class: 'adm-banner-actions' }, button('Go to latest version', () => { $('#ttDate').value = meta.latest; updateToolbar(); loadGrid(); }, true)));
-    banner.hidden = false;
-  } else banner.hidden = true;
+  }
 }
 
 export async function loadTimetable() {
@@ -126,13 +144,17 @@ export async function loadTimetable() {
     $('#ttGrid').replaceChildren(h('div', { class: 'adm-state', role: 'alert' }, h('strong', { text: 'Could not load the timetable' }), h('button', { class: 'btn btn-secondary', type: 'button', text: 'Try again', onclick: loadTimetable })));
     return;
   }
+  if (!loaded) space = meta.draft ? 'draft' : 'published';
   loaded = true;
+  fillTargets();
+  syncSpace();
   buildPhoneBar();
   await loadGrid();
 }
 
 async function afterEdit() {
-  await refreshMeta({ prefer: 'draft' });
+  space = 'draft'; // every edit lives in the draft, so that is where the person should land
+  await refreshMeta();
   await loadGrid();
 }
 
@@ -152,6 +174,7 @@ function discardDraft() {
     text: 'Every unpublished change is lost. The published timetable stays as it is.',
     run: async () => {
       await api(`${TT}/draft`, { method: 'DELETE' });
+      space = 'published';
       await refreshMeta();
       showToast('Draft discarded.', 'success');
       loadGrid();
@@ -169,6 +192,7 @@ async function loadGrid() {
   try {
     ({ rows, removed = [] } = await api(`${TT}/grid?${mode}Id=${target}&${viewParam()}`));
     renderGrid();
+    restoreCellFocus();
   } catch (error) {
     $('#ttGrid').replaceChildren(h('div', { class: 'adm-state', role: 'alert' }, h('strong', { text: 'Could not load this timetable' }), h('span', { text: errorText(error) })));
   }
@@ -187,6 +211,18 @@ function goToRoom(classId) {
 function syncMode() {
   document.querySelectorAll('#ttModeSeg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
 }
+
+// After the sheet is redrawn the button that opened the editor is gone; put focus back on that cell (or the nearest one that day)
+function restoreCellFocus() {
+  if (!pendingCell || document.querySelector('dialog[open]')) return;
+  const active = document.activeElement;
+  if (active && active !== document.body && document.contains(active)) { pendingCell = null; return; }
+  const cells = [...document.querySelectorAll(`#ttGrid [data-cell^="${pendingCell.day}|"]`)];
+  const cell = cells.filter(c => Number(c.dataset.cell.split('|')[1]) <= pendingCell.start).at(-1) || cells[0];
+  (cell?.querySelector('button') || $('#ttGrid')).focus();
+  pendingCell = null;
+}
+document.addEventListener('close', event => { if (event.target.tagName === 'DIALOG') requestAnimationFrame(restoreCellFocus); }, true);
 
 // ---------------- grid ----------------
 const batchOf = row => row.links.find(link => link.batch)?.batch?.trim().toUpperCase() || null;
@@ -331,7 +367,7 @@ function buildDayList(editable) {
     let li;
     if (!first) {
       // Empty period: the whole row is the button
-      li = h('li', { class: `adm-di adm-di-empty${flagClass}`, title: note },
+      li = h('li', { class: `adm-di adm-di-empty${flagClass}`, title: note, 'data-cell': `${day}|${start}` },
         time,
         editable
           ? h('button', { class: 'adm-di-body adm-di-addrow', type: 'button', 'aria-label': addLabel, onclick: add },
@@ -339,7 +375,7 @@ function buildDayList(editable) {
           : h('span', { class: 'adm-di-body adm-di-free' }, ...ghostNodes(ghosts), h('span', { text: 'Free' })));
     } else {
       const parts = shown.flatMap(entry => (entry.members || [entry]).map(m => partNode(m, editable, home, lab)));
-      li = h('li', { class: `adm-di${lab ? ' adm-di-lab' : ''}${flagClass}`, title: note, style: bg ? `background:${bg}` : false },
+      li = h('li', { class: `adm-di${lab ? ' adm-di-lab' : ''}${flagClass}`, title: note, 'data-cell': `${day}|${start}`, style: bg ? `background:${bg}` : false },
         time,
         h('div', { class: 'adm-di-body' }, ...parts),
         editable ? h('button', { class: 'adm-di-plus', type: 'button', text: '+', 'aria-label': `${addLabel} (another entry)`, title: 'Add another class in this period', onclick: add }) : null);
@@ -414,7 +450,7 @@ function buildSheet(editable) {
           'aria-label': `Add a class on ${day}, ${slots[start].label}`, title: 'Add a class here', onclick: () => openEditor({ day, slotIdx: start }) }));
       }
       children.unshift(...ghostNodes(ghosts));
-      tr.append(h('td', { colspan: span > 1 ? span : false, title: changeNote(seg), class: `${first ? 'adm-cell' : 'adm-cell adm-empty-cell'}${isNew ? ' adm-new' : ''}${isChanged ? ' adm-changed' : ''}${ghosts.length ? ' adm-removed' : ''}`, style: bg ? `background:${bg}` : false }, ...children));
+      tr.append(h('td', { 'data-cell': `${day}|${start}`, colspan: span > 1 ? span : false, title: changeNote(seg), class: `${first ? 'adm-cell' : 'adm-cell adm-empty-cell'}${isNew ? ' adm-new' : ''}${isChanged ? ' adm-changed' : ''}${ghosts.length ? ' adm-removed' : ''}`, style: bg ? `background:${bg}` : false }, ...children));
       if (start + span - 1 === lunchAfter && dayIndex === 0) tr.append(h('td', { class: 'adm-lunch', rowspan: meta.days.length + 1 }, h('span', { text: 'LUNCH' })));
     }
     return tr;
@@ -463,7 +499,7 @@ function legendBody(COLS, half, nSlots, counsellor = '') {
 }
 const facultyName = abbr => meta.faculties.find(f => f.abbr === abbr)?.name || abbr;
 
-document.querySelectorAll('#ttModeSeg button').forEach(b => b.addEventListener('click', () => { mode = b.dataset.mode; syncMode(); fillTargets(); loadGrid(); }));
+document.querySelectorAll('#ttModeSeg button').forEach(b => b.addEventListener('click', () => { mode = b.dataset.mode; syncMode(); fillTargets(); syncSpace(); loadGrid(); }));
 const printDialog = $('#printDialog');
 const printBoxes = () => [...document.querySelectorAll('#printRooms input')];
 $('#ttPrintBtn').addEventListener('click', () => {
@@ -527,6 +563,7 @@ $('#ttOptBtn').addEventListener('click', () => {
 });
 $('#ttTarget').addEventListener('change', loadGrid);
 $('#ttDate').addEventListener('change', loadGrid);
+document.querySelectorAll('#ttSpaceSeg button').forEach(b => b.addEventListener('click', () => { setSpace(b.dataset.space); b.focus(); }));
 $('#ttUndoBtn').addEventListener('click', () => stepDraft('undo'));
 $('#ttRedoBtn').addEventListener('click', () => stepDraft('redo'));
 document.addEventListener('keydown', event => {
@@ -550,10 +587,29 @@ function buildLinks() {
   return [...document.querySelectorAll('#cellClasses input:checked')].map(box => ({ classId: Number(box.value), batch }));
 }
 
+const lunchAt = () => meta.slots.findIndex((s, i) => i < meta.slots.length - 1 && toMin(meta.slots[i + 1].start) - toMin(s.end) >= 20);
+
+// Where the entry would sit after "Move this class": { day, slotIds }, { unchanged: true } or { error }
+function moveTarget() {
+  const n = ctx.entry.rows.length;
+  const day = $('#cellMoveDay').value || ctx.day;
+  const start = Number($('#cellMoveSlot').value);
+  if (day === ctx.day && start === ctx.entry.slotIdx) return { unchanged: true, day, slotIds: ctx.entry.rows.map(r => r.slotId) };
+  const end = start + n - 1;
+  if (end >= meta.slots.length) return { error: `${n} periods do not fit from that period. Choose an earlier start.` };
+  const lunch = lunchAt();
+  if (lunch >= 0 && start <= lunch && end > lunch) return { error: 'A class cannot run across the lunch break. Choose another start.' };
+  return { day, slotIds: meta.slots.slice(start, end + 1).map(s => s.id) };
+}
+const formDay = () => (ctx.entry ? moveTarget().day || ctx.day : ctx.day);
 function slotIdsForForm() {
-  if (ctx.entry) return ctx.entry.rows.map(r => r.slotId);
+  if (ctx.entry) { const t = moveTarget(); return t.slotIds || ctx.entry.rows.map(r => r.slotId); }
   const span = Number($('#cellSpan').value) || 1;
   return meta.slots.slice(ctx.slotIdx, ctx.slotIdx + span).map(s => s.id);
+}
+function drawMoveHint() {
+  const t = moveTarget();
+  $('#cellMoveHint').textContent = t.error || (t.unchanged ? '' : `Will move to ${t.day}, ${slotRange(t.slotIds.map(id => meta.slots.find(s => s.id === id)))}.`);
 }
 
 function scheduleCheck() {
@@ -566,10 +622,12 @@ async function runCheck() {
   const rowsInEntry = ctx.entry?.rows || [];
   try {
     const { conflicts: found } = await api('/api/admin/timetable/check', { method: 'POST', body: {
-      day: ctx.day, slotIds: slotIdsForForm(), facultyId: $('#cellFaculty').value, roomId: $('#cellRoom').value,
+      day: formDay(), slotIds: slotIdsForForm(), facultyId: $('#cellFaculty').value, roomId: $('#cellRoom').value,
       links: buildLinks(), excludeIds: rowsInEntry.map(r => r.id) } });
     if (token !== checkToken) return;
     conflicts = found;
+    const moved = ctx.entry ? moveTarget() : null;
+    if (moved?.error) found.push({ message: moved.error });
     const box = $('#cellConflicts');
     box.className = `adm-conflicts ${found.length ? 'bad' : 'ok'}`;
     box.replaceChildren(...(found.length
@@ -584,6 +642,7 @@ async function runCheck() {
 function openEditor({ entry, day, slotIdx }) {
   const first = entry?.rows[0];
   ctx = { entry, day: entry ? first.day : day, slotIdx: entry ? entry.slotIdx : slotIdx };
+  pendingCell = { day: ctx.day, start: ctx.slotIdx };
   const slots = meta.slots;
   const sheetRoom = currentRoom();
   const covered = entry ? entry.rows.map(r => slots.find(s => s.id === r.slotId)) : [slots[slotIdx]];
@@ -597,7 +656,7 @@ function openEditor({ entry, day, slotIdx }) {
   $('#cellFaculty').value = first?.facultyId ?? '';
   $('#cellRoom').value = first?.roomId ?? sheetRoom.id ?? '';
   $('#cellBatch').value = first?.links.find(l => l.batch)?.batch ?? '';
-  Object.keys(COMBO_HINT).forEach(sel => $(sel).syncCombo());
+  Object.keys(COMBO_OPTS).forEach(sel => $(sel).syncCombo());
 
   // How many consecutive periods can this start at (a lab = 2) without crossing lunch
   const lunchAfter = slots.findIndex((s, i) => i < slots.length - 1 && toMin(slots[i + 1].start) - toMin(s.end) >= 20);
@@ -606,6 +665,15 @@ function openEditor({ entry, day, slotIdx }) {
   $('#cellSpanField').hidden = Boolean(entry);
 
   $('#cellFromField').hidden = true;
+  // Moving an existing class: pick another day / starting period (same number of periods)
+  $('#cellMoveField').hidden = !entry;
+  if (entry) {
+    fillSelect($('#cellMoveDay'), meta.days.map(d => ({ value: d, label: d })));
+    $('#cellMoveDay').value = ctx.day;
+    fillSelect($('#cellMoveSlot'), slots.map((s, i) => ({ value: i, label: `${clock(s.start)}–${clock(s.end)} (${s.label})` })));
+    $('#cellMoveSlot').value = String(entry.slotIdx);
+    $('#cellMoveHint').textContent = '';
+  }
 
   const sessions = new Set(sheetRoom.classes.map(c => c.session));
   const semesters = new Set(sheetRoom.classes.map(c => c.semester));
@@ -623,65 +691,41 @@ function openEditor({ entry, day, slotIdx }) {
   conflicts = [];
   dialog.showModal();
   $('#cellSubject').comboInput.focus();
-  if (entry) scheduleCheck();
+  // Check straight away (also for a new cell), so the dialog never opens without a result
+  $('#cellConflicts').replaceChildren(h('span', { text: 'Checking for clashes…' }));
+  runCheck();
 }
 
-const COMBO_HINT = { '#cellSubject': 'Type to search subject…', '#cellFaculty': 'None – type to search', '#cellRoom': 'None – type to search' };
-function initCombo(sel) {
-  const select = $(sel);
-  const input = document.createElement('input');
-  const list = document.createElement('datalist');
-  input.className = 'input';
-  input.type = 'text';
-  input.id = `${select.id}Text`;
-  input.autocomplete = 'off';
-  input.placeholder = COMBO_HINT[sel];
-  input.setAttribute('list', `${select.id}List`);
-  list.id = `${select.id}List`;
-  select.hidden = true;
-  select.after(input, list);
-  document.querySelector(`label[for="${select.id}"]`)?.setAttribute('for', input.id);
-  input.addEventListener('input', () => {
-    const text = input.value.trim().toLowerCase();
-    const options = [...select.options].filter(o => o.value);
-    const label = o => o.textContent.toLowerCase();
-    // exact label, else the only option that contains / starts with what was typed
-    const pick = list => (list.length === 1 ? list[0] : null);
-    const match = options.find(o => label(o) === text) || (text && (pick(options.filter(o => label(o).includes(text))) || pick(options.filter(o => label(o).startsWith(text)))));
-    select.value = match ? match.value : '';
-    select.dispatchEvent(new Event('input', { bubbles: true }));
-  });
-  input.addEventListener('change', () => { if (select.value) input.value = select.selectedOptions[0].textContent; });
-  select.comboInput = input;
-  select.syncCombo = () => {
-    list.replaceChildren(...[...select.options].filter(o => o.value).map(o => Object.assign(document.createElement('option'), { value: o.textContent })));
-    input.value = select.value ? select.selectedOptions[0].textContent : '';
-  };
-}
-Object.keys(COMBO_HINT).forEach(initCombo);
+// Real comboboxes (core.js) in place of the native <datalist>: the list opens on focus and narrows as you type
+const COMBO_OPTS = {
+  '#cellSubject': { placeholder: 'Search subject…' },
+  '#cellFaculty': { placeholder: 'None – search faculty…', allowNone: true },
+  '#cellRoom': { placeholder: 'None – search room…', allowNone: true },
+};
+Object.entries(COMBO_OPTS).forEach(([sel, opts]) => createCombobox($(sel), opts));
 
-['#cellFaculty', '#cellRoom', '#cellBatch', '#cellSpan', '#cellFrom', '#cellClasses'].forEach(sel =>
+['#cellFaculty', '#cellRoom', '#cellBatch', '#cellSpan', '#cellFrom', '#cellClasses', '#cellMoveDay', '#cellMoveSlot'].forEach(sel =>
   $(sel).addEventListener('input', () => ctx && scheduleCheck()));
 $('#cellClasses').addEventListener('change', () => ctx && scheduleCheck());
+['#cellMoveDay', '#cellMoveSlot'].forEach(sel => $(sel).addEventListener('change', () => ctx && drawMoveHint()));
 $('#cellCancelBtn').addEventListener('click', () => dialog.close());
 
 $('#cellForm').addEventListener('submit', async event => {
   event.preventDefault();
-  for (const sel of Object.keys(COMBO_HINT)) {
-    const field = $(sel);
-    if (field.comboInput.value.trim() && !field.value) return setBox('cellError', `"${field.comboInput.value.trim()}" isn't in the list. Pick one of the matches.`);
-  }
   if (!$('#cellSubject').value) return setBox('cellError', 'Choose a subject.');
   if (!buildLinks().length) return setBox('cellError', 'Choose at least one class.');
   const button = $('#cellSaveBtn');
   const body = { subjectId: $('#cellSubject').value, facultyId: $('#cellFaculty').value, roomId: $('#cellRoom').value, links: buildLinks() };
+  const move = ctx.entry ? moveTarget() : null;
+  if (move?.error) return setBox('cellError', move.error);
   setBusy(button, true);
   setBox('cellError', '');
   try {
-    if (ctx.entry) await api('/api/admin/timetable/entry', { method: 'PUT', body: { ...body, ids: ctx.entry.rows.map(r => r.id) } });
+    if (ctx.entry) await api('/api/admin/timetable/entry', { method: 'PUT', body: { ...body, ids: ctx.entry.rows.map(r => r.id), ...(move.unchanged ? {} : { moveTo: { day: move.day, slotIds: move.slotIds } }) } });
     else await api('/api/admin/timetable/entry', { method: 'POST', body: { ...body, day: ctx.day, slotIds: slotIdsForForm() } });
     dialog.close();
-    showToast(ctx.entry ? 'Saved to the draft.' : 'Added to the draft.', 'success');
+    if (ctx.entry && !move.unchanged) pendingCell = { day: move.day, start: meta.slots.findIndex(s => s.id === move.slotIds[0]) };
+    showToast(ctx.entry ? (move.unchanged ? 'Saved to the draft.' : 'Moved and saved to the draft.') : 'Added to the draft.', 'success');
     afterEdit();
   } catch (error) {
     if (error.code === 'conflict' && error.body?.conflicts) {
@@ -744,12 +788,56 @@ $('#publishForm').addEventListener('submit', async event => {
   try {
     const result = await api(`${TT}/draft/publish`, { method: 'POST', body: { effectiveFrom: $('#publishDate').value } });
     publishDialog.close();
+    space = 'published'; // the new version is live now: show it as published
     await refreshMeta({ prefer: result.effectiveFrom });
     await loadGrid();
     showToast(`Published. New version from ${fmtDate(result.effectiveFrom)}.`, 'success');
   } catch (error) {
     setBox('publishError', errorText(error));
     $('#publishError').hidden = false;
+  } finally {
+    setBusy(button, false);
+  }
+});
+
+// ---------------- copy a day ----------------
+const copyDialog = $('#copyDayDialog');
+function drawCopyTargets() {
+  const from = $('#copyFrom').value;
+  $('#copyTo').replaceChildren(...meta.days.filter(d => d !== from).map(d => h('label', { class: 'adm-chip' }, h('input', { type: 'checkbox', value: d }), d)));
+}
+$('#ttCopyDayBtn').addEventListener('click', () => {
+  if (!canEdit()) return;
+  const counts = Object.fromEntries(meta.days.map(d => [d, rows.filter(r => r.day === d).length]));
+  $('#copyDayRoom').textContent = `${roomTitle(currentRoom())}. Copies every period of one day onto the days you choose.`;
+  fillSelect($('#copyFrom'), meta.days.map(d => ({ value: d, label: `${d} (${counts[d]} period${counts[d] === 1 ? '' : 's'})` })));
+  const filled = meta.days.find(d => counts[d]);
+  if (filled) $('#copyFrom').value = filled;
+  $('#copyReplace').checked = false;
+  drawCopyTargets();
+  setBox('copyError', '');
+  copyDialog.showModal();
+  $('#copyFrom').focus();
+});
+$('#copyFrom').addEventListener('change', drawCopyTargets);
+$('#copyCancelBtn').addEventListener('click', () => copyDialog.close());
+$('#copyDayForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const toDays = [...document.querySelectorAll('#copyTo input:checked')].map(b => b.value);
+  if (!toDays.length) return setBox('copyError', 'Choose at least one day to copy to.');
+  const button = $('#copyGoBtn');
+  setBusy(button, true);
+  setBox('copyError', '');
+  try {
+    const result = await api(`${TT}/copy-day`, { method: 'POST', body: { roomId: currentRoom().id, fromDay: $('#copyFrom').value, toDays, replace: $('#copyReplace').checked } });
+    pendingCell = null;
+    copyDialog.close();
+    showToast(`Copied ${result.copied} period${result.copied === 1 ? '' : 's'} to the draft.`, 'success');
+    await afterEdit();
+    announce(`Copied ${result.copied} periods to ${toDays.join(', ')}.`);
+  } catch (error) {
+    const found = error.body?.conflicts;
+    setBox('copyError', found?.length ? `${found.slice(0, 3).map(c => c.message).join(' ')}${found.length > 3 ? ` (and ${found.length - 3} more clashes)` : ''} Nothing was copied.` : errorText(error));
   } finally {
     setBusy(button, false);
   }

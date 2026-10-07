@@ -1,5 +1,5 @@
 // master.js - term setup + one table per kind of record (students, faculty, subjects, classes ...).
-import { $, $$, h, api, createDataTable, askConfirm, rowActions, setBusy, setBox, setFieldMsg, errorText, fillSelect, showToast, maskSecrets, generatePassword, copyText } from './core.js';
+import { $, $$, h, api, createDataTable, askConfirm, rowActions, setBusy, setBox, setFieldMsg, errorText, fillSelect, showToast, maskSecrets, generatePassword, copyText, announce } from './core.js';
 import { openImport } from './import.js';
 
 const goto = view => document.dispatchEvent(new CustomEvent('admin:goto', { detail: view }));
@@ -30,33 +30,103 @@ async function loadTerm() {
   fillSelect(select, sessions.map(s => ({ value: s, label: s })));
   if (sessions.includes(previous)) select.value = previous;
   const s = await api(`/api/admin/master/term-status?session=${encodeURIComponent(select.value)}`);
-  const step = (done, label, detail, action, onclick) =>
-    h('li', { class: done ? 'done' : '' },
+  const steps = [];
+  const step = (done, label, detail, action, onclick) => {
+    steps.push(done);
+    return h('li', { class: done ? 'done' : '' },
       h('span', { class: 'adm-check', 'aria-hidden': 'true', text: done ? '✓' : '' }),
       h('span', { class: 'adm-check-text' }, h('strong', { text: label }), h('span', { text: detail })),
       h('button', { class: 'btn btn-secondary btn-sm', type: 'button', text: action, onclick }));
+  };
   $('#termSteps').replaceChildren(
     step(s.classes > 0, 'Classes', s.classes ? `${s.classes} classes in ${s.session}` : 'No classes in this session yet', s.classes ? 'View' : 'Set up', () => (s.classes ? switchTab('classes') : openWizard())),
     step(s.subjects > 0, 'Subjects', `${s.subjects} subjects`, 'Manage', () => switchTab('subjects')),
     step(s.faculty > 0, 'Faculty', `${s.faculty} faculty`, 'Manage', () => switchTab('faculties')),
     step(s.students > 0, 'Students', `${s.students} students in this session`, 'Manage', () => switchTab('students')),
     step(s.classes > 0 && s.classesWithTimetable >= s.classes, 'Timetable', `${s.classesWithTimetable} of ${s.classes} classes have a timetable`, 'Open', () => goto('timetable')),
-    ...(s.batchNeeded > 0 ? [step(s.batchAssigned >= s.batchNeeded, 'Lab batches', `${s.batchAssigned} of ${s.batchNeeded} students have a G1/G2 batch (lab attendance needs it)`, 'Split by roll no.', () =>
-      askConfirm({
-        title: 'Split lab batches?',
-        text: 'Every class that has lab batches is split into G1 (first half by roll number) and G2 (second half). Students who already have a batch are kept.',
-        confirmLabel: 'Split batches',
-        cancelLabel: 'Cancel',
-        danger: false,
-        failText: 'Could not split the batches. Try again.',
-        run: async () => {
-          const r = await api('/api/admin/master/assign-batches', { method: 'POST', body: { session: select.value } });
-          showToast(`Assigned batches to ${r.updated} students.`, 'success');
-          loadTerm().catch(() => {});
-        },
-      }))] : []),
+    ...(s.batchNeeded > 0 ? [step(s.batchAssigned >= s.batchNeeded, 'Lab batches', `${s.batchAssigned} of ${s.batchNeeded} students have a G1/G2 batch (lab attendance needs it)`, 'Split batches…', () => openSplit(select.value))] : []),
   );
+  // Once every step is done the checklist is only noise above the table: fold it into one line.
+  const allDone = steps.every(Boolean);
+  const sessionKey = select.value;
+  const folded = allDone && !termManual.has(sessionKey); // an admin who pressed "Show checklist" keeps it open
+  $('#termSummary').hidden = !allDone;
+  $('#termSteps').hidden = folded;
+  $('#termSummaryText').textContent = `✓ Term setup is complete for ${sessionKey} (${steps.length} of ${steps.length} steps).`;
+  $('#termToggleBtn').textContent = folded ? 'Show checklist' : 'Hide checklist';
+  $('#termToggleBtn').setAttribute('aria-expanded', String(!folded));
 }
+const termManual = new Set();
+$('#termToggleBtn').addEventListener('click', () => {
+  const key = $('#termSession').value;
+  if (termManual.has(key)) termManual.delete(key); else termManual.add(key);
+  const open = termManual.has(key);
+  $('#termSteps').hidden = !open;
+  $('#termToggleBtn').textContent = open ? 'Hide checklist' : 'Show checklist';
+  $('#termToggleBtn').setAttribute('aria-expanded', String(open));
+});
+
+// ---------------- Lab batches: split in the middle, or from a chosen student ----------------
+const splitDialog = $('#splitDialog');
+let splitSession = '';
+let splitStudents = []; // active students of the chosen class, by roll number
+const byRoll = (a, b) => String(a.roll_number ?? '').localeCompare(String(b.roll_number ?? ''), undefined, { numeric: true }) || a.name.localeCompare(b.name);
+
+async function openSplit(session) {
+  splitSession = session;
+  $('#splitMode').value = 'mid';
+  $('#splitCustom').hidden = true;
+  setBox('splitError', '');
+  splitDialog.showModal();
+  $('#splitMode').focus();
+}
+function drawSplitPreview() {
+  const n = splitStudents.length;
+  const at = splitStudents.findIndex(st => String(st.id) === $('#splitStudent').value);
+  $('#splitPreview').textContent = n && at >= 0 ? `G1: ${at} student${at === 1 ? '' : 's'}. G2: ${n - at} student${n - at === 1 ? '' : 's'}.` : '';
+}
+async function loadSplitStudents() {
+  const classId = Number($('#splitClass').value);
+  if (!classId) { splitStudents = []; fillSelect($('#splitStudent'), [], 'No students'); return drawSplitPreview(); }
+  const { rows: all } = await api('/api/admin/master/entity/students');
+  splitStudents = all.filter(r => r.active && r.class_id === classId).sort(byRoll);
+  fillSelect($('#splitStudent'), splitStudents.map(st => ({ value: st.id, label: `${st.roll_number || '–'} · ${st.name}` })));
+  if (splitStudents.length) $('#splitStudent').value = String(splitStudents[Math.ceil(splitStudents.length / 2)]?.id ?? splitStudents.at(-1).id); // the default: the middle
+  drawSplitPreview();
+}
+$('#splitMode').addEventListener('change', async event => {
+  const custom = event.target.value === 'custom';
+  $('#splitCustom').hidden = !custom;
+  if (!custom) return;
+  setBox('splitError', '');
+  try {
+    const { rows: classes } = await api('/api/admin/master/entity/classes');
+    const inSession = classes.filter(c => c.academic_session === splitSession);
+    fillSelect($('#splitClass'), inSession.map(c => ({ value: c.id, label: `${c.branch} Sem ${c.semester} ${c.section} (${c.students} students)` })), inSession.length ? null : 'No classes');
+    await loadSplitStudents();
+  } catch (error) { setBox('splitError', errorText(error)); }
+});
+$('#splitClass').addEventListener('change', () => loadSplitStudents().catch(error => setBox('splitError', errorText(error))));
+$('#splitStudent').addEventListener('change', drawSplitPreview);
+$('#splitCancelBtn').addEventListener('click', () => splitDialog.close());
+$('#splitForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const custom = $('#splitMode').value === 'custom';
+  if (custom && !$('#splitStudent').value) return setBox('splitError', 'Choose the class and the first student in G2.');
+  const button = $('#splitGoBtn');
+  setBusy(button, true);
+  setBox('splitError', '');
+  try {
+    const r = await api('/api/admin/master/assign-batches', { method: 'POST', body: { session: splitSession, ...(custom ? { classId: Number($('#splitClass').value), g2StartStudentId: Number($('#splitStudent').value) } : {}) } });
+    splitDialog.close();
+    showToast(`Assigned batches to ${r.updated} students.`, 'success');
+    refresh();
+  } catch (error) {
+    setBox('splitError', errorText(error));
+  } finally {
+    setBusy(button, false);
+  }
+});
 $('#termSession').addEventListener('change', () => loadTerm().catch(() => {}));
 
 // ---------------- Tabs + table ----------------
@@ -115,7 +185,7 @@ function makeTable() {
     const opts = !students ? {} : r.active ? { removeLabel: 'Deactivate' } : { removeLabel: 'Reactivate', removeKind: 'secondary' };
     td.append(rowActions(entity.singular, r, name, openEditor, students && !r.active ? reactivate : askRemove, opts));
   } });
-  table = createDataTable({ mount: $('#masterTable'), noun: entity.singular, pageSize: 12, columns, emptyHint: `Select "Add" to create the first ${entity.singular}.`, onRetry: () => loadRows() });
+  table = createDataTable({ mount: $('#masterTable'), noun: entity.singular, pageSize: 12, columns, selectable: students, onSelect: updateBulk, emptyHint: `Select "Add" to create the first ${entity.singular}.`, onRetry: () => loadRows() });
 }
 
 async function loadRows() {
@@ -124,6 +194,7 @@ async function loadRows() {
     ({ rows } = await api(`/api/admin/master/entity/${active}`));
     cache[active] = true;
     table.setRows(rows);
+    applyFilters();
   } catch {
     table.setError();
   }
@@ -142,6 +213,7 @@ export async function switchTab(key) {
   $('#masterImportBtn').hidden = !['students', 'faculties'].includes(key);
   $('#masterSearch').value = '';
   makeTable();
+  setupFilters();
   loadRows();
 }
 
@@ -166,6 +238,69 @@ function refresh() {
   loadRows();
   loadTerm().catch(() => {});
 }
+
+// ---------------- Filters and bulk actions (students) ----------------
+const classOptions = () => meta.entities.students.fields.find(f => f.name === 'class_id')?.options || [];
+function setupFilters() {
+  const students = active === 'students';
+  $('#masterFilters').hidden = !students;
+  $('#masterBulk').hidden = true;
+  if (!students) return;
+  fillSelect($('#masterClassFilter'), [{ value: '', label: 'All classes' }, { value: 'none', label: 'No class' }, ...classOptions()]);
+  fillSelect($('#bulkClass'), classOptions(), 'Choose class…');
+  $('#masterShowInactive').checked = false;
+  $('#masterOnlyInactive').checked = false;
+  $('#masterOnlyInactiveWrap').hidden = true;
+}
+function applyFilters() {
+  if (active !== 'students' || !table) return;
+  const cls = $('#masterClassFilter').value;
+  const show = $('#masterShowInactive').checked;
+  const only = $('#masterOnlyInactive').checked;
+  const inactive = rows.filter(r => !r.active).length;
+  $('#masterShowInactive').nextSibling.textContent = ` Show inactive students (${inactive})`;
+  table.setFilter(r => (show ? !only || !r.active : Boolean(r.active)) && (!cls || (cls === 'none' ? !r.class_id : String(r.class_id) === cls)));
+}
+const filtersChanged = () => { table?.clearSelection(); applyFilters(); };
+$('#masterClassFilter').addEventListener('change', filtersChanged);
+$('#masterShowInactive').addEventListener('change', event => {
+  $('#masterOnlyInactiveWrap').hidden = !event.target.checked;
+  if (!event.target.checked) $('#masterOnlyInactive').checked = false;
+  filtersChanged();
+});
+$('#masterOnlyInactive').addEventListener('change', filtersChanged);
+
+function updateBulk(ids) {
+  $('#masterBulk').hidden = !ids.length;
+  $('#masterBulkCount').textContent = `${ids.length} selected`;
+  if (ids.length) announce(`${ids.length} student${ids.length === 1 ? '' : 's'} selected. Bulk actions are available above the table.`);
+}
+async function bulk(action, extra = {}) {
+  const ids = table.selected;
+  const r = await api('/api/admin/master/students-bulk', { method: 'POST', body: { ids, action, ...extra } });
+  table.clearSelection();
+  refresh();
+  return r.updated;
+}
+$('#bulkClearBtn').addEventListener('click', () => { table.clearSelection(); $('#masterSearch').focus(); });
+$('#bulkReactivateBtn').addEventListener('click', async () => {
+  try { showToast(`${await bulk('reactivate')} students are active again.`, 'success'); } catch (error) { showToast(errorText(error), 'error'); }
+});
+$('#bulkDeactivateBtn').addEventListener('click', () => {
+  const n = table.selected.length;
+  askConfirm({ title: `Deactivate ${n} student${n === 1 ? '' : 's'}?`, text: 'They are hidden from lists and can no longer log in. Attendance history is kept. Use Reactivate to bring them back.',
+    confirmLabel: 'Deactivate', cancelLabel: 'Keep active', failText: 'Could not deactivate. Try again.',
+    run: async () => { showToast(`${await bulk('deactivate')} students deactivated.`, 'success'); } });
+});
+$('#bulkMoveBtn').addEventListener('click', () => {
+  const classId = $('#bulkClass').value;
+  if (!classId) { showToast('Choose a class to move them to.', 'error'); $('#bulkClass').focus(); return; }
+  const n = table.selected.length;
+  const label = $('#bulkClass').selectedOptions[0].textContent;
+  askConfirm({ title: `Move ${n} student${n === 1 ? '' : 's'} to ${label}?`, text: 'They are added to that class. Their batch (G1/G2) for that class is cleared, so split batches again afterwards.',
+    confirmLabel: 'Move', cancelLabel: 'Cancel', danger: false, failText: 'Could not move them. Try again.',
+    run: async () => { showToast(`${await bulk('set_class', { classId: Number(classId) })} students moved.`, 'success'); } });
+});
 
 // ---------------- Add / edit dialog ----------------
 const dialog = $('#entityDialog');
@@ -370,9 +505,38 @@ async function reactivate(row) {
 const wizard = $('#wizardDialog');
 let step = 1;
 let wizRows = [];
-const SECTIONS = ['A', 'B', 'C', 'D', 'E'];
+// Sections are free labels (A, B, 3 ...), typed separated by commas
+const SECTION_OK = /^[A-Z0-9][A-Z0-9-]{0,7}$/;
+function parseSections(text) {
+  const parts = [...new Set(String(text || '').toUpperCase().split(/[\s,;]+/).filter(Boolean))];
+  return { list: parts, bad: parts.filter(p => !SECTION_OK.test(p)) };
+}
+const SESSION_RE = /^(\d{4})-(\d{4}) (ODD|EVEN)$/;
+const sessionProblem = value => {
+  const m = SESSION_RE.exec(value);
+  if (!value) return 'Choose the academic session.';
+  if (!m) return 'Use the format 2026-2027 ODD (two years, then ODD or EVEN).';
+  if (Number(m[2]) !== Number(m[1]) + 1) return 'The two years must be consecutive, like 2026-2027.';
+  return '';
+};
+const wizSessionValue = () => ($('#wizSession').value === '__other' ? $('#wizSessionOther').value.trim().toUpperCase().replace(/\s+/g, ' ') : $('#wizSession').value);
+function fillSessionPicker(preferred) {
+  const year = new Date().getFullYear();
+  const generated = [];
+  for (let y = year + 1; y >= year - 1; y--) generated.push(`${y}-${y + 1} ODD`, `${y - 1}-${y} EVEN`);
+  const all = [...new Set([...meta.sessions, ...generated])].sort((a, b) => b.localeCompare(a));
+  fillSelect($('#wizSession'), [...all.map(v => ({ value: v, label: meta.sessions.includes(v) ? `${v} (has classes)` : v })), { value: '__other', label: 'Other (type it)…' }]);
+  $('#wizSession').value = all.includes(preferred) ? preferred : all[0];
+  $('#wizSessionOther').hidden = true;
+  $('#wizSessionOther').value = '';
+}
+$('#wizSession').addEventListener('change', event => {
+  const other = event.target.value === '__other';
+  $('#wizSessionOther').hidden = !other;
+  if (other) $('#wizSessionOther').focus();
+});
 
-function wizRow(row = { branchId: '', semester: '', sections: [], roomId: '' }) {
+function wizRow(row = { branchId: '', semester: '', sectionsText: '', roomId: '' }) {
   return row;
 }
 function renderWizRows() {
@@ -388,9 +552,10 @@ function renderWizRows() {
     room.value = row.roomId;
     return h('div', { class: 'adm-wiz-row' },
       h('div', { class: 'adm-wiz-fields' }, branch, sem, room),
-      h('div', { class: 'adm-checks', role: 'group', 'aria-label': `Sections, row ${i + 1}` },
-        ...SECTIONS.map(s => h('label', { class: 'adm-chip' },
-          h('input', { type: 'checkbox', checked: row.sections.includes(s) || false, onchange: e => { row.sections = e.target.checked ? [...row.sections, s] : row.sections.filter(x => x !== s); } }), s))),
+      h('div', { class: 'adm-wiz-sections' },
+        h('input', { class: 'input', type: 'text', placeholder: 'Sections, e.g. A, B, C', 'aria-label': `Sections, row ${i + 1} (separate with commas)`, value: row.sectionsText, autocomplete: 'off', oninput: e => (row.sectionsText = e.target.value) }),
+        h('button', { class: 'btn btn-secondary btn-sm', type: 'button', text: 'A–E', title: 'Fill in A, B, C, D, E', 'aria-label': `Fill sections A to E, row ${i + 1}`,
+          onclick: e => { row.sectionsText = 'A, B, C, D, E'; e.currentTarget.previousElementSibling.value = row.sectionsText; } })),
       h('button', { class: 'btn btn-secondary btn-sm', type: 'button', text: 'Remove', 'aria-label': `Remove row ${i + 1}`, disabled: wizRows.length === 1, onclick: () => { wizRows.splice(i, 1); renderWizRows(); } }));
   }));
 }
@@ -413,14 +578,12 @@ function wizGo(n) {
 
 async function openWizard() {
   await loadMeta();
-  $('#wizSession').value = $('#termSession').value && meta.sessions.length ? '' : defaultSession();
-  $('#wizSession').placeholder = defaultSession();
-  if (!$('#wizSession').value) $('#wizSession').value = defaultSession();
+  fillSessionPicker(defaultSession());
   wizRows = [wizRow()];
   renderWizRows();
   wizGo(1);
   wizard.showModal();
-  $('#wizSession').select();
+  $('#wizSession').focus();
 }
 $('#wizardBtn').addEventListener('click', openWizard);
 $('#wizAddRow').addEventListener('click', () => { wizRows.push(wizRow()); renderWizRows(); });
@@ -429,26 +592,35 @@ $('#wizClose').addEventListener('click', () => wizard.close());
 $('#wizBack').addEventListener('click', () => wizGo(step - 1));
 
 function validRows() {
-  return wizRows.filter(r => r.branchId && Number(r.semester) >= 1 && Number(r.semester) <= 8 && r.sections.length);
+  return wizRows
+    .map(r => ({ ...r, sections: parseSections(r.sectionsText).list, badSections: parseSections(r.sectionsText).bad }))
+    .filter(r => r.branchId && Number(r.semester) >= 1 && Number(r.semester) <= 8 && r.sections.length && !r.badSections.length);
 }
 
 $('#wizardForm').addEventListener('submit', async event => {
   event.preventDefault();
   if (step === 1) {
-    if (!$('#wizSession').value.trim()) { $('#wizSession-msg').textContent = 'Enter the academic session.'; $('#wizSession-msg').hidden = false; $('#wizSession-msg').className = 'field-msg err'; return; }
-    $('#wizSession-msg').hidden = true;
+    const value = wizSessionValue();
+    const known = meta.sessions.includes(value);
+    const problem = known ? '' : sessionProblem(value);
+    $('#wizSession-msg').textContent = problem;
+    $('#wizSession-msg').hidden = !problem;
+    $('#wizSession-msg').className = 'field-msg err';
+    ($('#wizSession').value === '__other' ? $('#wizSessionOther') : $('#wizSession')).toggleAttribute('aria-invalid', Boolean(problem));
+    if (problem) return ($('#wizSession').value === '__other' ? $('#wizSessionOther') : $('#wizSession')).focus();
     return wizGo(2);
   }
   if (step === 2) {
     const ok = validRows();
     const bad = wizRows.length !== ok.length;
+    const oddLabel = wizRows.some(r => parseSections(r.sectionsText).bad.length);
     $('#wizRowsMsg').hidden = !(bad || !ok.length);
-    $('#wizRowsMsg').textContent = !ok.length ? 'Add at least one complete row.' : 'Each row needs a branch, a semester (1–8) and at least one section.';
+    $('#wizRowsMsg').textContent = oddLabel ? 'A section label can use up to 8 letters, numbers or dashes (like A, B or 3).' : !ok.length ? 'Add at least one complete row.' : 'Each row needs a branch, a semester (1–8) and at least one section.';
     if (bad || !ok.length) return;
     const branches = meta.entities.classes.fields.find(f => f.name === 'branch_id').options;
     const total = ok.reduce((n, r) => n + r.sections.length, 0);
     $('#wizReview').replaceChildren(
-      h('p', { text: `This will create ${total} class${total === 1 ? '' : 'es'} in ${$('#wizSession').value.trim()}. Classes that already exist are left as they are.` }),
+      h('p', { text: `This will create ${total} class${total === 1 ? '' : 'es'} in ${wizSessionValue()}. Classes that already exist are left as they are.` }),
       h('ul', { class: 'adm-activity' }, ...ok.map(r => h('li', {},
         h('strong', { text: `${branches.find(b => String(b.value) === String(r.branchId)).label} · Sem ${r.semester}` }),
         h('span', { class: 'adm-when', text: `Sections ${r.sections.join(', ')}` })))));
@@ -457,7 +629,7 @@ $('#wizardForm').addEventListener('submit', async event => {
   const button = $('#wizCreate');
   setBusy(button, true);
   try {
-    const session = $('#wizSession').value.trim();
+    const session = wizSessionValue();
     const result = await api('/api/admin/master/term-setup', { method: 'POST', body: { session, items: validRows().map(r => ({ branchId: r.branchId, semester: r.semester, sections: r.sections, roomId: r.roomId })) } });
     await loadMeta(true);
     cache.classes = false;
