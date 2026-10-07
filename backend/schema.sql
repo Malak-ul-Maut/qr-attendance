@@ -80,6 +80,7 @@ CREATE TABLE classes (
   room_id INTEGER REFERENCES rooms(id),          -- the class's home room (e.g. F-307)
   section TEXT CHECK(section IN ('A','B','C','D','E')) NOT NULL,
   academic_session TEXT NOT NULL,                -- e.g. '2026-2027 ODD'
+  counsellor TEXT,                               -- class counsellor, printed on the timetable sheet
   UNIQUE (branch_id, semester, section, academic_session)
 );
 
@@ -244,3 +245,14 @@ CREATE TABLE attendance (
   UNIQUE (session_id, student_id)
 );
 CREATE INDEX idx_attendance_student ON attendance(student_id);
+
+-- Timetable drafting: one shared working copy (with undo / redo history) that is published as a new version.
+CREATE TABLE IF NOT EXISTS timetable_draft (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  base_date TEXT NOT NULL,
+  base_json TEXT NOT NULL,
+  history_json TEXT NOT NULL,
+  pos INTEGER NOT NULL,
+  next_n INTEGER NOT NULL,
+  updated_at TEXT NOT NULL
+);

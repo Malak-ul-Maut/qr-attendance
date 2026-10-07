@@ -42,6 +42,14 @@ function setUpLoginForm(role) {
     showToast('Ask your administrator to reset your password.');
   });
 
+  // ---------- Why was I sent here? (e.g. the admin session expired) ----------
+  const notice = sessionStorage.getItem('loginNotice');
+  if (notice) {
+    sessionStorage.removeItem('loginNotice');
+    errorMessage.textContent = notice;
+    errorMessage.hidden = false;
+  }
+
   // ---------- Helpers ----------
   function showError(message, inputToFocus) {
     errorMessage.textContent = message;

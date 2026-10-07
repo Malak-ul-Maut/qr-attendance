@@ -40,3 +40,9 @@ export function todayLocal() {
   const day = String(now.getDate()).padStart(2, '0');
   return `${now.getFullYear()}-${month}-${day}`;
 }
+
+// 'YYYY-MM-DD' plus n days (n may be negative). Pure UTC arithmetic.
+export function addDays(value, n) {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day + n)).toISOString().slice(0, 10);
+}

@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="css/shell.css" />
     <link rel="stylesheet" href="css/admin.css" />
 
-    <!-- Theme + login check only. Face models and ONNX Runtime load when the student photo form is used. -->
+    <!-- Theme + login check only. -->
     <script src="js/theme.js"></script>
     <script src="utils/auth-guard.js" type="module"></script>
   </head>
@@ -30,282 +30,358 @@
 
     <!-- Bottom tabs on phones, left rail on desktop (see shell.css) -->
     <nav class="app-nav" aria-label="Admin sections">
-      <button class="nav-item" type="button" data-view="dashboard" aria-current="page"><img src="icons/home.svg" alt="" />Home</button>
-      <button class="nav-item" type="button" data-view="students"><img src="icons/student.svg" alt="" />Students</button>
-      <button class="nav-item" type="button" data-view="faculty"><img src="icons/teacher.svg" alt="" />Faculty</button>
-      <button class="nav-item" type="button" data-view="attendance"><img src="icons/history.svg" alt="" />Attendance</button>
-      <button class="nav-item" type="button" data-view="database"><img src="icons/courses.svg" alt="" />Database</button>
+      <button class="nav-item" type="button" data-view="home" aria-current="page"><img src="icons/home.svg" alt="" />Home</button>
+      <button class="nav-item" type="button" data-view="master"><img src="icons/courses.svg" alt="" />Setup</button>
+      <button class="nav-item" type="button" data-view="timetable"><img src="icons/timetable.svg" alt="" />Timetable</button>
+      <button class="nav-item" type="button" data-view="enrollment"><img src="icons/student.svg" alt="" />Face photos</button>
     </nav>
 
     <main id="main" class="app-main wide">
-      <!-- ================= Dashboard ================= -->
-      <section id="view-dashboard" class="adm-view" aria-labelledby="dashboardTitle">
+      <!-- ================= Home ================= -->
+      <section id="view-home" class="adm-view" aria-labelledby="homeTitle">
         <div class="adm-head">
-          <h1 id="dashboardTitle" tabindex="-1">Dashboard</h1>
-        </div>
-
-        <p id="statsError" class="alert alert-danger" role="alert" hidden>
-          <span>Could not load the numbers. <button id="statsRetryBtn" class="link-btn" type="button">Try again</button></span>
-        </p>
-
-        <div class="adm-stats">
-          <button class="card adm-stat" type="button" data-goto="students">
-            <span class="adm-stat-label">Students</span>
-            <span class="adm-stat-value" id="studentCount">–</span>
-            <span class="adm-stat-note">View all students</span>
-          </button>
-          <button class="card adm-stat" type="button" data-goto="faculty">
-            <span class="adm-stat-label">Faculty</span>
-            <span class="adm-stat-value" id="facultyCount">–</span>
-            <span class="adm-stat-note">View all faculty</span>
-          </button>
-          <button class="card adm-stat" type="button" data-goto="attendance">
-            <span class="adm-stat-label">Attendance</span>
-            <span class="adm-stat-value" id="attendanceCount">–</span>
-            <span class="adm-stat-note">Open reports</span>
-          </button>
-          <div class="card adm-stat adm-stat-static">
-            <span class="adm-stat-label">Live sessions</span>
-            <span class="adm-stat-value" id="liveSessionCount">–</span>
-            <span class="adm-stat-note" id="liveSessionNote">&nbsp;</span>
+          <h1 id="homeTitle" tabindex="-1">Home</h1>
+          <div class="field adm-inline">
+            <label for="homeRange">Show</label>
+            <select class="input" id="homeRange">
+              <option value="7">Last 7 days</option>
+              <option value="30" selected>Last 30 days</option>
+              <option value="90">Last 90 days</option>
+              <option value="365">Last year</option>
+            </select>
           </div>
         </div>
+        <p id="homeError" class="alert alert-danger" role="alert" hidden>
+          <span><span id="homeErrorText">Could not load the numbers.</span> <button id="homeRetryBtn" class="link-btn" type="button">Try again</button></span>
+        </p>
+        <div class="adm-stats" id="homeStats"></div>
 
-        <section class="card adm-panel" aria-labelledby="activityTitle">
-          <h2 id="activityTitle">Recent activity</h2>
-          <!-- Filled by renderActivity() once the backend can supply events -->
-          <ul id="activityList" class="adm-activity"></ul>
-          <p id="activityEmpty" class="adm-empty">No recent activity to show yet.</p>
+        <div class="adm-grid-2">
+          <section class="card adm-panel" aria-labelledby="trendTitle">
+            <h2 id="trendTitle">Attendance trend</h2>
+            <div id="trendChart"></div>
+          </section>
+          <section class="card adm-panel" aria-labelledby="enrollHomeTitle">
+            <h2 id="enrollHomeTitle">Face photos</h2>
+            <div id="homeEnroll"></div>
+          </section>
+        </div>
+
+        <div class="adm-grid-2">
+          <section class="card adm-panel" aria-labelledby="byClassTitle">
+            <h2 id="byClassTitle">By class</h2>
+            <div id="byClass"></div>
+          </section>
+          <section class="card adm-panel" aria-labelledby="bySubjectTitle">
+            <h2 id="bySubjectTitle">By subject</h2>
+            <div id="bySubject"></div>
+          </section>
+        </div>
+
+        <div class="adm-grid-2">
+          <section class="card adm-panel" aria-labelledby="lowTitle">
+            <h2 id="lowTitle">Below 75% attendance</h2>
+            <div id="lowStudents"></div>
+          </section>
+          <section class="card adm-panel" aria-labelledby="methodTitle">
+            <h2 id="methodTitle">Sessions by method</h2>
+            <div id="byMethod"></div>
+          </section>
+        </div>
+
+        <section class="card adm-panel" aria-labelledby="recentTitle">
+          <div class="adm-head">
+            <h2 id="recentTitle">Recent sessions</h2>
+            <button id="exportSessionsBtn" class="btn btn-secondary btn-sm" type="button" disabled>Export CSV</button>
+          </div>
+          <div id="recentSessions"></div>
         </section>
       </section>
 
-      <!-- ================= Students ================= -->
-      <section id="view-students" class="adm-view" aria-labelledby="studentsTitle" hidden>
+      <!-- ================= Setup (was "Master") ================= -->
+      <section id="view-master" class="adm-view" aria-labelledby="masterTitle" hidden>
         <div class="adm-head">
-          <h1 id="studentsTitle" tabindex="-1">Students</h1>
-          <button id="addStudentBtn" class="btn btn-primary" type="button">Add student</button>
+          <h1 id="masterTitle" tabindex="-1">Setup</h1>
+          <button id="wizardBtn" class="btn btn-primary" type="button">Term setup wizard</button>
         </div>
+
+        <section class="card adm-panel" aria-labelledby="termTitle">
+          <div class="adm-head">
+            <h2 id="termTitle">Term setup</h2>
+            <div class="field adm-inline">
+              <label for="termSession">Session</label>
+              <select class="input" id="termSession"></select>
+            </div>
+          </div>
+          <ol id="termSteps" class="adm-checklist"></ol>
+        </section>
+
+        <div id="masterTabs" class="adm-tabs" role="tablist" aria-label="Setup tables"></div>
         <div class="adm-toolbar">
           <div class="field adm-grow">
-            <label for="studentSearch">Search students</label>
-            <input class="input" id="studentSearch" type="search" placeholder="Name, username, roll number" />
+            <label for="masterSearch">Search</label>
+            <input class="input" id="masterSearch" type="search" placeholder="Search this table" />
           </div>
-          <div class="field">
-            <label for="studentBranchFilter">Branch</label>
-            <select class="input" id="studentBranchFilter"><option value="">All branches</option></select>
-          </div>
+          <button id="masterImportBtn" class="btn btn-secondary" type="button" hidden>Import CSV</button>
+          <button id="masterAddBtn" class="btn btn-primary" type="button">Add</button>
         </div>
-        <div id="studentsTable"></div>
+        <div id="masterTable" role="tabpanel"></div>
       </section>
 
-      <!-- ================= Faculty ================= -->
-      <section id="view-faculty" class="adm-view" aria-labelledby="facultyTitle" hidden>
+      <!-- ================= Timetable ================= -->
+      <section id="view-timetable" class="adm-view" aria-labelledby="timetableTitle" hidden>
         <div class="adm-head">
-          <h1 id="facultyTitle" tabindex="-1">Faculty</h1>
-          <button id="addFacultyBtn" class="btn btn-primary" type="button">Add faculty</button>
+          <h1 id="timetableTitle" tabindex="-1">Timetable</h1>
+          <button id="ttImportBtn" class="btn btn-secondary" type="button">Import CSV</button>
         </div>
+        <form class="card adm-toolbar adm-filters" id="ttFilters" onsubmit="return false">
+          <div class="field adm-tt-opt" id="ttModeField">
+            <label id="ttModeLabel">View by</label>
+            <div class="adm-seg" id="ttModeSeg" role="group" aria-labelledby="ttModeLabel">
+              <button type="button" data-mode="room" aria-pressed="true">Classroom</button>
+              <button type="button" data-mode="faculty" aria-pressed="false">Faculty</button>
+            </div>
+          </div>
+          <div class="field adm-grow adm-tt-target">
+            <label for="ttTarget">Classroom</label>
+            <select class="input" id="ttTarget"></select>
+          </div>
+          <div class="field adm-tt-opt" id="ttDateField">
+            <label for="ttDate">Timetable version</label>
+            <select class="input" id="ttDate"></select>
+          </div>
+          <div class="adm-icon-group" role="group" aria-label="Undo and redo">
+            <button id="ttUndoBtn" class="btn btn-secondary adm-icon-btn" type="button" aria-label="Undo" title="Undo (Ctrl+Z)" disabled>
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
+            </button>
+            <button id="ttRedoBtn" class="btn btn-secondary adm-icon-btn" type="button" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" disabled>
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg>
+            </button>
+          </div>
+          <button id="ttOptBtn" class="btn btn-secondary adm-tt-optbtn" type="button" aria-expanded="false" aria-controls="ttModeField ttDateField ttPrintBtn">Options</button>
+          <button id="ttPrintBtn" class="btn btn-secondary adm-tt-opt" type="button">Print</button>
+        </form>
+        <div id="ttBanner" class="adm-banner" role="status" hidden></div>
+        <p class="adm-help"><span id="ttHint"></span> <button type="button" class="adm-link" id="ttHelpBtn" aria-expanded="false" aria-controls="ttHelp">How it works</button></p>
+        <p id="ttHelp" class="adm-help" hidden>Clashes with other faculty, rooms and classes are flagged before you save. Use the small + in a filled period to add a second entry (for example the other lab batch). Changes are saved to a shared draft (use Undo / Redo) and only go live when you publish them as a new version. Rooms are shown only when a period is not held in the classroom itself. White cells without a faculty (training, project, placement) take no attendance.</p>
+        <!-- Phones only: pick a day, or switch to the full weekly sheet -->
+        <div class="adm-phonebar" id="ttPhoneBar">
+          <div class="adm-seg adm-days" id="ttDayBtns" role="group" aria-label="Day"></div>
+          <button id="ttViewBtn" class="btn btn-secondary btn-sm" type="button" aria-pressed="false">Week view</button>
+        </div>
+        <div id="ttGrid" class="adm-tt-wrap" tabindex="0" role="region" aria-label="Weekly timetable"></div>
+      </section>
+
+      <!-- ================= Face photos (was "Enrollment") ================= -->
+      <section id="view-enrollment" class="adm-view" aria-labelledby="enrollmentTitle" hidden>
+        <div class="adm-head">
+          <h1 id="enrollmentTitle" tabindex="-1">Face photos</h1>
+          <button id="enrollExportBtn" class="btn btn-secondary" type="button" disabled>Export pending list</button>
+        </div>
+        <p id="enrollError" class="alert alert-danger" role="alert" hidden>
+          <span>Could not load students. <button id="enrollRetryBtn" class="link-btn" type="button">Try again</button></span>
+        </p>
+        <section class="card adm-panel" id="enrollSummary" aria-live="polite"></section>
+        <div id="enrollClasses" class="adm-class-bars"></div>
         <div class="adm-toolbar">
           <div class="field adm-grow">
-            <label for="facultySearch">Search faculty</label>
-            <input class="input" id="facultySearch" type="search" placeholder="Name, username, subject" />
-          </div>
-        </div>
-        <div id="facultyTable"></div>
-      </section>
-
-      <!-- ================= Attendance reports ================= -->
-      <section id="view-attendance" class="adm-view" aria-labelledby="attendanceTitle" hidden>
-        <div class="adm-head">
-          <h1 id="attendanceTitle" tabindex="-1">Attendance</h1>
-          <button id="exportCsvBtn" class="btn btn-secondary" type="button" disabled>Export CSV</button>
-        </div>
-
-        <form id="attendanceFilters" class="card adm-toolbar adm-filters">
-          <div class="field">
-            <label for="attFrom">From</label>
-            <input class="input" id="attFrom" type="date" />
+            <label for="enrollSearch">Search students</label>
+            <input class="input" id="enrollSearch" type="search" placeholder="Name, roll number, username" />
           </div>
           <div class="field">
-            <label for="attTo">To</label>
-            <input class="input" id="attTo" type="date" />
-          </div>
-          <div class="field">
-            <label for="attMethod">Method</label>
-            <select class="input" id="attMethod">
-              <option value="">All methods</option>
-              <option value="qr">QR code</option>
-              <option value="cctv">CCTV</option>
+            <label for="enrollStatus">Status</label>
+            <select class="input" id="enrollStatus">
+              <option value="">All</option>
+              <option value="pending">Pending</option>
+              <option value="done">Uploaded</option>
             </select>
           </div>
-          <button id="attApplyBtn" class="btn btn-primary" type="submit">Apply</button>
-        </form>
-
-        <div class="adm-stats adm-stats-small" id="attSummary" hidden>
-          <div class="card adm-stat adm-stat-static"><span class="adm-stat-label">Sessions</span><span class="adm-stat-value" id="attSessions">0</span></div>
-          <div class="card adm-stat adm-stat-static"><span class="adm-stat-label">Average attendance</span><span class="adm-stat-value" id="attAverage">0%</span></div>
-        </div>
-
-        <div id="attendanceTable"></div>
-      </section>
-
-      <!-- ================= Database ================= -->
-      <section id="view-database" class="adm-view" aria-labelledby="databaseTitle" hidden>
-        <div class="adm-head">
-          <h1 id="databaseTitle" tabindex="-1">Database</h1>
-          <button id="databaseAddRowBtn" class="btn btn-primary" type="button" disabled>Add row</button>
-        </div>
-        <p class="adm-warning"><span aria-hidden="true">!</span> Changes here are written straight to the database.</p>
-        <div class="adm-toolbar">
           <div class="field">
-            <label for="databaseTableSelect">Table</label>
-            <select class="input" id="databaseTableSelect"></select>
-          </div>
-          <div class="field adm-grow">
-            <label for="databaseSearch">Search rows</label>
-            <input class="input" id="databaseSearch" type="search" placeholder="Search rows" />
+            <label for="enrollClass">Class</label>
+            <select class="input" id="enrollClass"><option value="">All classes</option></select>
           </div>
         </div>
-        <p id="databaseStatus" class="adm-status" role="status"></p>
-        <div id="databaseRows" class="adm-table-wrap" tabindex="0" role="region" aria-label="Database rows"></div>
-        <div class="adm-pager">
-          <span id="databasePageLabel"></span>
-          <span class="adm-pager-btns">
-            <button id="databasePreviousBtn" class="btn btn-secondary btn-sm" type="button">Previous</button>
-            <button id="databaseNextBtn" class="btn btn-secondary btn-sm" type="button">Next</button>
-          </span>
-        </div>
+        <div id="enrollTable"></div>
       </section>
     </main>
 
     <!-- ================= Dialogs ================= -->
 
-    <!-- Add / edit student: three steps -->
-    <dialog id="studentModal" class="dialog adm-dialog" aria-labelledby="studentModalTitle">
-      <form id="studentForm" novalidate>
-        <h2 id="studentModalTitle">Add student</h2>
-        <ol class="adm-steps" id="studentSteps" aria-label="Progress">
-          <li data-step="1"><span>Account</span></li>
-          <li data-step="2"><span>Class</span></li>
-          <li data-step="3"><span>Face photos</span></li>
+    <!-- Add / edit a Setup record (fields are built from the server's field list) -->
+    <dialog id="entityDialog" class="dialog adm-dialog" aria-labelledby="entityTitle">
+      <form id="entityForm" novalidate>
+        <h2 id="entityTitle">Add</h2>
+        <div id="entityFields" class="adm-step adm-two"></div>
+        <p id="entityError" class="alert alert-danger" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button id="entityCancelBtn" class="btn btn-secondary" type="button">Cancel</button>
+          <button id="entitySaveBtn" class="btn btn-primary" type="submit">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Shown once after a password was generated, so it can be handed to the person -->
+    <dialog id="credDialog" class="dialog adm-dialog" aria-labelledby="credTitle" aria-describedby="credIntro">
+      <h2 id="credTitle">Sign-in details</h2>
+      <p id="credIntro"></p>
+      <dl class="adm-cred">
+        <dt>Username</dt>
+        <dd id="credUser"></dd>
+        <dt>Password</dt>
+        <dd id="credPass"></dd>
+      </dl>
+      <p class="adm-help">This password is shown only once and cannot be looked up later. Share it privately. To set a new one, edit the account and use Generate.</p>
+      <div class="dialog-actions">
+        <button id="credCopyBtn" class="btn btn-secondary" type="button">Copy password</button>
+        <button id="credCloseBtn" class="btn btn-primary" type="button">Done</button>
+      </div>
+    </dialog>
+
+    <!-- Term setup wizard -->
+    <dialog id="wizardDialog" class="dialog adm-dialog adm-wide" aria-labelledby="wizardTitle">
+      <form id="wizardForm" novalidate>
+        <h2 id="wizardTitle">Term setup wizard</h2>
+        <ol class="adm-steps" id="wizardSteps" aria-label="Progress">
+          <li data-step="1"><span>Session</span></li>
+          <li data-step="2"><span>Classes</span></li>
+          <li data-step="3"><span>Review</span></li>
         </ol>
 
-        <!-- Step 1 -->
         <div class="adm-step" data-step="1">
           <div class="field">
-            <label for="studentName">Full name</label>
-            <input class="input" id="studentName" type="text" autocomplete="off" aria-describedby="studentName-msg" />
-            <p class="field-msg" id="studentName-msg" hidden></p>
-          </div>
-          <div class="field">
-            <label for="studentUsername">Username</label>
-            <input class="input" id="studentUsername" type="text" autocomplete="off" autocapitalize="none" aria-describedby="studentUsername-msg" />
-            <p class="field-msg" id="studentUsername-msg" role="status" hidden></p>
-          </div>
-          <div class="field">
-            <label for="studentPassword">Password</label>
-            <div class="input-group">
-              <input class="input" id="studentPassword" type="password" autocomplete="new-password" aria-describedby="studentPassword-msg" />
-              <button class="input-toggle" type="button" data-toggle-password="studentPassword" aria-pressed="false">Show</button>
-            </div>
-            <p class="field-msg" id="studentPassword-msg" hidden></p>
-          </div>
-          <div class="field">
-            <label for="studentRollNumber">Roll number</label>
-            <input class="input" id="studentRollNumber" type="text" autocomplete="off" aria-describedby="studentRollNumber-msg" />
-            <p class="field-msg" id="studentRollNumber-msg" hidden></p>
+            <label for="wizSession">Academic session</label>
+            <input class="input" id="wizSession" type="text" autocomplete="off" aria-describedby="wizSession-msg wizSessionHelp" />
+            <p class="adm-help" id="wizSessionHelp">Use the same format as before, e.g. <b>2026-2027 ODD</b>. Existing classes of other sessions stay untouched.</p>
+            <p class="field-msg" id="wizSession-msg" hidden></p>
           </div>
         </div>
 
-        <!-- Step 2 -->
         <div class="adm-step" data-step="2" hidden>
-          <div class="field">
-            <label for="studentCourse">Course</label>
-            <select class="input" id="studentCourse" aria-describedby="studentCourse-msg"><option value="">Select course</option></select>
-            <p class="field-msg" id="studentCourse-msg" hidden></p>
-          </div>
-          <div class="field">
-            <label for="studentBranch">Branch</label>
-            <select class="input" id="studentBranch" aria-describedby="studentBranch-msg"><option value="">Select branch</option></select>
-            <p class="field-msg" id="studentBranch-msg" hidden></p>
-          </div>
-          <div class="field">
-            <label for="studentSemester">Semester</label>
-            <input class="input" id="studentSemester" type="number" min="1" max="8" step="1" inputmode="numeric" aria-describedby="studentSemester-msg" />
-            <p class="field-msg" id="studentSemester-msg" hidden></p>
-          </div>
-          <div class="field">
-            <label for="studentClass">Class</label>
-            <select class="input" id="studentClass" disabled aria-describedby="studentClass-msg"><option value="">Select course, branch, and semester first</option></select>
-            <p class="field-msg" id="studentClass-msg" hidden></p>
-          </div>
+          <p class="adm-help">Add one row per branch and semester, then tick the sections that exist. The home room is optional.</p>
+          <div id="wizRows" class="adm-wiz-rows"></div>
+          <div><button id="wizAddRow" class="btn btn-secondary btn-sm" type="button">Add branch / semester</button></div>
+          <p id="wizRowsMsg" class="field-msg err" role="alert" hidden></p>
         </div>
 
-        <!-- Step 3 -->
         <div class="adm-step" data-step="3" hidden>
-          <p class="adm-help" id="faceHelp">Add clear, front-facing photos of the student. Three or more photos give the best accuracy.</p>
-          <div>
-            <input class="visually-hidden" id="faceImages" type="file" multiple accept="image/*" aria-describedby="faceHelp faceImages-msg" />
-            <label class="btn btn-secondary" for="faceImages">Choose photos</label>
-          </div>
-          <p class="field-msg" id="faceImages-msg" role="status" hidden></p>
-          <ul id="facePreviews" class="adm-previews"></ul>
-          <p id="faceStatus" class="adm-help" role="status">No photos selected</p>
+          <div id="wizReview"></div>
         </div>
 
-        <p id="studentFormError" class="alert alert-danger" role="alert" hidden></p>
+        <div class="adm-step" data-step="4" hidden>
+          <div id="wizDone"></div>
+        </div>
 
+        <p id="wizardError" class="alert alert-danger" role="alert" hidden></p>
         <div class="dialog-actions">
-          <button id="closeStudentModalBtn" class="btn btn-secondary" type="button">Cancel</button>
-          <button id="studentBackBtn" class="btn btn-secondary" type="button">Back</button>
-          <button id="studentNextBtn" class="btn btn-primary" type="submit">Next</button>
-          <button id="saveStudentBtn" class="btn btn-primary" type="submit">Save student</button>
+          <button id="wizCancel" class="btn btn-secondary" type="button">Cancel</button>
+          <button id="wizBack" class="btn btn-secondary" type="button">Back</button>
+          <button id="wizNext" class="btn btn-primary" type="submit">Next</button>
+          <button id="wizCreate" class="btn btn-primary" type="submit">Create classes</button>
+          <button id="wizClose" class="btn btn-primary" type="button">Done</button>
         </div>
       </form>
     </dialog>
 
-    <!-- Add / edit faculty -->
-    <dialog id="facultyModal" class="dialog adm-dialog" aria-labelledby="facultyModalTitle">
-      <form id="facultyForm" novalidate>
-        <h2 id="facultyModalTitle">Add faculty</h2>
-        <div class="adm-step">
-          <div class="field">
-            <label for="facultyName">Full name</label>
-            <input class="input" id="facultyName" type="text" autocomplete="off" aria-describedby="facultyName-msg" />
-            <p class="field-msg" id="facultyName-msg" hidden></p>
-          </div>
-          <div class="field">
-            <label for="facultyUsername">Username</label>
-            <input class="input" id="facultyUsername" type="text" autocomplete="off" autocapitalize="none" aria-describedby="facultyUsername-msg" />
-            <p class="field-msg" id="facultyUsername-msg" hidden></p>
-          </div>
-          <div class="field">
-            <label for="facultyPassword">Password</label>
-            <div class="input-group">
-              <input class="input" id="facultyPassword" type="password" autocomplete="new-password" aria-describedby="facultyPassword-msg" />
-              <button class="input-toggle" type="button" data-toggle-password="facultyPassword" aria-pressed="false">Show</button>
-            </div>
-            <p class="field-msg" id="facultyPassword-msg" hidden></p>
-          </div>
-          <div class="field">
-            <label for="facultySubject">Subject</label>
-            <input class="input" id="facultySubject" type="text" autocomplete="off" aria-describedby="facultySubject-msg" />
-            <p class="field-msg" id="facultySubject-msg" hidden></p>
-          </div>
-          <div class="field">
-            <label for="facultySection">Section</label>
-            <input class="input" id="facultySection" type="text" autocomplete="off" aria-describedby="facultySection-msg" />
-            <p class="field-msg" id="facultySection-msg" hidden></p>
-          </div>
+    <!-- CSV import (students, faculty, timetable) -->
+    <dialog id="importDialog" class="dialog adm-dialog adm-wide" aria-labelledby="importTitle">
+      <form id="importForm" onsubmit="return false">
+        <h2 id="importTitle">Import CSV</h2>
+        <p id="importHelp" class="adm-help"></p>
+        <div class="adm-import-pick">
+          <input class="visually-hidden" id="importFile" type="file" accept=".csv,.tsv,text/csv,text/plain" />
+          <label class="btn btn-secondary" for="importFile">Choose CSV file</label>
+          <button id="importTemplateBtn" class="btn btn-secondary" type="button">Download template</button>
+          <span id="importFileName" class="adm-help">No file chosen</span>
         </div>
-        <p id="facultyFormError" class="alert alert-danger" role="alert" hidden></p>
+        <div id="importPreview" aria-live="polite"></div>
+        <p id="importError" class="alert alert-danger" role="alert" hidden></p>
         <div class="dialog-actions">
-          <button id="closeFacultyModalBtn" class="btn btn-secondary" type="button">Cancel</button>
-          <button id="saveFacultyBtn" class="btn btn-primary" type="submit">Save faculty</button>
+          <button id="importCancelBtn" class="btn btn-secondary" type="button">Close</button>
+          <button id="importCommitBtn" class="btn btn-primary" type="button" disabled>Import</button>
         </div>
       </form>
     </dialog>
 
-    <!-- Shared delete confirmation -->
+    <!-- Publish the draft -->
+    <dialog id="publishDialog" class="dialog adm-dialog" aria-labelledby="publishTitle">
+      <form id="publishForm" novalidate>
+        <h2 id="publishTitle">Publish timetable</h2>
+        <p id="publishIntro" class="adm-help"></p>
+        <ul id="publishChanges" class="adm-changes"></ul>
+        <div class="field">
+          <label for="publishDate">New version takes effect from</label>
+          <input class="input" id="publishDate" type="date" />
+          <span id="publishDateText" class="adm-help"></span>
+        </div>
+        <p id="publishError" class="alert alert-danger" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button class="btn btn-secondary" type="button" id="publishCancelBtn">Cancel</button>
+          <button class="btn btn-primary" type="submit" id="publishGoBtn">Publish</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Print: choose classrooms -->
+    <dialog id="printDialog" class="dialog adm-dialog" aria-labelledby="printTitle">
+      <form id="printForm" method="dialog">
+        <h2 id="printTitle">Print timetables</h2>
+        <p class="adm-help">Choose the classrooms to print. Each one gets its own page, so all of them can go into a single PDF.</p>
+        <label class="adm-chip"><input type="checkbox" id="printAll" /> All classrooms</label>
+        <div id="printRooms" class="adm-checks" style="margin-top: var(--space-3)"></div>
+        <p id="printError" class="alert alert-danger" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button class="btn btn-secondary" type="button" id="printCancelBtn">Cancel</button>
+          <button class="btn btn-primary" type="submit" id="printGoBtn">Print</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Timetable cell editor -->
+    <dialog id="cellDialog" class="dialog adm-dialog" aria-labelledby="cellTitle">
+      <form id="cellForm" novalidate>
+        <h2 id="cellTitle">Add class</h2>
+        <p id="cellWhen" class="adm-help"></p>
+        <div class="adm-step adm-two">
+          <div class="field adm-span2">
+            <label for="cellSubject">Subject</label>
+            <select class="input" id="cellSubject"></select>
+          </div>
+          <div class="field">
+            <label for="cellFaculty">Faculty</label>
+            <select class="input" id="cellFaculty"></select>
+          </div>
+          <div class="field">
+            <label for="cellRoom">Room</label>
+            <select class="input" id="cellRoom"></select>
+          </div>
+          <div class="field">
+            <label for="cellBatch">Batch</label>
+            <select class="input" id="cellBatch"><option value="">Whole class</option><option value="G1">G1</option><option value="G2">G2</option></select>
+          </div>
+          <div class="field" id="cellSpanField">
+            <label for="cellSpan">Periods</label>
+            <select class="input" id="cellSpan"></select>
+          </div>
+          <div class="field" id="cellFromField">
+            <label for="cellFrom" id="cellFromLabel">Valid from</label>
+            <input class="input" id="cellFrom" type="date" />
+          </div>
+          <fieldset class="field adm-span2" id="cellClassesField">
+            <legend>Also for these classes (combined lecture)</legend>
+            <div id="cellClasses" class="adm-checks"></div>
+          </fieldset>
+        </div>
+        <div id="cellConflicts" class="adm-conflicts" role="status" aria-live="polite"></div>
+        <p id="cellError" class="alert alert-danger" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button id="cellDeleteBtn" class="btn btn-danger" type="button">Delete</button>
+          <button id="cellCancelBtn" class="btn btn-secondary" type="button">Cancel</button>
+          <button id="cellSaveBtn" class="btn btn-primary" type="submit">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Shared delete / confirm dialog -->
     <dialog id="deleteDialog" class="dialog" aria-labelledby="deleteTitle" aria-describedby="deleteText">
       <h2 id="deleteTitle">Delete?</h2>
       <p id="deleteText"></p>
@@ -314,19 +390,6 @@
         <button id="deleteCancelBtn" class="btn btn-secondary" type="button">Keep</button>
         <button id="deleteConfirmBtn" class="btn btn-danger btn-solid" type="button">Delete</button>
       </div>
-    </dialog>
-
-    <!-- Database row editor (fields are built in admin.js from the table's columns) -->
-    <dialog id="databaseRowModal" class="dialog adm-dialog" aria-labelledby="databaseRowModalTitle">
-      <form id="databaseRowForm">
-        <h2 id="databaseRowModalTitle">Add row</h2>
-        <div id="databaseRowFields" class="adm-step"></div>
-        <p id="databaseRowError" class="alert alert-danger" role="alert" hidden></p>
-        <div class="dialog-actions">
-          <button id="databaseCloseRowBtn" class="btn btn-secondary" type="button">Cancel</button>
-          <button id="databaseSaveRowBtn" class="btn btn-primary" type="submit">Save row</button>
-        </div>
-      </form>
     </dialog>
 
     <script type="module" src="js/admin.js"></script>

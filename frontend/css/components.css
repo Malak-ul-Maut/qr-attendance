@@ -304,6 +304,19 @@ a {
 .toast-error {
   border-left-color: var(--danger-600);
 }
+/* Two live lanes (polite + alert) share one fixed stack so they never overlap */
+.toast-lane { display: grid; gap: var(--space-2); }
+.toast-lane:empty { display: none; }
+.toast { display: flex; align-items: flex-start; gap: var(--space-3); }
+.toast-text { flex: 1; min-width: 0; }
+.toast-close {
+  flex: none; display: inline-grid; place-items: center;
+  min-width: 2.25rem; min-height: 2.25rem; margin: calc(var(--space-2) * -1) calc(var(--space-3) * -1) calc(var(--space-2) * -1) 0;
+  padding: 0; font: inherit; font-size: 1.5rem; line-height: 1;
+  color: inherit; background: transparent; border: 0; border-radius: var(--radius-md); cursor: pointer;
+}
+.toast-close:hover { background: rgb(128 128 128 / 0.25); }
+.toast-close:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
 
 @keyframes spin {
   to {

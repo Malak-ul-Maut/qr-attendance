@@ -23,6 +23,12 @@ db.serialize(() => {
   // This one resets on every new connection, so it must run every time.
   db.configure('busyTimeout', 5000); // milliseconds
 
+  // Added after the first release: the class counsellor printed on timetable sheets.
+  // Safe to run every time - SQLite refuses a second ADD COLUMN and we ignore that one error.
+  db.run('ALTER TABLE classes ADD COLUMN counsellor TEXT', err => {
+    if (err && !/duplicate column/i.test(err.message)) console.error('Could not add classes.counsellor:', err);
+  });
+
   // Enforce foreign keys (off by default in SQLite, and per connection).
   db.run('PRAGMA foreign_keys = ON');
 });
