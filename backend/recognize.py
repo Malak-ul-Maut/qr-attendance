@@ -32,6 +32,14 @@ still counts against --max-attempts (the compute was spent) but is not trusted a
 keeps trying on later frames until it matches, or runs out of attempts and is then marked
 "unmatched" for the rest of the clip.
 
+Borderline matches (optional, --accept-threshold): by default ONE attempt at or above --threshold
+(the floor) marks a student present. Set --accept-threshold above the floor (e.g. 0.26 / 0.35) and
+only an attempt at or above it is accepted at once; an attempt between the two is "borderline" and
+needs a second agreeing attempt on the same track. A borderline attempt is also ignored when a
+live track already holds that student with a score clearly higher (CLAIM_MARGIN): one student
+cannot sit in two seats, so the weaker face is a look-alike and ends up "unmatched". The price is
+about one extra sampled frame for genuinely borderline students.
+
 --max-attempts bounds the cost of ONE face, not the length of the scan: a classroom almost always
 has absentees, so waiting for "everyone present" to stop is not a real exit condition. Two things
 end the scan instead:
@@ -93,6 +101,7 @@ from tracker import Tracker, iou
 
 # ------------------------------------------------------------------ settings
 HERE = Path(__file__).resolve().parent
+CLAIM_MARGIN = 0.03   # a borderline match loses to a live track already holding the same student if that track scored this much higher
 IMAGE_TYPES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 GALLERY_DET_SIZE = (640, 640)
 DEFAULT_REC_FILENAME = "adaface_ir101_webface4m.onnx"
@@ -105,7 +114,11 @@ MODEL_URLS = {
 # Every per-run setting and its default, in ONE place. The command line (parse_args) and the
 # server (the "options" in a request) both read from here, so the two can never disagree.
 DEFAULT_SETTINGS = {
-    "threshold": 0.26,      # similarity needed for ONE recognition attempt to count as a match
+    "threshold": 0.26,      # the FLOOR: similarity an attempt needs to count as a match at all
+    "accept_threshold": 0.28,  # IMMEDIATE-ACCEPT score. 0 = off (every attempt >= threshold is accepted at once, as before).
+                            # If set above threshold: an attempt >= this is accepted at once, while one between
+                            # threshold and this ("borderline") needs a 2nd agreeing attempt on the same track, and is
+                            # rejected if another live track already holds that student with a clearly higher score.
     "max_attempts": 5,      # recognition attempts allowed per track before giving up on it
     "every": 18,            # process every Nth frame
     "duration": 5.0,        # seconds of video to scan; 0 = no limit
@@ -473,6 +486,8 @@ class RunState:
         self.frames_processed = 0    # processed frames so far (the clock for track_last_seen)
         self.track_sightings = {}    # track_id -> number of processed frames it was detected in
         self.track_last_seen = {}    # track_id -> frames_processed value at its latest sighting
+        self.track_votes = {}        # track_id -> {student_id: borderline attempts that named that student}
+        self.frame_faces = {}        # track_id -> what happened to that face on the frame just processed (for snapshots)
 
 
 def process_frame(model, tracker, crop, gallery, identity_map, state, args, frame_index, timings, log):
@@ -485,6 +500,7 @@ def process_frame(model, tracker, crop, gallery, identity_map, state, args, fram
     """
     gallery_embeddings, gallery_names = gallery
     state.frames_processed += 1
+    state.frame_faces = {}
 
     faces, detect_ms = model.detect(crop)
     timings.add("detect faces", detect_ms)
@@ -498,16 +514,22 @@ def process_frame(model, tracker, crop, gallery, identity_map, state, args, fram
             state.track_boxes[track_id] = face.bbox  # keep the freshest sighting for the final annotated image
             state.track_sightings[track_id] = state.track_sightings.get(track_id, 0) + 1
             state.track_last_seen[track_id] = state.frames_processed
+            info = {"bbox": face.bbox, "det": float(face.det_score), "status": "queued", "score": None, "quality": None}
+            state.frame_faces[track_id] = info
 
             if track_id in state.track_identity:
+                info["status"] = "resolved" if state.track_identity[track_id] is not None else "gave up"
                 continue  # already resolved (matched, or gave up) - nothing left to do for this track
             if state.attempts_used.get(track_id, 0) >= args.max_attempts:
                 state.track_identity[track_id] = None  # give up on this track for good
+                info["status"] = "gave up"
                 continue
             if not face_is_big_enough(face, args.min_face):
+                info["status"] = "skipped: small"
                 continue  # too small to bother with - free, does not use up an attempt
             x1, y1, x2, y2 = (max(0, int(v)) for v in face.bbox)  # max(0, ..): a box poking out of the frame must not wrap around
             if not crop_is_sharp_enough(crop[y1:y2, x1:x2], args.min_sharpness):
+                info["status"] = "skipped: blurry"
                 continue  # too blurry - also free
             to_recognize.append((face, track_id))
 
@@ -526,19 +548,40 @@ def process_frame(model, tracker, crop, gallery, identity_map, state, args, fram
             attempts = state.attempts_used.get(track_id, 0) + 1
             state.attempts_used[track_id] = attempts
             matched = False
+            info = state.frame_faces[track_id]
+            info["status"] = "tried (no match)"
+            info["quality"] = float(face.quality)
 
             if face.quality >= args.min_norm:  # a low-norm crop is not trusted (its attempt still counted)
                 name, score = nearest_gallery_match(face.normed_embedding, gallery_embeddings, gallery_names)
+                info["score"] = float(score)
                 state.track_best_scores[track_id] = max(state.track_best_scores.get(track_id, float("-inf")), score)
                 identity = identity_map.get(name)  # None = a gallery folder with no matching roster student
                 if score >= args.threshold and identity is not None:
-                    matched = True
+                    student_id = identity["student_id"]
+                    if args.accept_threshold > args.threshold and score < args.accept_threshold:
+                        # borderline: needs a second agreeing attempt, and no stronger live claim on this student
+                        holder = stronger_live_claim(state, track_id, student_id, score)
+                        if holder is not None:
+                            info["status"] = f"tried (T{holder} holds this student)"
+                        else:
+                            votes = state.track_votes.setdefault(track_id, {})
+                            votes[student_id] = votes.get(student_id, 0) + 1
+                            matched = votes[student_id] >= 2
+                            if not matched:
+                                info["status"] = "borderline 1/2"
+                    else:
+                        matched = True
+                if matched:
+                    info["status"] = "MATCHED"
                     state.track_identity[track_id] = identity["student_id"]
                     if identity["student_id"] not in state.present:
                         record = {**identity, "best_score": round(score, 4), "frame": frame_index, "track_id": track_id}
                         state.present[identity["student_id"]] = record
                         newly_present.append((record, face))
 
+            if not matched and face.quality < args.min_norm:
+                info["status"] = "tried (low quality)"
             if not matched and attempts >= args.max_attempts:
                 state.track_identity[track_id] = None  # out of attempts: resolved as "unmatched" right away
 
@@ -546,6 +589,22 @@ def process_frame(model, tracker, crop, gallery, identity_map, state, args, fram
         log(f"  frame {frame_index}: {len(faces)} face(s) detected ({detect_ms:.0f} ms), "
             f"{len(to_recognize)} recognized ({recognize_ms:.0f} ms), {len(newly_present)} newly matched")
     return newly_present
+
+
+def stronger_live_claim(state, track_id, student_id, score):
+    """
+    Track id of another LIVE track (seen this frame or the one before) that already holds
+    `student_id` with a clearly higher score than `score`, else None. Dead tracks are ignored on
+    purpose: a student who leaned and got a new track id must not be rejected by their own old track.
+    """
+    for other_id, other_student in state.track_identity.items():
+        if other_student != student_id or other_id == track_id:
+            continue
+        if state.track_last_seen.get(other_id, 0) < state.frames_processed - 1:
+            continue
+        if state.track_best_scores.get(other_id, float("-inf")) >= score + CLAIM_MARGIN:
+            return other_id
+    return None
 
 
 def all_visible_faces_resolved(tracker, state):
@@ -556,6 +615,83 @@ def all_visible_faces_resolved(tracker, state):
     """
     visible = [track for track in tracker.tracks if track.confirmed and track.missed == 0]
     return bool(visible) and all(track.id in state.track_identity for track in visible)
+
+
+SNAPSHOT_COLORS = {          # BGR box colour per outcome on that frame
+    "MATCHED": (0, 200, 0), "resolved": (0, 200, 0),
+    "tried (no match)": (0, 0, 220), "tried (low quality)": (0, 0, 220), "gave up": (0, 0, 140),
+    "borderline 1/2": (0, 165, 255),
+    "queued": (0, 200, 220), "skipped: small": (0, 140, 255), "skipped: blurry": (0, 140, 255),
+}
+
+
+def open_snapshot_run_folder(snapshot_dir, cache_key):
+    """A fresh sub-folder per scan, e.g. snapshots/F_310_ab12cd34ef_20261008_111855/."""
+    tag = "".join(c if c.isalnum() or c in "-_" else "_" for c in str(cache_key or "run"))
+    folder = Path(snapshot_dir) / f"{tag}_{time.strftime('%Y%m%d_%H%M%S')}"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def save_frame_snapshot(folder, crop, frame_no, t, state, names):
+    """
+    Debug aid: save the frame just processed with EVERY detected face drawn, whatever happened to
+    it, plus one row per face in detections.csv. Label = T<track id>, the student's name once
+    matched, s<similarity of this frame's attempt>, d<detector confidence>, a<attempts used so far>.
+    Colours: green matched/resolved, red tried and not matched (incl. "T<n> holds this student"),
+    amber borderline - waiting for a 2nd agreeing attempt, yellow waiting for an attempt,
+    orange skipped by --min-face / --min-sharpness, dark red gave up.
+    """
+    image = crop.copy()
+    height, width = image.shape[:2]
+    scale = max(0.6, height / 900)
+    thickness = max(2, round(2 * scale))
+    font, font_size = cv2.FONT_HERSHEY_SIMPLEX, max(0.4, 0.45 * scale)
+    text_thickness = max(1, round(1.2 * scale))
+
+    csv_path = folder / "detections.csv"
+    new_csv = not csv_path.exists()
+    rows = []
+    # left-to-right, alternating label above / below the box so neighbouring labels collide less
+    for order, (track_id, info) in enumerate(sorted(state.frame_faces.items(), key=lambda kv: kv[1]["bbox"][0])):
+        x1, y1, x2, y2 = (int(v) for v in info["bbox"])
+        status = info["status"]
+        color = SNAPSHOT_COLORS.get(status) or ((0, 0, 220) if status.startswith("tried") else (200, 200, 200))
+        student_id = state.track_identity.get(track_id)
+        name = names.get(student_id, "") if student_id is not None else ""
+        attempts = state.attempts_used.get(track_id, 0)
+        parts = [f"T{track_id}"]
+        if name:
+            parts.append(name)
+        if info["score"] is not None:
+            parts.append(f"s{info['score']:.3f}")
+        parts.append(f"d{info['det']:.2f}")
+        parts.append(f"a{attempts}")
+        label = " ".join(parts)
+        cv2.rectangle(image, (x1, y1), (x2, y2), color, thickness)
+        (text_w, text_h), baseline = cv2.getTextSize(label, font, font_size, text_thickness)
+        top = y1 - text_h - baseline - 4 if order % 2 == 0 else y2 + 3
+        top = min(max(0, top), max(0, height - text_h - baseline - 2))
+        left = min(max(0, x1), max(0, width - text_w - 4))
+        cv2.rectangle(image, (left, top), (left + text_w + 4, top + text_h + baseline + 2), color, -1)
+        cv2.putText(image, label, (left + 2, top + text_h + 1), font, font_size, (255, 255, 255), text_thickness, cv2.LINE_AA)
+        rows.append([frame_no, f"{t:.2f}", track_id, x1, y1, x2, y2, f"{info['det']:.3f}", status,
+                     attempts, "" if info["score"] is None else f"{info['score']:.4f}",
+                     "" if info["quality"] is None else f"{info['quality']:.2f}", name])
+
+    matched = sum(1 for info in state.frame_faces.values() if info["status"] in ("MATCHED", "resolved"))
+    header = f"frame {frame_no}  t={t:.1f}s  faces={len(state.frame_faces)}  matched/resolved={matched}"
+    cv2.rectangle(image, (0, height - 34), (width, height), (0, 0, 0), -1)
+    cv2.putText(image, header, (10, height - 10), font, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
+    save_image(folder / f"frame_{frame_no:05d}_t{t:06.1f}s.jpg", image)
+
+    import csv
+    with open(csv_path, "a", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        if new_csv:
+            writer.writerow(["frame", "time_s", "track", "x1", "y1", "x2", "y2", "det_score", "status",
+                             "attempts", "similarity", "quality_norm", "student"])
+        writer.writerows(rows)
 
 
 def save_debug_snapshot(debug_dir, crop, face, record):
@@ -572,7 +708,8 @@ def save_debug_snapshot(debug_dir, crop, face, record):
 
 # Annotated-image filtering for faces that did NOT resolve to a student (the red boxes)
 ANNOTATE_MIN_SIGHTINGS = 2   # must have been detected in at least this many processed frames (drops 1-frame flickers)
-ANNOTATE_RECENT_FRAMES = 3   # ...and still seen within the last this-many processed frames (drops departed faces)
+ANNOTATE_RECENT_FRAMES = 0   # >0: also require a sighting within the last this-many processed frames (0 = off; it also hides faces that are only detected now and then, e.g. a head turned down)
+ANNOTATE_AMBER_RECENT_FRAMES = 2   # an amber "name?" box must have been seen within the last this-many processed frames (drops dead tracks of someone who moved)
 ANNOTATE_DUPLICATE_IOU = 0.25  # a box overlapping an already-drawn box by more than this is a duplicate of it
 
 
@@ -593,11 +730,14 @@ def save_aggregate_annotation(out_path, canvas, track_boxes, track_identity, tra
     One final image summarising the whole clip, drawn on `canvas` (the most recent frame read).
     Green + name + similarity for a track that resolved to a student; red + "unmatched" for a
     track that used up its attempts without matching anyone; red + "unknown" for a track that was
-    still unresolved when the clip ended.
+    still unresolved when the clip ended. When SEVERAL tracks resolved to the same student, only
+    the best-scoring one is green; the others are drawn amber as "<name>? <score>" - one person
+    cannot be in two seats, so an amber box is either a look-alike false match or a lost-and-found
+    track of the same person. Either way it is a face that exists and must not silently vanish.
 
     Each box is the track's LAST known position, so the red boxes are filtered to keep the picture
-    an honest head count: a face must have been seen in ANNOTATE_MIN_SIGHTINGS frames and still be
-    visible in the last ANNOTATE_RECENT_FRAMES frames, and a box that duplicates another drawn box
+    an honest head count: a face must have been seen in ANNOTATE_MIN_SIGHTINGS frames (and, if
+    ANNOTATE_RECENT_FRAMES is set, seen recently), and a box that duplicates another drawn box
     (same face detected twice, or an old track plus its replacement) is drawn once, green first.
     Pass track_sightings / track_last_seen / frames_processed (from RunState) to enable the
     filtering; without them every track is drawn, as before.
@@ -618,7 +758,11 @@ def save_aggregate_annotation(out_path, canvas, track_boxes, track_identity, tra
             continue
         box = track_boxes[track_id]
         area = max(0, box[2] - box[0]) * max(0, box[3] - box[1])
-        rank = (track_best_scores.get(track_id, float("-inf")), area)
+        # a track that is still alive beats a dead one (a student who moved leaves a stale old track behind);
+        # among live tracks the higher score wins
+        alive = (track_last_seen is None
+                 or track_last_seen.get(track_id, 0) > frames_processed - ANNOTATE_AMBER_RECENT_FRAMES)
+        rank = (alive, track_best_scores.get(track_id, float("-inf")), area)
         if student_id not in best_track_by_student or rank > best_track_by_student[student_id][0]:
             best_track_by_student[student_id] = (rank, track_id)
 
@@ -627,15 +771,19 @@ def save_aggregate_annotation(out_path, canvas, track_boxes, track_identity, tra
     for track_id, box in track_boxes.items():
         student_id = track_identity.get(track_id)
         if student_id is not None:
-            if best_track_by_student[student_id][1] != track_id:
-                continue
-            priority = 0
+            if best_track_by_student[student_id][1] == track_id:
+                priority = 0
+            else:  # 1 = amber "name?" duplicate claim; only worth showing while that track is still alive
+                if track_last_seen is not None and track_last_seen.get(track_id, 0) <= frames_processed - ANNOTATE_AMBER_RECENT_FRAMES:
+                    continue
+                priority = 1
         else:
             if track_sightings is not None and track_sightings.get(track_id, 0) < ANNOTATE_MIN_SIGHTINGS:
                 continue
-            if track_last_seen is not None and track_last_seen.get(track_id, 0) <= frames_processed - ANNOTATE_RECENT_FRAMES:
+            if (ANNOTATE_RECENT_FRAMES > 0 and track_last_seen is not None
+                    and track_last_seen.get(track_id, 0) <= frames_processed - ANNOTATE_RECENT_FRAMES):
                 continue
-            priority = 1
+            priority = 2
         area = max(0, box[2] - box[0]) * max(0, box[3] - box[1])
         candidates.append((priority, -area, track_id, box))
     candidates.sort(key=lambda c: (c[0], c[1]))
@@ -656,9 +804,15 @@ def save_aggregate_annotation(out_path, canvas, track_boxes, track_identity, tra
         else:
             student_id = track_identity[track_id]
             record = by_student_id.get(student_id)
-            color = (0, 200, 0)
             # (name or id): a roster entry with no name must not crash the label
-            label = f"{(record.get('name') or str(student_id)).split()[0]} {record['best_score']:.3f}" if record else str(student_id)
+            short_name = (record.get('name') or str(student_id)).split()[0] if record else str(student_id)
+            if best_track_by_student[student_id][1] == track_id:
+                color = (0, 200, 0)
+                label = f"{short_name} {record['best_score']:.3f}" if record else short_name
+            else:  # a second track claimed this student: show it, flagged, instead of hiding it
+                color = (0, 165, 255)
+                own_score = track_best_scores.get(track_id)
+                label = f"{short_name}? {own_score:.3f}" if own_score is not None else f"{short_name}?"
         if student_id is None and track_id in track_best_scores:
             label = f"{label} {track_best_scores[track_id]:.3f}"
         cv2.rectangle(annotated, (x1, y1), (x2, y2), color, box_thickness)
@@ -691,7 +845,7 @@ def save_aggregate_annotation(out_path, canvas, track_boxes, track_identity, tra
 
 
 def run_attendance(model, video, identity_map, args, gallery_dir, cache_key, annotated_out=None,
-                   debug_dir=None, memory_cache=None, log=print):
+                   debug_dir=None, memory_cache=None, log=print, snapshot_dir=None):
     """
     Scan one video and return the result dict (present/absent students, timings, ...).
 
@@ -721,6 +875,11 @@ def run_attendance(model, video, identity_map, args, gallery_dir, cache_key, ann
 
     state = RunState()
     tracker = Tracker()
+    # Per-frame debug snapshots: pass snapshot_dir, or set the CCTV_SNAPSHOT_DIR environment variable.
+    snapshot_dir = snapshot_dir or os.environ.get("CCTV_SNAPSHOT_DIR") or None
+    snapshot_folder = None
+    snapshot_names = {identity["student_id"]: (identity.get("name") or str(identity["student_id"])).split()[0]
+                      for identity in identity_map.values()}
     frame_no, processed, last_crop, scanned_to = 0, 0, None, 0.0
     stop_reason = "end of video"
     try:
@@ -772,6 +931,17 @@ def run_attendance(model, video, identity_map, args, gallery_dir, cache_key, ann
                     f"{record.get('name') or record['student_id']} present (score {record['best_score']:.2f})")
                 if debug_dir:
                     save_debug_snapshot(debug_dir, crop, face, record)
+
+            if snapshot_dir:
+                try:  # a debug aid must never be able to break an attendance run
+                    with timings.measure("save frame snapshot"):
+                        if snapshot_folder is None:
+                            snapshot_folder = open_snapshot_run_folder(snapshot_dir, cache_key)
+                            log(f"  saving per-frame snapshots to {snapshot_folder}")
+                        save_frame_snapshot(snapshot_folder, crop, frame_no, t, state, snapshot_names)
+                except Exception as error:
+                    log(f"  snapshot failed (ignored): {error}")
+                    snapshot_dir = None
 
             processed += 1
             if target_ids and set(state.present) >= target_ids:
@@ -833,6 +1003,8 @@ def parse_args():
                         help="save one final annotated image here (last frame, every track's box, green=matched/red=unmatched); omit to skip. Already saved by cctv.routes.js")
     parser.add_argument("--threshold", type=float, default=DEFAULT_SETTINGS["threshold"],
                         help="similarity needed for ONE recognition attempt to count as a match - set this from calibrate.py's report, not this default")
+    parser.add_argument("--accept-threshold", type=float, default=DEFAULT_SETTINGS["accept_threshold"],
+                        help="immediate-accept similarity (0 = off). Attempts between --threshold and this need a second agreeing attempt; e.g. --threshold 0.26 --accept-threshold 0.35")
     parser.add_argument("--max-attempts", type=int, default=DEFAULT_SETTINGS["max_attempts"],
                         help="recognition attempts allowed per track before giving up on it")
     parser.add_argument("--every", type=int, default=DEFAULT_SETTINGS["every"], help="process every Nth frame")
@@ -841,7 +1013,7 @@ def parse_args():
     parser.add_argument("--no-early-exit", dest="early_exit", action="store_false",
                         help="always scan the full --duration, even when every visible face is already resolved")
     parser.add_argument("--det-size", default="1920x1080")
-    parser.add_argument("--det-thresh", type=float, default=0.25)
+    parser.add_argument("--det-thresh", type=float, default=0.3)
     parser.add_argument("--min-face", type=int, default=DEFAULT_SETTINGS["min_face"],
                         help="skip faces shorter than this (px) on either side - free, no attempt spent")
     parser.add_argument("--min-sharpness", type=float, default=DEFAULT_SETTINGS["min_sharpness"],
@@ -851,6 +1023,9 @@ def parse_args():
     parser.add_argument("--start", type=float, default=DEFAULT_SETTINGS["start"], help="seconds into the clip to start at")
     parser.add_argument("--verbose", action="store_true", help="log one line per processed frame")
     parser.add_argument("--debug-dir", default=None, help="save a snapshot of each newly-confirmed match here")
+    parser.add_argument("--snapshot-dir", default=str(HERE / "snapshots"),
+                        help="save every processed frame with all detected faces drawn (plus detections.csv) in a sub-folder here; "
+                             "the CCTV_SNAPSHOT_DIR environment variable does the same")
     return parser.parse_args()
 
 
@@ -873,7 +1048,8 @@ def main():
     settings = make_settings(**{name: getattr(args, name) for name in DEFAULT_SETTINGS})
     try:
         result = run_attendance(model, args.video, identity_map, settings, args.gallery, cache_key,
-                                annotated_out=args.annotated_out, debug_dir=args.debug_dir)
+                                annotated_out=args.annotated_out, debug_dir=args.debug_dir,
+                                snapshot_dir=args.snapshot_dir)
     except RecognitionError as error:
         sys.exit(str(error))
 

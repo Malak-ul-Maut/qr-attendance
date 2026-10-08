@@ -71,7 +71,7 @@ class Tracker:
     row is dropped (its id will not be reused).
     """
 
-    def __init__(self, iou_threshold=0.3, max_missed=15, max_center_dist=0.6, max_size_ratio=1.6):
+    def __init__(self, iou_threshold=0.3, max_missed=15, max_center_dist=1.0, max_size_ratio=1.6):
         self.iou_threshold = iou_threshold
         self.max_center_dist = max_center_dist   # 0 turns the distance rule off (IoU only, as before)
         self.max_size_ratio = max_size_ratio

@@ -39,9 +39,6 @@ const ANNOTATED_DIR = path.resolve(
 const RECOGNIZE_TIMEOUT_MS = Number(
   process.env.CCTV_RECOGNIZE_TIMEOUT_MS || 300_000,
 );
-console.log(
-  `[cctv] per-request recognition timeout: ${RECOGNIZE_TIMEOUT_MS} ms`,
-);
 
 // Run the current CCTV recognizer against the selected class.
 router.post('/run', async (req, res) => {
