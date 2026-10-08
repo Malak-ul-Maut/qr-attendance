@@ -1,9 +1,10 @@
 import express from 'express';
 import { dbAll, dbGet } from '../../utils/db.js';
 import { addDays, todayLocal } from '../../utils/dates.js';
-import { HttpError, wrap } from './common.js';
+import { HttpError, wrap, classroomMap } from './common.js';
 
 const router = express.Router();
+
 
 router.get('/', wrap(async (req, res) => {
   const days = Math.min(365, Math.max(1, Number.parseInt(req.query.days, 10) || 30));
@@ -15,7 +16,7 @@ router.get('/', wrap(async (req, res) => {
     `SELECT
        (SELECT COUNT(*) FROM students WHERE active = 1) AS students,
        (SELECT COUNT(*) FROM students WHERE active = 1 AND face_embedding IS NOT NULL) AS enrolled,
-       (SELECT COUNT(*) FROM faculties) AS faculty,
+       (SELECT COUNT(*) FROM faculties WHERE active = 1) AS faculty,
        (SELECT COUNT(*) FROM classes) AS classes,
        (SELECT COUNT(DISTINCT session_code) FROM sessions WHERE end_time IS NULL) AS liveSessions,
        (SELECT COUNT(DISTINCT session_code) FROM sessions WHERE date = ?) AS sessionsToday`,
@@ -43,19 +44,27 @@ router.get('/', wrap(async (req, res) => {
     range,
   );
 
-  const byClass = await dbAll(
-    `SELECT c.id, b.abbr || ' ' || c.semester || c.section AS label,
-            COUNT(*) AS total, SUM(a.marked_at IS NOT NULL) AS present
+  const classrooms = await classroomMap();
+  const perClass = await dbAll(
+    `SELECT tc.class_id AS id, COUNT(*) AS total, SUM(a.marked_at IS NOT NULL) AS present
      FROM attendance a
      JOIN sessions s ON s.id = a.session_id
      JOIN timetable_classes tc ON tc.timetable_id = s.timetable_id
      JOIN students_mapping sm ON sm.student_id = a.student_id AND sm.class_id = tc.class_id
-     JOIN classes c ON c.id = tc.class_id
-     JOIN branches b ON b.id = c.branch_id
      WHERE s.date BETWEEN ? AND ?
-     GROUP BY c.id ORDER BY label`,
+     GROUP BY tc.class_id`,
     range,
   );
+  const roomTotals = new Map();
+  for (const r of perClass) {
+    const room = classrooms.get(r.id);
+    if (!room) continue;
+    const t = roomTotals.get(room.key) || { label: room.label, total: 0, present: 0 };
+    t.total += r.total;
+    t.present += r.present;
+    roomTotals.set(room.key, t);
+  }
+  const byClassroom = [...roomTotals.values()].sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
 
   const bySubject = await dbAll(
     `SELECT sub.abbr AS label, COUNT(*) AS total, SUM(a.marked_at IS NOT NULL) AS present
@@ -83,10 +92,9 @@ router.get('/', wrap(async (req, res) => {
     `SELECT s.session_code AS code, MIN(s.date) AS date, MIN(s.start_time) AS startTime,
             MAX(s.end_time IS NULL) AS live, MIN(s.method) AS method,
             MIN(sub.abbr) AS subject, MIN(f.abbr) AS faculty,
-            (SELECT group_concat(DISTINCT b.abbr || ' ' || c.semester || c.section)
+            (SELECT group_concat(DISTINCT tc.class_id)
                FROM sessions s2 JOIN timetable_classes tc ON tc.timetable_id = s2.timetable_id
-               JOIN classes c ON c.id = tc.class_id JOIN branches b ON b.id = c.branch_id
-              WHERE s2.session_code = s.session_code) AS classes,
+              WHERE s2.session_code = s.session_code) AS classIds,
             (SELECT COUNT(*) FROM attendance a JOIN sessions s3 ON s3.id = a.session_id
               WHERE s3.session_code = s.session_code) AS total,
             (SELECT COUNT(*) FROM attendance a JOIN sessions s3 ON s3.id = a.session_id
@@ -100,7 +108,14 @@ router.get('/', wrap(async (req, res) => {
     range,
   );
 
-  res.json({ ok: true, days, from, to: today, totals, overall, daily, byMethod, byClass, bySubject, lowStudents, recent });
+  // Show each session against its classroom(s), e.g. "DS/AIML-5D", instead of every class separately.
+  for (const r of recent) {
+    const labels = [...new Set(String(r.classIds || '').split(',').filter(Boolean).map(id => classrooms.get(Number(id))?.label).filter(Boolean))];
+    r.classes = labels.join(', ');
+    delete r.classIds;
+  }
+
+  res.json({ ok: true, days, from, to: today, totals, overall, daily, byMethod, byClassroom, bySubject, lowStudents, recent });
 }));
 
 // ---- detail views behind the rows on Home ----

@@ -29,6 +29,15 @@ db.serialize(() => {
     if (err && !/duplicate column/i.test(err.message)) console.error('Could not add classes.counsellor:', err);
   });
 
+  // Stage 5: a course has a length in years (B.Tech = 4); the term wizard uses it to find each semester's passing year.
+  db.run('ALTER TABLE courses ADD COLUMN duration_years INTEGER NOT NULL DEFAULT 4', err => {
+    if (err && !/duplicate column/i.test(err.message)) console.error('Could not add courses.duration_years:', err);
+  });
+  // Stage 5: faculty can leave the institute, so they get an active flag like students.
+  db.run('ALTER TABLE faculties ADD COLUMN active INTEGER NOT NULL DEFAULT 1', err => {
+    if (err && !/duplicate column/i.test(err.message)) console.error('Could not add faculties.active:', err);
+  });
+
   // Stage 4: sections are free text now (any value). Older databases carry a CHECK that only
   // allows A-E, and SQLite cannot drop a CHECK in place, so the table is rebuilt once.
   db.get(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'classes'`, (err, row) => {

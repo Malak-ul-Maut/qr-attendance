@@ -1,3 +1,4 @@
+import { dbAll } from '../../utils/db.js';
 import { randomInt } from 'crypto';
 import { dbGet } from '../../utils/db.js';
 
@@ -104,4 +105,35 @@ export function checkYear(value) {
   if (!Number.isInteger(n) || n < YEAR_MIN || n > yearMax())
     throw new HttpError(400, 'invalid_value', `Year of passing must be between ${YEAR_MIN} and ${yearMax()}.`);
   return n;
+}
+
+// ---------------- Classrooms and cohorts ----------------
+// A classroom = one home room + the class(es) in it (CSE-5A, DS/AIML-5D ...). Classes that share a home
+// room in the same session are one classroom; a class with no home room is a classroom of its own.
+export async function classroomMap() {
+  const rows = await dbAll(
+    `SELECT c.id, c.room_id, c.semester, c.section, c.academic_session, b.abbr AS branch
+     FROM classes c JOIN branches b ON b.id = c.branch_id ORDER BY b.abbr, c.semester, c.section`);
+  const groups = new Map();
+  for (const r of rows) {
+    const key = r.room_id ? `${r.academic_session}|room${r.room_id}` : `class${r.id}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r);
+  }
+  const byClass = new Map();
+  for (const [key, list] of groups) {
+    const names = new Set(list.map(r => `${r.semester}${r.section}`));
+    const label = names.size === 1
+      ? `${[...new Set(list.map(r => r.branch))].join('/')}-${[...names][0]}`
+      : list.map(r => `${r.branch}-${r.semester}${r.section}`).join(' + ');
+    for (const r of list) byClass.set(r.id, { key, label });
+  }
+  return byClass;
+}
+
+// Year a student of this semester finishes: 2026-27 ODD, semester 5 (year 3 of 4) -> 2026 + 4 - 3 + 1 = 2028.
+export function passingYearFor(session, durationYears, semester) {
+  const start = Number(/^(\d{4})-/.exec(session || '')?.[1]);
+  if (!start) return null;
+  return start + Number(durationYears) - Math.ceil(Number(semester) / 2) + 1;
 }

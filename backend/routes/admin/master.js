@@ -1,7 +1,7 @@
 import express from 'express';
 import { dbAll, dbGet, dbRun, withTransaction } from '../../utils/db.js';
 import { todayLocal } from '../../utils/dates.js';
-import { HttpError, wrap, clean, makeUniqueAbbr, generatePassword, checkPassword, checkEmail, checkPhone, checkUsername, YEAR_MIN, yearMax } from './common.js';
+import { HttpError, wrap, clean, passingYearFor, makeUniqueAbbr, generatePassword, checkPassword, checkEmail, checkPhone, checkUsername, YEAR_MIN, yearMax } from './common.js';
 
 const router = express.Router();
 const SESSION_RE = /^(\d{4})-(\d{4}) (ODD|EVEN)$/;
@@ -12,6 +12,24 @@ function checkSection(value) {
   if (!/^[A-Z0-9][A-Z0-9 _-]{0,7}$/.test(section)) throw new HttpError(400, 'invalid_value', 'Section can be up to 8 letters or numbers, like A or 3.');
   return section;
 }
+// The academic session is not typed any more: it comes from the semester (odd = ODD, even = EVEN)
+// and the academic year (June starts a new one: Oct 2026 -> 2026-2027).
+function deriveSession(semester, existingSession) {
+  const kind = Number(semester) % 2 === 1 ? 'ODD' : 'EVEN';
+  const kept = SESSION_RE.exec(existingSession || '');
+  let start;
+  if (kept) start = Number(kept[1]); // editing keeps the class in its own academic year
+  else {
+    const [y, m] = todayLocal().split('-').map(Number);
+    start = m >= 6 ? y : y - 1;
+  }
+  return `${start}-${start + 1} ${kind}`;
+}
+const BATCHES = ['G1', 'G2']; // lab groups
+const checkBatch = value => {
+  if (value !== null && !BATCHES.includes(value)) throw new HttpError(400, 'invalid_value', 'Batch must be G1 or G2.');
+  return value;
+};
 const ROOM_TYPES = ['classroom', 'seminar_hall', 'lab'];
 
 const text = (name, label, extra = {}) => ({ name, label, type: 'text', required: true, ...extra });
@@ -23,7 +41,7 @@ const ENTITIES = {
     label: 'Students',
     singular: 'student',
     table: 'students',
-    columns: [['name', 'Name'], ['roll_number', 'Roll no.'], ['username', 'Username'], ['classLabel', 'Class'], ['batch', 'Batch'], ['status', 'Status']],
+    columns: [['name', 'Name'], ['roll_number', 'Roll no.'], ['username', 'Username'], ['classLabel', 'Class'], ['batch', 'Batch']],
     fields: [
       text('name', 'Full name'),
       text('roll_number', 'Roll number'),
@@ -33,14 +51,13 @@ const ENTITIES = {
       opt('phone_number', 'Phone', { type: 'tel' }),
       text('year_of_passing', 'Year of passing', { type: 'number', min: YEAR_MIN, max: yearMax() }),
       { name: 'class_id', label: 'Class', type: 'select', ref: 'classes', virtual: true, required: false },
-      opt('batch', 'Batch', { virtual: true, hint: 'e.g. G1, G2' }),
+      { name: 'batch', label: 'Batch', type: 'select', options: BATCHES, virtual: true, required: false },
       { name: 'active', label: 'Active', type: 'checkbox', default: 1 },
     ],
     list: `
       SELECT s.id, s.name, s.roll_number, s.username, s.college_email, s.phone_number,
              s.year_of_passing, s.active, sm.class_id, sm.batch,
-             CASE WHEN c.id IS NULL THEN '' ELSE b.abbr || ' Sem ' || c.semester || ' ' || c.section END AS classLabel,
-             CASE WHEN s.active = 1 THEN 'Active' ELSE 'Inactive' END AS status
+             CASE WHEN c.id IS NULL THEN '' ELSE b.abbr || ' Sem ' || c.semester || ' ' || c.section END AS classLabel
       FROM students s
       LEFT JOIN students_mapping sm ON sm.id = (
         SELECT sm2.id FROM students_mapping sm2 JOIN classes c2 ON c2.id = sm2.class_id
@@ -60,8 +77,9 @@ const ENTITIES = {
       opt('abbr', 'Abbreviation', { hint: 'Leave blank to generate one from the name.' }),
       text('username', 'Username'),
       { name: 'password', label: 'Password', type: 'password', secret: true, hint: 'Leave blank to keep the current one (new faculty get a generated password).' },
+      { name: 'active', label: 'Active', type: 'checkbox', default: 1 },
     ],
-    list: `SELECT f.id, f.name, f.abbr, f.username,
+    list: `SELECT f.id, f.name, f.abbr, f.username, f.active,
              (SELECT COUNT(*) FROM timetable t WHERE t.faculty_id = f.id
                 AND (t.valid_to IS NULL OR t.valid_to >= date('now'))) AS periods
            FROM faculties f ORDER BY f.name`,
@@ -90,7 +108,6 @@ const ENTITIES = {
       { name: 'branch_id', label: 'Branch', type: 'select', ref: 'branches', required: true },
       text('semester', 'Semester', { type: 'number', min: 1, max: 8 }),
       text('section', 'Section', { hint: 'Any short label, e.g. A, B or 3.' }),
-      text('academic_session', 'Academic session', { hint: 'e.g. 2026-2027 ODD' }),
       { name: 'room_id', label: 'Home room', type: 'select', ref: 'rooms', required: false },
       opt('counsellor', 'Class counsellor', { hint: 'Printed on the timetable sheet.' }),
     ],
@@ -118,9 +135,9 @@ const ENTITIES = {
     label: 'Courses',
     singular: 'course',
     table: 'courses',
-    columns: [['name', 'Name'], ['abbr', 'Abbr']],
-    fields: [text('name', 'Name'), text('abbr', 'Abbreviation')],
-    list: `SELECT id, name, abbr FROM courses ORDER BY name`,
+    columns: [['name', 'Name'], ['abbr', 'Abbr'], ['duration_years', 'Duration (years)']],
+    fields: [text('name', 'Name'), text('abbr', 'Abbreviation'), text('duration_years', 'Duration (years)', { type: 'number', min: 1, max: 6, default: 4 })],
+    list: `SELECT id, name, abbr, duration_years FROM courses ORDER BY name`,
   },
   rooms: {
     label: 'Rooms',
@@ -237,7 +254,7 @@ async function syncStudentMapping(studentId, body) {
   if (!classId) return;
   if (!(await dbGet(`SELECT 1 AS x FROM classes WHERE id = ?`, [classId])))
     throw new HttpError(400, 'invalid_reference', 'That class does not exist.');
-  const batch = clean(body.batch);
+  const batch = checkBatch(clean(body.batch));
   const existing = await dbGet(`SELECT id FROM students_mapping WHERE student_id = ? AND class_id = ?`, [studentId, classId]);
   if (existing) await dbRun(`UPDATE students_mapping SET batch = ? WHERE id = ?`, [batch, existing.id]);
   else await dbRun(`INSERT INTO students_mapping (student_id, class_id, batch) VALUES (?, ?, ?)`, [studentId, classId, batch]);
@@ -247,6 +264,7 @@ router.post('/entity/:name', wrap(async (req, res) => {
   const entity = entityOr404(req.params.name);
   const out = {};
   const values = buildValues(entity, req.body || {}, true, out);
+  if (entity.table === 'classes') values.academic_session = deriveSession(values.semester);
   if (entity.table === 'faculties' && !values.abbr) values.abbr = await makeUniqueAbbr(values.name);
   const id = await withTransaction(async () => {
     const names = Object.keys(values);
@@ -262,9 +280,10 @@ router.post('/entity/:name', wrap(async (req, res) => {
 
 router.put('/entity/:name/:id', wrap(async (req, res) => {
   const entity = entityOr404(req.params.name);
-  const row = await dbGet(`SELECT id FROM ${entity.table} WHERE id = ?`, [req.params.id]);
+  const row = await dbGet(`SELECT * FROM ${entity.table} WHERE id = ?`, [req.params.id]);
   if (!row) throw new HttpError(404, 'not_found', 'That record no longer exists.');
   const values = buildValues(entity, req.body || {}, false);
+  if (entity.table === 'classes') values.academic_session = deriveSession(values.semester ?? row.semester, row.academic_session);
   if (entity.table === 'faculties' && values.abbr === null) delete values.abbr;
   await withTransaction(async () => {
     const names = Object.keys(values);
@@ -277,9 +296,9 @@ router.put('/entity/:name/:id', wrap(async (req, res) => {
 
 router.delete('/entity/:name/:id', wrap(async (req, res) => {
   const entity = entityOr404(req.params.name);
-  if (entity.table === 'students') {
-    // Students keep their attendance history, so "delete" only deactivates.
-    await dbRun(`UPDATE students SET active = 0 WHERE id = ?`, [req.params.id]);
+  if (entity.table === 'students' || entity.table === 'faculties') {
+    // Students and faculty keep their history (attendance, past timetables), so "delete" only deactivates.
+    await dbRun(`UPDATE ${entity.table} SET active = 0 WHERE id = ?`, [req.params.id]);
     return res.json({ ok: true, deactivated: true });
   }
   const result = await dbRun(`DELETE FROM ${entity.table} WHERE id = ?`, [req.params.id]);
@@ -364,7 +383,7 @@ router.post('/students-bulk', wrap(async (req, res) => {
   if (ids.length > 1000) throw new HttpError(400, 'invalid_value', 'Select at most 1000 students at a time.');
   if (!['deactivate', 'reactivate', 'set_class'].includes(action)) throw new HttpError(400, 'invalid_value', 'Unknown action.');
   const classId = Number(req.body.classId) || null;
-  const batch = clean(req.body.batch);
+  const batch = checkBatch(clean(req.body.batch));
   if (action === 'set_class' && !(await dbGet(`SELECT 1 AS x FROM classes WHERE id = ?`, [classId])))
     throw new HttpError(400, 'invalid_reference', 'Choose a class.');
   await withTransaction(async () => {
@@ -379,34 +398,136 @@ router.post('/students-bulk', wrap(async (req, res) => {
   res.json({ ok: true, updated: ids.length });
 }));
 
+// Everything the Term checklist shows for one session.
 router.get('/term-status', wrap(async (req, res) => {
   const session = clean(req.query.session);
   const today = todayLocal();
-  const status = await dbGet(
-    `SELECT
-       (SELECT COUNT(*) FROM classes WHERE academic_session = ?) AS classes,
-       (SELECT COUNT(DISTINCT sm.student_id) FROM students_mapping sm
-          JOIN classes c ON c.id = sm.class_id JOIN students s ON s.id = sm.student_id AND s.active = 1
-         WHERE c.academic_session = ?) AS students,
-       (SELECT COUNT(DISTINCT tc.class_id) FROM timetable_classes tc
-          JOIN classes c ON c.id = tc.class_id JOIN timetable t ON t.id = tc.timetable_id
-         WHERE c.academic_session = ? AND (t.valid_to IS NULL OR t.valid_to >= ?)) AS classesWithTimetable,
-       (SELECT COUNT(*) FROM students_mapping sm
-          JOIN classes c ON c.id = sm.class_id JOIN students s ON s.id = sm.student_id AND s.active = 1
-         WHERE c.academic_session = ? AND sm.batch IS NOT NULL
-           AND EXISTS (SELECT 1 FROM timetable_classes x WHERE x.class_id = c.id AND x.batch IS NOT NULL)) AS batchAssigned,
-       (SELECT COUNT(*) FROM students_mapping sm
-          JOIN classes c ON c.id = sm.class_id JOIN students s ON s.id = sm.student_id AND s.active = 1
-         WHERE c.academic_session = ?
-           AND EXISTS (SELECT 1 FROM timetable_classes x WHERE x.class_id = c.id AND x.batch IS NOT NULL)) AS batchNeeded,
-       (SELECT COUNT(*) FROM subjects) AS subjects,
-       (SELECT COUNT(*) FROM faculties) AS faculty,
-       (SELECT COUNT(*) FROM rooms) AS rooms,
-       (SELECT COUNT(*) FROM slots) AS slots,
-       (SELECT COUNT(*) FROM branches) AS branches`,
-    [session, session, session, today, session, session],
-  );
-  res.json({ ok: true, session, ...status });
+  const one = (sql, params = []) => dbGet(sql, params).then(r => r?.n ?? 0);
+  const classes = await dbAll(
+    `SELECT c.id, c.semester, c.section, c.room_id, c.branch_id, b.abbr AS branch, co.duration_years
+     FROM classes c JOIN branches b ON b.id = c.branch_id JOIN courses co ON co.id = b.course_id
+     WHERE c.academic_session = ?`, [session]);
+  const classIds = classes.map(c => c.id);
+  const inSession = classIds.length ? `(${classIds.join(',')})` : '(NULL)';
+  const current = `(t.valid_to IS NULL OR t.valid_to >= '${today}')`;
+
+  // Students who should be in this term (their passing year matches one of its semesters) but are in no class yet
+  const years = [...new Set(classes.map(c => passingYearFor(session, c.duration_years, c.semester)))];
+  const mapped = await one(
+    `SELECT COUNT(DISTINCT sm.student_id) AS n FROM students_mapping sm JOIN students s ON s.id = sm.student_id AND s.active = 1
+     WHERE sm.class_id IN ${inSession}`);
+  const unassigned = years.length
+    ? await one(`SELECT COUNT(*) AS n FROM students s WHERE s.active = 1 AND s.year_of_passing IN (${years.join(',')})
+                  AND s.id NOT IN (SELECT student_id FROM students_mapping WHERE class_id IN ${inSession})`)
+    : 0;
+  const classrooms = new Set(classes.map(c => (c.room_id ? `room${c.room_id}` : `class${c.id}`))).size;
+  const batchNeeded = await one(
+    `SELECT COUNT(*) AS n FROM students_mapping sm JOIN students s ON s.id = sm.student_id AND s.active = 1
+     WHERE sm.class_id IN ${inSession}
+       AND EXISTS (SELECT 1 FROM timetable_classes x WHERE x.class_id = sm.class_id AND x.batch IS NOT NULL)`);
+  const batchAssigned = await one(
+    `SELECT COUNT(*) AS n FROM students_mapping sm JOIN students s ON s.id = sm.student_id AND s.active = 1
+     WHERE sm.class_id IN ${inSession} AND sm.batch IS NOT NULL
+       AND EXISTS (SELECT 1 FROM timetable_classes x WHERE x.class_id = sm.class_id AND x.batch IS NOT NULL)`);
+
+  res.json({
+    ok: true,
+    session,
+    classes: classes.length,
+    classrooms,
+    classesWithoutRoom: classes.filter(c => !c.room_id).length,
+    students: mapped,
+    unassignedStudents: unassigned,
+    classesWithTimetable: await one(
+      `SELECT COUNT(DISTINCT tc.class_id) AS n FROM timetable_classes tc JOIN timetable t ON t.id = tc.timetable_id
+       WHERE tc.class_id IN ${inSession} AND ${current}`),
+    subjects: await one(`SELECT COUNT(*) AS n FROM subjects`),
+    subjectsUnscheduled: await one(
+      `SELECT COUNT(*) AS n FROM subjects sub WHERE sub.takes_attendance = 1
+         AND NOT EXISTS (SELECT 1 FROM timetable t WHERE t.subject_id = sub.id AND ${current})`),
+    faculty: await one(`SELECT COUNT(*) AS n FROM faculties WHERE active = 1`),
+    facultyIdle: await one(
+      `SELECT COUNT(*) AS n FROM faculties f WHERE f.active = 1
+         AND NOT EXISTS (SELECT 1 FROM timetable t WHERE t.faculty_id = f.id AND ${current})`),
+    withoutFace: await one(
+      `SELECT COUNT(DISTINCT s.id) AS n FROM students s JOIN students_mapping sm ON sm.student_id = s.id
+       WHERE s.active = 1 AND s.face_embedding IS NULL AND sm.class_id IN ${inSession}`),
+    batchAssigned,
+    batchNeeded,
+    rooms: await one(`SELECT COUNT(*) AS n FROM rooms`),
+    slots: await one(`SELECT COUNT(*) AS n FROM slots`),
+    branches: await one(`SELECT COUNT(*) AS n FROM branches`),
+  });
+}));
+
+// ---------------- Term wizard: who belongs in a semester, and the final apply ----------------
+async function sessionFacts(session, branchId, semester) {
+  const m = SESSION_RE.exec(session || '');
+  if (!m || Number(m[2]) !== Number(m[1]) + 1) throw new HttpError(400, 'invalid_session', 'Choose a valid academic session first.');
+  const branch = await dbGet(
+    `SELECT b.id, b.abbr, co.duration_years FROM branches b JOIN courses co ON co.id = b.course_id WHERE b.id = ?`, [branchId]);
+  if (!branch) throw new HttpError(400, 'invalid_reference', 'Choose a branch for every row.');
+  const sem = Number(semester);
+  if (!Number.isInteger(sem) || sem < 1 || sem > branch.duration_years * 2)
+    throw new HttpError(400, 'invalid_value', `${branch.abbr} runs ${branch.duration_years} years, so the semester must be 1 to ${branch.duration_years * 2}.`);
+  return { branch, sem, passingYear: passingYearFor(session, branch.duration_years, sem) };
+}
+
+// Active students whose passing year fits this branch + semester in this session, and who already has a class.
+router.get('/wizard-students', wrap(async (req, res) => {
+  const session = clean(req.query.session);
+  const { branch, sem, passingYear } = await sessionFacts(session, Number(req.query.branchId), req.query.semester);
+  const students = await dbAll(
+    `SELECT s.id, s.name, s.roll_number,
+            (SELECT b2.abbr || '-' || c2.semester || c2.section FROM students_mapping sm2
+               JOIN classes c2 ON c2.id = sm2.class_id JOIN branches b2 ON b2.id = c2.branch_id
+              WHERE sm2.student_id = s.id AND c2.academic_session = ? LIMIT 1) AS assignedTo
+     FROM students s WHERE s.active = 1 AND s.year_of_passing = ?
+     ORDER BY s.roll_number, s.name`, [session, passingYear]);
+  res.json({ ok: true, branch: branch.abbr, semester: sem, passingYear, durationYears: branch.duration_years, students });
+}));
+
+// Creates the classes (branch + semester + section + home room) and puts the chosen students in them.
+router.post('/wizard-apply', wrap(async (req, res) => {
+  const session = clean(req.body?.session);
+  const cohorts = Array.isArray(req.body?.cohorts) ? req.body.cohorts : [];
+  if (!cohorts.length) throw new HttpError(400, 'nothing_to_create', 'Add at least one branch and semester.');
+  let created = 0, existing = 0, assigned = 0, skipped = 0;
+  const roomSection = new Map(); // a home room can hold one section only (DS 5D and AIML 5D share it, 5D)
+  await withTransaction(async () => {
+    for (const cohort of cohorts) {
+      const { sem } = await sessionFacts(session, Number(cohort.branchId), cohort.semester);
+      if (!Array.isArray(cohort.sections) || !cohort.sections.length) throw new HttpError(400, 'invalid_value', 'Give every branch and semester at least one section.');
+      for (const sec of cohort.sections) {
+        const section = checkSection(sec.section);
+        const roomId = Number(sec.roomId) || null;
+        if (roomId) {
+          const room = await dbGet(`SELECT block || '-' || number AS label FROM rooms WHERE id = ?`, [roomId]);
+          if (!room) throw new HttpError(400, 'invalid_reference', 'That home room no longer exists.');
+          const taken = roomSection.get(roomId)
+            ?? (await dbGet(`SELECT section FROM classes WHERE room_id = ? AND academic_session = ? AND section != ? LIMIT 1`, [roomId, session, section]))?.section;
+          if (taken && taken !== section) throw new HttpError(400, 'room_taken', `${room.label} is already the home room of section ${taken}. Pick another room, or use the same section.`);
+          roomSection.set(roomId, section);
+        }
+        const made = await dbRun(
+          `INSERT OR IGNORE INTO classes (branch_id, semester, room_id, section, academic_session) VALUES (?, ?, ?, ?, ?)`,
+          [Number(cohort.branchId), sem, roomId, section, session]);
+        const row = await dbGet(`SELECT id FROM classes WHERE branch_id = ? AND semester = ? AND section = ? AND academic_session = ?`,
+          [Number(cohort.branchId), sem, section, session]);
+        if (made.changes) created++; else existing++;
+        if (roomId) await dbRun(`UPDATE classes SET room_id = ? WHERE id = ?`, [roomId, row.id]);
+        for (const id of [...new Set((sec.studentIds || []).map(Number))].filter(Boolean)) {
+          const student = await dbGet(`SELECT id FROM students WHERE id = ? AND active = 1`, [id]);
+          const already = await dbGet(
+            `SELECT 1 AS x FROM students_mapping sm JOIN classes c ON c.id = sm.class_id WHERE sm.student_id = ? AND c.academic_session = ?`, [id, session]);
+          if (!student || already) { skipped++; continue; }
+          await dbRun(`INSERT INTO students_mapping (student_id, class_id, batch) VALUES (?, ?, NULL)`, [id, row.id]);
+          assigned++;
+        }
+      }
+    }
+  });
+  res.json({ ok: true, created, existing, assigned, skipped });
 }));
 
 export default router;

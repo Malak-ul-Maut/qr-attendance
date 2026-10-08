@@ -15,7 +15,7 @@ const table = createDataTable({
   columns: [
     { key: 'name', label: 'Name', sortable: true, get: s => s.name },
     { key: 'roll', label: 'Roll no.', sortable: true, num: true, get: s => s.roll_number },
-    { key: 'class', label: 'Class', sortable: true, get: s => s.classLabel },
+    { key: 'class', label: 'Classroom', sortable: true, get: s => s.classroomLabel },
     { key: 'status', label: 'Photos', sortable: true, get: s => (s.enrolled ? 'Uploaded' : 'Pending'),
       render: (s, td) => td.append(h('span', { class: `badge ${s.enrolled ? 'badge-success' : 'badge-warning'}`, text: s.enrolled ? '✓ Uploaded' : 'Pending' })) },
     { key: 'photos', label: 'Photo files', help: 'Images saved for this student', num: true, get: s => s.photos,
@@ -39,9 +39,9 @@ let classFilter = '';
 
 function applyFilters() {
   const status = $('#enrollStatus').value;
-  table.setFilter(s => (!status || (status === 'done') === s.enrolled) && (!classFilter || String(s.classId) === classFilter));
+  table.setFilter(s => (!status || (status === 'done') === s.enrolled) && (!classFilter || String(s.classroomKey) === classFilter));
   $('#enrollClassExportBtn').disabled = !classFilter;
-  $('#enrollClassExportBtn').title = classFilter ? '' : 'Select a class below first';
+  $('#enrollClassExportBtn').title = classFilter ? '' : 'Select a classroom below first';
 }
 
 function render() {
@@ -54,8 +54,8 @@ function render() {
 
   const byClass = new Map();
   for (const s of students) {
-    const key = s.classId ?? '';
-    const c = byClass.get(key) || { id: key, label: s.classLabel || 'No class', total: 0, done: 0 };
+    const key = s.classroomKey ?? '';
+    const c = byClass.get(key) || { id: key, label: s.classroomLabel || 'No classroom', total: 0, done: 0 };
     c.total++;
     if (s.enrolled) c.done++;
     byClass.set(key, c);
@@ -112,7 +112,7 @@ async function fetchPhoto(id, file) {
 async function openPhotos(s) {
   freePhotos();
   $('#photoTitle').textContent = `${s.name}'s photos`;
-  $('#photoSub').textContent = `${s.roll_number || ''}${s.classLabel ? ` · ${s.classLabel}` : ''} · ${s.enrolled ? 'face template saved' : 'no face template yet'}. These files are what the face template is built from.`;
+  $('#photoSub').textContent = `${s.roll_number || ''}${s.classroomLabel ? ` · ${s.classroomLabel}` : ''} · ${s.enrolled ? 'face template saved' : 'no face template yet'}. These files are what the face template is built from.`;
   $('#photoGrid').replaceChildren(h('p', { class: 'adm-empty', text: 'Loading photos…' }));
   photoDialog.showModal();
   $('#photoTitle').focus();
@@ -139,14 +139,14 @@ $('#enrollSearch').addEventListener('input', e => table.setQuery(e.target.value)
 $('#enrollStatus').addEventListener('change', applyFilters);
 $('#enrollExportBtn').addEventListener('click', () => {
   const pending = students.filter(s => !s.enrolled);
-  downloadCsv(`pending-photos-${new Date().toISOString().slice(0, 10)}.csv`, ['Name', 'Roll number', 'Username', 'Class'],
-    pending.map(s => [s.name, s.roll_number, s.username, s.classLabel]));
+  downloadCsv(`pending-photos-${new Date().toISOString().slice(0, 10)}.csv`, ['Name', 'Roll number', 'Username', 'Classroom'],
+    pending.map(s => [s.name, s.roll_number, s.username, s.classroomLabel]));
   showToast(`${pending.length} pending students exported.`, 'success');
 });
 $('#enrollClassExportBtn').addEventListener('click', () => {
-  const inClass = students.filter(s => String(s.classId ?? '') === classFilter);
-  const label = inClass[0]?.classLabel || 'class';
-  downloadCsv(`photos-${label.replaceAll(' ', '-')}-${new Date().toISOString().slice(0, 10)}.csv`, ['Name', 'Roll number', 'Username', 'Class', 'Photos', 'Photo files'],
-    inClass.map(s => [s.name, s.roll_number, s.username, s.classLabel, s.enrolled ? 'Uploaded' : 'Pending', s.photos]));
+  const inClass = students.filter(s => String(s.classroomKey ?? '') === classFilter);
+  const label = inClass[0]?.classroomLabel || 'classroom';
+  downloadCsv(`photos-${label.replaceAll(' ', '-')}-${new Date().toISOString().slice(0, 10)}.csv`, ['Name', 'Roll number', 'Username', 'Classroom', 'Photos', 'Photo files'],
+    inClass.map(s => [s.name, s.roll_number, s.username, s.classroomLabel, s.enrolled ? 'Uploaded' : 'Pending', s.photos]));
   showToast(`${inClass.length} students in ${label} exported.`, 'success');
 });

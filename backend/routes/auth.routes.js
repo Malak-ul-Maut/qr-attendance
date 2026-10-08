@@ -23,7 +23,7 @@ router.post('/login', async (req, res) => {
         `
         SELECT faculties.id, faculties.name, faculties.username
         FROM faculties
-        WHERE faculties.username = ? AND faculties.password_hash = ?
+        WHERE faculties.username = ? AND faculties.password_hash = ? AND faculties.active = 1
         `,
         [username, password],
       );

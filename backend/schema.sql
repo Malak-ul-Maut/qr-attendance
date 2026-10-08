@@ -9,7 +9,8 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE courses (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
-  abbr TEXT NOT NULL UNIQUE
+  abbr TEXT NOT NULL UNIQUE,
+  duration_years INTEGER NOT NULL DEFAULT 4 CHECK (duration_years BETWEEN 1 AND 6)   -- B.Tech = 4
 );
 
 CREATE TABLE branches (
@@ -98,7 +99,8 @@ CREATE TABLE faculties (
   name TEXT NOT NULL,
   abbr TEXT NOT NULL UNIQUE,
   username TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL DEFAULT 'password'
+  password_hash TEXT NOT NULL DEFAULT 'password',
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1))   -- 1 = active, 0 = left the institute
 );
 
 -- =====================================================================

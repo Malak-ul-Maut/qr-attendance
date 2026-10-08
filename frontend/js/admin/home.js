@@ -155,7 +155,7 @@ const recentTable = createDataTable({
     { key: 'time', label: 'Time', sortable: true, nowrap: true, get: r => timeOf(r.startTime) || '–' },
     { key: 'subject', label: 'Subject', sortable: true, title: true, get: r => r.subject,
       render: (r, td) => td.append(h('button', { class: 'link-btn', type: 'button', text: r.subject, 'aria-label': `Open session: ${r.subject}, ${r.classes}, ${r.date}`, onclick: () => openSession(r.code) })) },
-    { key: 'classes', label: 'Class', sortable: true, nowrap: true, get: r => r.classes },
+    { key: 'classes', label: 'Classroom', sortable: true, nowrap: true, get: r => r.classes },
     { key: 'faculty', label: 'Faculty', sortable: true, get: r => r.faculty },
     { key: 'method', label: 'Method', get: r => (r.method || '').toUpperCase() },
     { key: 'count', label: 'Present', num: true, get: r => `${r.present}/${r.total}` },
@@ -279,7 +279,7 @@ async function load() {
     if (!data) recentTable.setError();
     return;
   }
-  const { totals, overall, daily, byMethod, byClass, bySubject, lowStudents, recent } = data;
+  const { totals, overall, daily, byMethod, byClassroom, bySubject, lowStudents, recent } = data;
   const avg = pct(overall.present, overall.total);
   $('#homeStats').replaceChildren(
     stat('Students', totals.students, `${totals.classes} classes`, 'master'),
@@ -297,7 +297,7 @@ async function load() {
       h('span', { style: `width:${pct(totals.enrolled, totals.students)}%` })),
     h('button', { class: 'btn btn-secondary btn-sm', type: 'button', text: 'See who is pending',
       onclick: () => document.dispatchEvent(new CustomEvent('admin:goto', { detail: 'enrollment' })) }));
-  barList($('#byClass'), byClass, 'No attendance in this period.', r => filterRecent(r.label));
+  barList($('#byClassroom'), byClassroom, 'No attendance in this period.', r => filterRecent(r.label));
   barList($('#bySubject'), bySubject, 'No attendance in this period.', r => filterRecent(r.label));
 
   renderLow(lowStudents, overall);

@@ -47,7 +47,7 @@ button.adm-stat:hover .adm-stat-go, button.adm-stat:focus-visible .adm-stat-go {
 .adm-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
 .adm-table th, .adm-table td { padding: var(--space-3) var(--space-4); text-align: left; vertical-align: middle; border-bottom: 1px solid var(--line); }
 .adm-table tbody tr:last-child td { border-bottom: none; }
-.adm-table th { font-weight: 600; color: var(--ink-500); background: var(--canvas); white-space: nowrap; }
+.adm-table th { font-weight: 700; color: var(--ink-900); background: var(--head-bg); white-space: nowrap; border-bottom: 2px solid var(--line-strong); }
 .adm-table td { color: var(--ink-900); }
 .adm-table td.adm-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .adm-table td.adm-nowrap { white-space: nowrap; }
@@ -324,7 +324,7 @@ fieldset.field legend { padding: 0; font-weight: 600; font-size: var(--text-sm);
 .adm-tt td.adm-removed { outline: 2px dashed #c0392b; outline-offset: -3px; }
 .adm-ghost { display: block; padding: 2px 4px; font-size: 0.75rem; color: #8a2b22; text-decoration: line-through; }
 @media print {
-  #ttBanner, #ttPhoneBar, .adm-icon-group, .adm-ghost { display: none !important; }
+  #ttBanner, .adm-tt-hintrow, #ttPhoneBar, .adm-icon-group, .adm-ghost { display: none !important; }
   .adm-tt td.adm-new, .adm-tt td.adm-changed, .adm-tt td.adm-removed { outline: none; }
 }
 
@@ -499,3 +499,59 @@ fieldset.field legend { padding: 0; font-weight: 600; font-size: var(--text-sm);
   :root:not([data-theme='light']) .adm-tt { filter: brightness(0.86) contrast(0.96); border-radius: 2px; box-shadow: 0 0 0 6px rgb(255 255 255 / 0.04); }
 }
 @media print { .adm-tt { filter: none !important; box-shadow: none !important; } }
+
+/* ---- Stage 5: table header, slim term strip ---- */
+:root { --head-bg: #e7eaee; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) { --head-bg: #2d333b; } }
+:root[data-theme='dark'] { --head-bg: #2d333b; }
+.adm-table thead th:first-child { border-top-left-radius: calc(var(--radius-lg) - 1px); }
+.adm-table thead th:last-child { border-top-right-radius: calc(var(--radius-lg) - 1px); }
+
+.adm-term { display: grid; gap: var(--space-3); padding: var(--space-3) var(--space-4); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); }
+.adm-term-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.adm-term-bar h2 { font-size: var(--text-base); margin: 0; }
+.adm-term-bar .input { width: auto; min-width: 11rem; }
+.adm-term-state { font-size: var(--text-sm); font-weight: 600; color: var(--warning-600); }
+.adm-term-state.is-done { color: var(--success-600); }
+.adm-term-bar .link-btn { margin-left: auto; }
+.adm-term .adm-checklist { grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: var(--space-2); }
+.adm-term .adm-checklist[hidden] { display: none; }
+.adm-term .adm-checklist li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-md); padding: var(--space-3); }
+.adm-term .adm-checklist li:first-child { border-top: 1px solid var(--line); }
+.adm-term .adm-checklist li .btn { white-space: nowrap; }
+.adm-term .adm-checklist li.todo { border-color: var(--warning-600); background: var(--warning-50); }
+.adm-checklist li.todo .adm-check { color: var(--warning-600); border-color: var(--warning-600); background: var(--surface); }
+.adm-term .adm-check-text strong { font-size: var(--text-sm); }
+.adm-term .adm-check-text span { font-size: 0.8125rem; }
+.adm-check-note { color: var(--warning-600); font-weight: 600; }
+
+/* ---- Stage 5c: wizard ---- */
+.adm-wiz-line { display: grid; grid-template-columns: 1fr 1fr auto; gap: var(--space-2); align-items: center; }
+.adm-wiz-line-sec { grid-template-columns: 5.5rem minmax(0, 1fr) 5.5rem auto; }
+.adm-wiz-cohort { display: grid; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--canvas); }
+.adm-wiz-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-4); }
+.adm-wiz-head > div { display: grid; }
+.adm-wiz-tools { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.adm-wiz-list { max-height: 14rem; }
+.adm-wiz-cohort .adm-picklist { margin: 0; background: var(--surface); }
+.adm-wiz-cohort .adm-help.err { color: var(--danger-600, #b42318); font-weight: 600; }
+@media (max-width: 560px) { .adm-wiz-line, .adm-wiz-line-sec { grid-template-columns: 1fr; } }
+
+/* ---- Timetable hint row (buttons on the right) and checkbox pick lists (print dialog, wizard) ---- */
+.adm-tt-hintrow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-4); margin: var(--space-3) 0; }
+.adm-tt-hintrow .adm-help { margin: 0; }
+.adm-tt-hintrow .adm-banner-actions { margin-left: auto; display: inline-flex; gap: var(--space-2); }
+.adm-picklist { border: 1px solid var(--line-strong); border-radius: var(--radius-md); overflow: hidden; margin: var(--space-3) 0; }
+.adm-pick { display: flex; align-items: center; gap: var(--space-3); min-height: 2.75rem; padding: 0 var(--space-4); cursor: pointer; font-size: var(--text-sm); }
+.adm-pick input { width: 1.1rem; height: 1.1rem; flex: none; }
+.adm-pick:hover { background: var(--row-hover); }
+.adm-pick:has(input:checked) { background: var(--red-50); }
+.adm-pick:has(input:disabled) { cursor: default; opacity: 0.6; background: none; }
+.adm-pick-all { font-weight: 700; background: var(--head-bg); border-bottom: 1px solid var(--line-strong); }
+.adm-pick-all:has(input:checked) { background: var(--head-bg); }
+.adm-pick-grid { display: grid; max-height: 16rem; overflow-y: auto; }
+.adm-pick-grid .adm-pick + .adm-pick { border-top: 1px solid var(--line); }
+.adm-wiz-list .adm-pick { padding-block: var(--space-2); }
+.adm-wiz-list .adm-pick span { flex: 1; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); min-width: 0; }
+.adm-wiz-list .adm-pick .badge { margin-left: auto; white-space: nowrap; }
+@media print { .adm-tt-hintrow { display: none !important; } }

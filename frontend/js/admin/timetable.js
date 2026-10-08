@@ -1,7 +1,6 @@
 // timetable.js - replica of the department's printed timetable sheet, per classroom (section),
 // with add / edit / delete and live clash detection. Classroom view is editable; faculty view is read-only.
 import { $, h, api, askDelete, setBusy, setBox, errorText, fillSelect, showToast, createCombobox, announce } from './core.js';
-import { openImport } from './import.js';
 
 let meta = null;
 let rows = [];
@@ -91,8 +90,6 @@ function syncSpace() {
   const n = meta?.draft?.changes || 0;
   draftBtn.textContent = n ? `Draft (${n})` : 'Draft';
   draftBtn.setAttribute('aria-label', n ? `Draft, ${n} unpublished change${n === 1 ? '' : 's'}` : 'Draft');
-  $('#ttCopyDayBtn').disabled = !canEdit();
-  $('#ttCopyDayBtn').title = canEdit() ? '' : mode === 'room' ? 'Switch to Draft to copy a day' : 'Copy day works in the classroom view';
 }
 function setSpace(next) {
   if (space === next) return;
@@ -120,20 +117,15 @@ function updateToolbar() {
   $('#ttUndoBtn').title = d?.canUndo ? 'Undo (Ctrl+Z)' : 'Nothing to undo';
   $('#ttRedoBtn').title = d?.canRedo ? 'Redo (Ctrl+Shift+Z)' : 'Nothing to redo';
   syncSpace();
-  const banner = $('#ttBanner');
+  // No coloured strip: the hint line above the sheet says what you can do, and the buttons sit on its right.
+  const actions = $('#ttActions');
   const button = (text, onclick, primary) => h('button', { class: `btn btn-sm ${primary ? 'btn-primary' : 'btn-secondary'}`, type: 'button', text, onclick });
   if (space === 'draft') {
-    banner.replaceChildren(
-      h('span', { text: d?.changes ? `Draft: ${d.changes} unpublished change${d.changes === 1 ? '' : 's'} since ${fmtDate(d.baseDate)}. Nothing is live until you publish.` : d ? `Draft started from the ${fmtDate(d.baseDate)} version. No changes yet.` : `No changes yet. Your edits are saved to a draft that starts from ${meta.latest ? `the ${fmtDate(meta.latest)} version` : 'an empty timetable'}.` }),
-      h('span', { class: 'adm-banner-actions' }, ...(d ? [button('Discard draft', discardDraft, false), button('Review & publish', openPublish, true)] : [])));
-    banner.hidden = false;
+    actions.replaceChildren(...(d ? [button('Discard draft', discardDraft, false), button('Review & publish', openPublish, true)] : []));
   } else {
-    banner.replaceChildren(
-      h('span', { text: `Published timetable${onLatest() ? '' : ' (older version)'}: read-only.${d?.changes ? ` You have ${d.changes} unpublished change${d.changes === 1 ? '' : 's'} in the draft.` : ''}` }),
-      h('span', { class: 'adm-banner-actions' },
-        ...(!onLatest() ? [button('Go to latest version', () => { $('#ttDate').value = meta.latest; updateToolbar(); loadGrid(); }, false)] : []),
-        ...(mode === 'room' ? [button(d ? 'Open draft' : 'Edit in draft', () => setSpace('draft'), true)] : [])));
-    banner.hidden = false;
+    actions.replaceChildren(
+      ...(!onLatest() ? [button('Go to latest version', () => { $('#ttDate').value = meta.latest; updateToolbar(); loadGrid(); }, false)] : []),
+      ...(mode === 'room' ? [button(d ? 'Open draft' : 'Edit in draft', () => setSpace('draft'), true)] : []));
   }
 }
 
@@ -461,7 +453,7 @@ function buildSheet(editable) {
 
   const table = h('table', { class: 'adm-tt' }, h('thead', {}, ...titleRows, head), h('tbody', {}, ...body, sat), legendBody(COLS, half, slots.length, counsellor));
   const children = [table];
-  if (!rows.length) children.push(h('p', { class: 'adm-empty', text: editable ? 'This timetable is empty. Click a period to start, or import a CSV.' : 'Nothing scheduled.' }));
+  if (!rows.length) children.push(h('p', { class: 'adm-empty', text: editable ? 'This timetable is empty. Click a period to start.' : 'Nothing scheduled.' }));
   return children;
 }
 
@@ -504,8 +496,8 @@ const printDialog = $('#printDialog');
 const printBoxes = () => [...document.querySelectorAll('#printRooms input')];
 $('#ttPrintBtn').addEventListener('click', () => {
   const current = mode === 'room' ? $('#ttTarget').value : '';
-  $('#printRooms').replaceChildren(...rooms.map(r => h('label', { class: 'adm-chip' },
-    h('input', { type: 'checkbox', value: r.id, checked: String(r.id) === current }), roomTitle(r))));
+  $('#printRooms').replaceChildren(...rooms.map(r => h('label', { class: 'adm-pick' },
+    h('input', { type: 'checkbox', value: r.id, checked: String(r.id) === current }), h('span', { text: roomTitle(r) }))));
   $('#printAll').checked = false;
   $('#printError').hidden = true;
   printDialog.showModal();
@@ -573,7 +565,6 @@ document.addEventListener('keydown', event => {
   if (key === 'z' && !event.shiftKey) { event.preventDefault(); if (!$('#ttUndoBtn').disabled) stepDraft('undo'); }
   else if ((key === 'z' && event.shiftKey) || key === 'y') { event.preventDefault(); if (!$('#ttRedoBtn').disabled) stepDraft('redo'); }
 });
-$('#ttImportBtn').addEventListener('click', () => openImport('timetable', () => afterEdit()));
 
 // ---------------- cell editor ----------------
 const dialog = $('#cellDialog');
@@ -766,9 +757,9 @@ async function openPublish() {
     const earliest = info.latest && info.latest > info.today ? info.latest : info.today;
     $('#publishDate').min = info.latest || '';
     $('#publishDate').value = info.latest && info.latest > info.today ? info.latest : info.today;
-    $('#publishDateText').textContent = fmtDate($('#publishDate').value);
+    showPublishDate();
     $('#publishIntro').textContent = info.changes.length
-      ? `${info.changes.length} change${info.changes.length === 1 ? '' : 's'} will become a new version. Periods that already have attendance are kept as they were before the date below.`
+      ? `${info.changes.length} change${info.changes.length === 1 ? '' : 's'} will be published as a new version.`
       : 'There are no changes to publish.';
     $('#publishChanges').replaceChildren(...info.changes.map(c => h('li', { class: `adm-change-${c.type}` }, h('strong', { text: c.type === 'added' ? 'Added' : c.type === 'removed' ? 'Removed' : 'Changed' }), ` ${c.text}`)));
     $('#publishGoBtn').disabled = !info.changes.length;
@@ -778,7 +769,8 @@ async function openPublish() {
     showToast(errorText(error), 'error');
   }
 }
-$('#publishDate').addEventListener('input', () => { $('#publishDateText').textContent = fmtDate($('#publishDate').value); });
+const showPublishDate = () => { $('#publishDateText').textContent = `Live from ${fmtDate($('#publishDate').value)}. Attendance already taken is not changed.`; };
+$('#publishDate').addEventListener('input', showPublishDate);
 $('#publishCancelBtn').addEventListener('click', () => publishDialog.close());
 $('#publishForm').addEventListener('submit', async event => {
   event.preventDefault();
@@ -800,45 +792,3 @@ $('#publishForm').addEventListener('submit', async event => {
   }
 });
 
-// ---------------- copy a day ----------------
-const copyDialog = $('#copyDayDialog');
-function drawCopyTargets() {
-  const from = $('#copyFrom').value;
-  $('#copyTo').replaceChildren(...meta.days.filter(d => d !== from).map(d => h('label', { class: 'adm-chip' }, h('input', { type: 'checkbox', value: d }), d)));
-}
-$('#ttCopyDayBtn').addEventListener('click', () => {
-  if (!canEdit()) return;
-  const counts = Object.fromEntries(meta.days.map(d => [d, rows.filter(r => r.day === d).length]));
-  $('#copyDayRoom').textContent = `${roomTitle(currentRoom())}. Copies every period of one day onto the days you choose.`;
-  fillSelect($('#copyFrom'), meta.days.map(d => ({ value: d, label: `${d} (${counts[d]} period${counts[d] === 1 ? '' : 's'})` })));
-  const filled = meta.days.find(d => counts[d]);
-  if (filled) $('#copyFrom').value = filled;
-  $('#copyReplace').checked = false;
-  drawCopyTargets();
-  setBox('copyError', '');
-  copyDialog.showModal();
-  $('#copyFrom').focus();
-});
-$('#copyFrom').addEventListener('change', drawCopyTargets);
-$('#copyCancelBtn').addEventListener('click', () => copyDialog.close());
-$('#copyDayForm').addEventListener('submit', async event => {
-  event.preventDefault();
-  const toDays = [...document.querySelectorAll('#copyTo input:checked')].map(b => b.value);
-  if (!toDays.length) return setBox('copyError', 'Choose at least one day to copy to.');
-  const button = $('#copyGoBtn');
-  setBusy(button, true);
-  setBox('copyError', '');
-  try {
-    const result = await api(`${TT}/copy-day`, { method: 'POST', body: { roomId: currentRoom().id, fromDay: $('#copyFrom').value, toDays, replace: $('#copyReplace').checked } });
-    pendingCell = null;
-    copyDialog.close();
-    showToast(`Copied ${result.copied} period${result.copied === 1 ? '' : 's'} to the draft.`, 'success');
-    await afterEdit();
-    announce(`Copied ${result.copied} periods to ${toDays.join(', ')}.`);
-  } catch (error) {
-    const found = error.body?.conflicts;
-    setBox('copyError', found?.length ? `${found.slice(0, 3).map(c => c.message).join(' ')}${found.length > 3 ? ` (and ${found.length - 3} more clashes)` : ''} Nothing was copied.` : errorText(error));
-  } finally {
-    setBusy(button, false);
-  }
-});

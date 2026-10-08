@@ -15,7 +15,7 @@ router.get('/meta', wrap(async (req, res) => {
     dbAll(`SELECT id, label, start_time AS start, end_time AS end FROM slots ORDER BY start_time`),
     dbAll(`SELECT id, block || '-' || number AS label, type FROM rooms ORDER BY block, number`),
     dbAll(`SELECT id, code, abbr, name, takes_attendance AS takesAttendance FROM subjects ORDER BY id`),
-    dbAll(`SELECT id, abbr, name FROM faculties ORDER BY abbr`),
+    dbAll(`SELECT id, abbr, name FROM faculties WHERE active = 1 ORDER BY abbr`),
     dbAll(`SELECT c.id, b.abbr || ' Sem ' || c.semester || ' ' || c.section AS label,
                   b.abbr || ' ' || c.semester || c.section AS short,
                   c.academic_session AS session, c.room_id AS roomId,

@@ -7,6 +7,9 @@ let meta = null;
 let active = 'students';
 let rows = [];
 const cache = {};
+const SOFT = ['students', 'faculties']; // never deleted: their history is kept, so they are deactivated
+const softNoun = () => (active === 'faculties' ? 'faculty member' : 'student');
+const softNouns = () => (active === 'faculties' ? 'faculty' : 'students');
 let table = null;
 
 async function loadMeta(force = false) {
@@ -30,39 +33,51 @@ async function loadTerm() {
   fillSelect(select, sessions.map(s => ({ value: s, label: s })));
   if (sessions.includes(previous)) select.value = previous;
   const s = await api(`/api/admin/master/term-status?session=${encodeURIComponent(select.value)}`);
+  // Each row: tick when fine, "!" when something needs doing. `note` is extra information that never blocks the tick.
   const steps = [];
-  const step = (done, label, detail, action, onclick) => {
-    steps.push(done);
-    return h('li', { class: done ? 'done' : '' },
-      h('span', { class: 'adm-check', 'aria-hidden': 'true', text: done ? '✓' : '' }),
-      h('span', { class: 'adm-check-text' }, h('strong', { text: label }), h('span', { text: detail })),
+  const step = ({ ok, label, detail, note, action, onclick }) => {
+    steps.push(ok);
+    return h('li', { class: ok ? 'done' : 'todo' },
+      h('span', { class: 'adm-check', 'aria-hidden': 'true', text: ok ? '✓' : '!' }),
+      h('span', { class: 'adm-check-text' }, h('strong', { text: label }), h('span', { text: detail }), ...(note ? [h('span', { class: 'adm-check-note', text: note })] : [])),
       h('button', { class: 'btn btn-secondary btn-sm', type: 'button', text: action, onclick }));
   };
+  const n = (count, noun, plural = `${noun}s`) => `${count} ${count === 1 ? noun : plural}`;
   $('#termSteps').replaceChildren(
-    step(s.classes > 0, 'Classes', s.classes ? `${s.classes} classes in ${s.session}` : 'No classes in this session yet', s.classes ? 'View' : 'Set up', () => (s.classes ? switchTab('classes') : openWizard())),
-    step(s.subjects > 0, 'Subjects', `${s.subjects} subjects`, 'Manage', () => switchTab('subjects')),
-    step(s.faculty > 0, 'Faculty', `${s.faculty} faculty`, 'Manage', () => switchTab('faculties')),
-    step(s.students > 0, 'Students', `${s.students} students in this session`, 'Manage', () => switchTab('students')),
-    step(s.classes > 0 && s.classesWithTimetable >= s.classes, 'Timetable', `${s.classesWithTimetable} of ${s.classes} classes have a timetable`, 'Open', () => goto('timetable')),
-    ...(s.batchNeeded > 0 ? [step(s.batchAssigned >= s.batchNeeded, 'Lab batches', `${s.batchAssigned} of ${s.batchNeeded} students have a G1/G2 batch (lab attendance needs it)`, 'Split batches…', () => openSplit(select.value))] : []),
+    step(s.classes > 0
+      ? { ok: true, label: 'Classes', detail: `${n(s.classes, 'class', 'classes')} in ${n(s.classrooms, 'classroom')}`, action: 'View', onclick: () => switchTab('classes') }
+      : { ok: false, label: 'Classes', detail: `No classes in ${s.session} yet`, action: 'Set up', onclick: openWizard }),
+    step({ ok: s.classes > 0 && s.classesWithoutRoom === 0, label: 'Home rooms', detail: !s.classes ? 'Needs classes first' : s.classesWithoutRoom ? `${n(s.classesWithoutRoom, 'class', 'classes')} without a home room` : 'Every class has a home room', action: 'Classes', onclick: () => switchTab('classes') }),
+    step({ ok: s.students > 0 && s.unassignedStudents === 0, label: 'Students', detail: `${n(s.students, 'student')} placed in classes`, note: s.unassignedStudents ? `${n(s.unassignedStudents, 'student')} for this term not in any class` : '', action: s.unassignedStudents ? 'Assign' : 'Manage', onclick: () => (s.unassignedStudents ? openWizard() : switchTab('students')) }),
+    step({ ok: s.faculty > 0, label: 'Faculty', detail: `${s.faculty} active`, note: s.facultyIdle ? `${s.facultyIdle} with no periods yet` : '', action: 'Manage', onclick: () => switchTab('faculties') }),
+    step({ ok: s.subjects > 0, label: 'Subjects', detail: `${s.subjects} on file`, note: s.subjectsUnscheduled ? `${s.subjectsUnscheduled} not in any timetable` : '', action: 'Manage', onclick: () => switchTab('subjects') }),
+    step({ ok: s.classes > 0 && s.classesWithTimetable >= s.classes, label: 'Timetable', detail: `${s.classesWithTimetable} of ${n(s.classes, 'class', 'classes')} scheduled`, action: 'Open', onclick: () => goto('timetable') }),
+    ...(s.batchNeeded > 0 ? [step({ ok: s.batchAssigned >= s.batchNeeded, label: 'Lab batches', detail: `${s.batchAssigned} of ${s.batchNeeded} students in G1 / G2`, note: 'Lab attendance needs a batch', action: 'Split…', onclick: () => openSplit(select.value) })] : []),
+    ...(s.students > 0 ? [step({ ok: s.withoutFace === 0, label: 'Face photos', detail: s.withoutFace ? `${n(s.withoutFace, 'student')} without photos` : 'Everyone has uploaded photos', action: 'Open', onclick: () => goto('enrollment') })] : []),
   );
-  // Once every step is done the checklist is only noise above the table: fold it into one line.
-  const allDone = steps.every(Boolean);
+  // One slim strip: the checklist opens by itself only while something is still to do.
+  const done = steps.filter(Boolean).length;
+  const allDone = done === steps.length;
   const sessionKey = select.value;
-  const folded = allDone && !termManual.has(sessionKey); // an admin who pressed "Show checklist" keeps it open
-  $('#termSummary').hidden = !allDone;
-  $('#termSteps').hidden = folded;
-  $('#termSummaryText').textContent = `✓ Term setup is complete for ${sessionKey} (${steps.length} of ${steps.length} steps).`;
-  $('#termToggleBtn').textContent = folded ? 'Show checklist' : 'Hide checklist';
-  $('#termToggleBtn').setAttribute('aria-expanded', String(!folded));
+  const open = allDone ? termManual.has(sessionKey) : !termManual.has(`closed:${sessionKey}`);
+  const state = $('#termSummaryText');
+  state.textContent = allDone ? '✓ Setup complete' : `${steps.length - done} thing${steps.length - done === 1 ? '' : 's'} to do`;
+  state.classList.toggle('is-done', allDone);
+  $('#termSteps').hidden = !open;
+  $('#termToggleBtn').textContent = open ? 'Hide checklist' : 'Checklist';
+  $('#termToggleBtn').setAttribute('aria-expanded', String(open));
 }
 const termManual = new Set();
 $('#termToggleBtn').addEventListener('click', () => {
   const key = $('#termSession').value;
-  if (termManual.has(key)) termManual.delete(key); else termManual.add(key);
-  const open = termManual.has(key);
+  const open = $('#termToggleBtn').getAttribute('aria-expanded') !== 'true';
+  // Remember the choice for this session: "opened" matters when complete, "closed" when incomplete
+  termManual.delete(key); termManual.delete(`closed:${key}`);
+  const complete = $('#termSummaryText').classList.contains('is-done');
+  if (complete && open) termManual.add(key);
+  if (!complete && !open) termManual.add(`closed:${key}`);
   $('#termSteps').hidden = !open;
-  $('#termToggleBtn').textContent = open ? 'Hide checklist' : 'Show checklist';
+  $('#termToggleBtn').textContent = open ? 'Hide checklist' : 'Checklist';
   $('#termToggleBtn').setAttribute('aria-expanded', String(open));
 });
 
@@ -174,7 +189,7 @@ function makeTable() {
   const entity = meta.entities[active];
   const columns = entity.columns.map(([key, label]) => ({
     key, label, sortable: true, get: r => r[key],
-    ...(key === 'status' ? { render: (r, td) => td.append(h('span', { class: `badge ${r.active ? 'badge-success' : ''}`, text: r.status })) } : {}),
+    ...(key === 'name' && SOFT.includes(active) ? { render: (r, td) => td.append(r.name, ...(r.active ? [] : [' ', h('span', { class: 'badge', text: 'Inactive' })])) } : {}),
     ...(['periods', 'semester', 'students'].includes(key) ? { num: true } : {}),
     ...(key === 'camera_url' ? { clip: true, get: r => maskSecrets(r.camera_url), render: renderCameraUrl } : {}),
   }));
@@ -182,8 +197,9 @@ function makeTable() {
   columns.push({ key: 'actions', label: 'Actions', render: (r, td) => {
     const name = r.name || r.label || r.abbr || r.code || `#${r.id}`;
     // Students are never deleted (their attendance history is kept), so the button says what it does
-    const opts = !students ? {} : r.active ? { removeLabel: 'Deactivate' } : { removeLabel: 'Reactivate', removeKind: 'secondary' };
-    td.append(rowActions(entity.singular, r, name, openEditor, students && !r.active ? reactivate : askRemove, opts));
+    const soft = SOFT.includes(active);
+    const opts = !soft ? {} : r.active ? { removeLabel: 'Deactivate' } : { removeLabel: 'Reactivate', removeKind: 'secondary' };
+    td.append(rowActions(entity.singular, r, name, openEditor, soft && !r.active ? reactivate : askRemove, opts));
   } });
   table = createDataTable({ mount: $('#masterTable'), noun: entity.singular, pageSize: 12, columns, selectable: students, onSelect: updateBulk, emptyHint: `Select "Add" to create the first ${entity.singular}.`, onRetry: () => loadRows() });
 }
@@ -243,22 +259,25 @@ function refresh() {
 const classOptions = () => meta.entities.students.fields.find(f => f.name === 'class_id')?.options || [];
 function setupFilters() {
   const students = active === 'students';
-  $('#masterFilters').hidden = !students;
+  $('#masterFilters').hidden = !SOFT.includes(active);
+  $('#masterClassField').hidden = !students;
   $('#masterBulk').hidden = true;
-  if (!students) return;
-  fillSelect($('#masterClassFilter'), [{ value: '', label: 'All classes' }, { value: 'none', label: 'No class' }, ...classOptions()]);
-  fillSelect($('#bulkClass'), classOptions(), 'Choose class…');
+  if (!SOFT.includes(active)) return;
+  if (students) {
+    fillSelect($('#masterClassFilter'), [{ value: '', label: 'All classes' }, { value: 'none', label: 'No class' }, ...classOptions()]);
+    fillSelect($('#bulkClass'), classOptions(), 'Choose class…');
+  }
   $('#masterShowInactive').checked = false;
   $('#masterOnlyInactive').checked = false;
   $('#masterOnlyInactiveWrap').hidden = true;
 }
 function applyFilters() {
-  if (active !== 'students' || !table) return;
-  const cls = $('#masterClassFilter').value;
+  if (!SOFT.includes(active) || !table) return;
+  const cls = active === 'students' ? $('#masterClassFilter').value : '';
   const show = $('#masterShowInactive').checked;
   const only = $('#masterOnlyInactive').checked;
   const inactive = rows.filter(r => !r.active).length;
-  $('#masterShowInactive').nextSibling.textContent = ` Show inactive students (${inactive})`;
+  $('#masterShowInactive').nextSibling.textContent = ` Show inactive ${softNouns()} (${inactive})`;
   table.setFilter(r => (show ? !only || !r.active : Boolean(r.active)) && (!cls || (cls === 'none' ? !r.class_id : String(r.class_id) === cls)));
 }
 const filtersChanged = () => { table?.clearSelection(); applyFilters(); };
@@ -348,7 +367,7 @@ function control(field, value) {
     if (field.min) input.min = field.min;
     if (field.max) input.max = field.max;
     if (field.type === 'password') { input.autocomplete = 'new-password'; input.placeholder = editing ? 'Leave blank to keep the current password' : 'Leave blank to generate one'; }
-    else input.value = value ?? '';
+    else input.value = value ?? (editing ? '' : field.default ?? '');
   }
   input.id = `ef-${field.name}`;
   input.dataset.field = field.name;
@@ -401,7 +420,7 @@ function openEditor(row) {
       : h('div', { class: 'field' }, h('label', { for: input.id, text: f.label + (f.required ? '' : ' (optional)') }), f.type === 'password' ? passwordRow(input) : input);
     if (hintEl) wrap.append(hintEl);
     wrap.append(msg);
-    if (f.type === 'checkbox') wrap.classList.add('adm-span2');
+    if (f.type === 'checkbox' || f.type === 'password') wrap.classList.add('adm-span2');
     return wrap;
   }));
   // Convenience: a new student's username defaults to their roll number
@@ -471,11 +490,12 @@ $('#entityForm').addEventListener('submit', async event => {
 
 function askRemove(row) {
   const entity = meta.entities[active];
-  const student = active === 'students';
+  const student = SOFT.includes(active);
+  const who = softNoun();
   const name = row.name || row.abbr || row.code || row.label || 'this ' + entity.singular;
   askConfirm({
     title: `${student ? 'Deactivate' : 'Delete'} ${name}?`,
-    text: student ? 'The student is hidden from lists and can no longer log in. Attendance history is kept. Use Reactivate to bring them back.' : 'This cannot be undone. Items used elsewhere (for example a class with students) cannot be deleted.',
+    text: student ? `The ${who} is hidden from lists and can no longer log in. History is kept. Use Reactivate to bring them back.` : 'This cannot be undone. Items used elsewhere (for example a class with students) cannot be deleted.',
     confirmLabel: student ? 'Deactivate' : 'Delete',
     cancelLabel: student ? 'Keep active' : 'Keep',
     failText: student ? 'Could not deactivate. Try again.' : 'Could not delete. Try again.',
@@ -493,7 +513,7 @@ function askRemove(row) {
 
 async function reactivate(row) {
   try {
-    await api(`/api/admin/master/entity/students/${row.id}`, { method: 'PUT', body: { active: true } });
+    await api(`/api/admin/master/entity/${active}/${row.id}`, { method: 'PUT', body: { active: true } });
     showToast(`${row.name} is active again.`, 'success');
     refresh();
   } catch (error) {
@@ -502,15 +522,13 @@ async function reactivate(row) {
 }
 
 // ---------------- Term setup wizard ----------------
+// Session -> classes (branch + semester) -> students for each -> sections with their home rooms.
 const wizard = $('#wizardDialog');
+const WIZ_LAST = 4;
 let step = 1;
 let wizRows = [];
-// Sections are free labels (A, B, 3 ...), typed separated by commas
+let cohorts = [];
 const SECTION_OK = /^[A-Z0-9][A-Z0-9-]{0,7}$/;
-function parseSections(text) {
-  const parts = [...new Set(String(text || '').toUpperCase().split(/[\s,;]+/).filter(Boolean))];
-  return { list: parts, bad: parts.filter(p => !SECTION_OK.test(p)) };
-}
 const SESSION_RE = /^(\d{4})-(\d{4}) (ODD|EVEN)$/;
 const sessionProblem = value => {
   const m = SESSION_RE.exec(value);
@@ -536,27 +554,85 @@ $('#wizSession').addEventListener('change', event => {
   if (other) $('#wizSessionOther').focus();
 });
 
-function wizRow(row = { branchId: '', semester: '', sectionsText: '', roomId: '' }) {
-  return row;
-}
+const branchOptions = () => meta.entities.classes.fields.find(f => f.name === 'branch_id').options;
+const roomOptions = () => meta.entities.classes.fields.find(f => f.name === 'room_id').options;
+const branchLabel = id => branchOptions().find(b => String(b.value) === String(id))?.label.split(' / ').pop() || '';
+
+// ---- step 2: which branches and semesters run this term ----
 function renderWizRows() {
-  const branches = meta.entities.classes.fields.find(f => f.name === 'branch_id').options;
-  const rooms = meta.entities.classes.fields.find(f => f.name === 'room_id').options;
   $('#wizRows').replaceChildren(...wizRows.map((row, i) => {
     const branch = h('select', { class: 'input', 'aria-label': `Branch, row ${i + 1}`, onchange: e => (row.branchId = e.target.value) });
-    fillSelect(branch, branches, 'Branch');
+    fillSelect(branch, branchOptions(), 'Branch');
     branch.value = row.branchId;
-    const sem = h('input', { class: 'input', type: 'number', min: 1, max: 8, placeholder: 'Sem', 'aria-label': `Semester, row ${i + 1}`, value: row.semester, oninput: e => (row.semester = e.target.value) });
-    const room = h('select', { class: 'input', 'aria-label': `Home room, row ${i + 1}`, onchange: e => (row.roomId = e.target.value) });
-    fillSelect(room, rooms, 'No home room');
-    room.value = row.roomId;
-    return h('div', { class: 'adm-wiz-row' },
-      h('div', { class: 'adm-wiz-fields' }, branch, sem, room),
-      h('div', { class: 'adm-wiz-sections' },
-        h('input', { class: 'input', type: 'text', placeholder: 'Sections, e.g. A, B, C', 'aria-label': `Sections, row ${i + 1} (separate with commas)`, value: row.sectionsText, autocomplete: 'off', oninput: e => (row.sectionsText = e.target.value) }),
-        h('button', { class: 'btn btn-secondary btn-sm', type: 'button', text: 'A–E', title: 'Fill in A, B, C, D, E', 'aria-label': `Fill sections A to E, row ${i + 1}`,
-          onclick: e => { row.sectionsText = 'A, B, C, D, E'; e.currentTarget.previousElementSibling.value = row.sectionsText; } })),
+    const sem = h('select', { class: 'input', 'aria-label': `Semester, row ${i + 1}`, onchange: e => (row.semester = e.target.value) });
+    fillSelect(sem, [1, 2, 3, 4, 5, 6, 7, 8].map(n => ({ value: n, label: `Semester ${n}` })), 'Semester');
+    sem.value = row.semester;
+    return h('div', { class: 'adm-wiz-line' }, branch, sem,
       h('button', { class: 'btn btn-secondary btn-sm', type: 'button', text: 'Remove', 'aria-label': `Remove row ${i + 1}`, disabled: wizRows.length === 1, onclick: () => { wizRows.splice(i, 1); renderWizRows(); } }));
+  }));
+}
+
+// ---- step 3: students of each branch + semester ----
+function renderStudents() {
+  $('#wizStudents').replaceChildren(...cohorts.map(c => {
+    const free = c.students.filter(s => !s.assignedTo);
+    const count = h('strong');
+    const sync = () => { count.textContent = `${c.picked.size} of ${free.length} selected`; };
+    const boxes = [];
+    const list = h('div', { class: 'adm-pick-grid adm-wiz-list' }, ...c.students.map(s => {
+      const box = h('input', { type: 'checkbox', checked: c.picked.has(s.id), disabled: Boolean(s.assignedTo),
+        onchange: e => { if (e.target.checked) c.picked.add(s.id); else c.picked.delete(s.id); sync(); } });
+      boxes.push([s, box]);
+      return h('label', { class: 'adm-pick' }, box, h('span', {}, `${s.name} `, h('small', { class: 'adm-help', text: s.roll_number || '' }),
+        ...(s.assignedTo ? [' ', h('span', { class: 'badge', text: `already in ${s.assignedTo}` })] : [])));
+    }));
+    const setAll = on => { c.picked = new Set(on ? free.map(s => s.id) : []); boxes.forEach(([s, box]) => { if (!s.assignedTo) box.checked = on; }); sync(); };
+    sync();
+    return h('section', { class: 'adm-wiz-cohort', 'aria-label': c.label },
+      h('div', { class: 'adm-wiz-head' },
+        h('div', {}, h('strong', { text: c.label }), h('span', { class: 'adm-help', text: `Passing year ${c.passingYear} (${c.durationYears}-year course)` })),
+        h('span', { class: 'adm-wiz-tools' }, count,
+          h('button', { class: 'btn btn-secondary btn-sm', type: 'button', text: 'All', onclick: () => setAll(true) }),
+          h('button', { class: 'btn btn-secondary btn-sm', type: 'button', text: 'None', onclick: () => setAll(false) }))),
+      c.students.length
+        ? h('div', { class: 'adm-picklist' }, list)
+        : h('p', { class: 'adm-empty', text: `No active students have ${c.passingYear} as their passing year. You can still create the classes and add students later.` }));
+  }));
+}
+
+// ---- step 4: sections and home rooms ----
+function evenSplit(c) {
+  const n = c.sections.length;
+  const total = c.picked.size;
+  c.sections.forEach((sec, i) => (sec.count = String(Math.floor(total / n) + (i < total % n ? 1 : 0))));
+}
+function renderSections() {
+  const rooms = roomOptions();
+  $('#wizSections').replaceChildren(...cohorts.map(c => {
+    const note = h('p', { class: 'adm-help' });
+    const sync = () => {
+      const sum = c.sections.reduce((n, s) => n + (Number(s.count) || 0), 0);
+      note.textContent = `${c.picked.size} student${c.picked.size === 1 ? '' : 's'} to place` + (c.sections.length > 1 ? ` · ${sum} placed${sum === c.picked.size ? '' : ' (should be ' + c.picked.size + ')'}` : '');
+      note.classList.toggle('err', sum !== c.picked.size && c.sections.length > 1);
+    };
+    const lines = c.sections.map((sec, i) => {
+      const label = h('input', { class: 'input', type: 'text', placeholder: 'Section', maxlength: 8, autocomplete: 'off', 'aria-label': `Section, ${c.label} row ${i + 1}`, value: sec.section,
+        oninput: e => (sec.section = e.target.value.toUpperCase()) });
+      const room = h('select', { class: 'input', 'aria-label': `Home room, ${c.label} section ${sec.section || i + 1}`, onchange: e => (sec.roomId = e.target.value) });
+      fillSelect(room, rooms, 'No home room');
+      room.value = sec.roomId;
+      const nStudents = h('input', { class: 'input', type: 'number', min: 0, 'aria-label': `Students, ${c.label} section ${sec.section || i + 1}`, value: c.sections.length === 1 ? c.picked.size : sec.count,
+        disabled: c.sections.length === 1, oninput: e => { sec.count = e.target.value; sync(); } });
+      return h('div', { class: 'adm-wiz-line adm-wiz-line-sec' }, label, room, nStudents,
+        h('button', { class: 'btn btn-secondary btn-sm', type: 'button', text: 'Remove', disabled: c.sections.length === 1, onclick: () => { c.sections.splice(i, 1); evenSplit(c); renderSections(); } }));
+    });
+    sync();
+    return h('section', { class: 'adm-wiz-cohort', 'aria-label': c.label },
+      h('div', { class: 'adm-wiz-head' }, h('strong', { text: c.label }), note),
+      ...lines,
+      h('div', { class: 'adm-wiz-tools' },
+        h('button', { class: 'btn btn-secondary btn-sm', type: 'button', text: 'Add section', onclick: () => { c.sections.push({ section: '', roomId: '', count: '0' }); evenSplit(c); renderSections(); } }),
+        ...(c.sections.length > 1 ? [h('button', { class: 'btn btn-secondary btn-sm', type: 'button', text: 'Split evenly', onclick: () => { evenSplit(c); renderSections(); } })] : [])));
   }));
 }
 
@@ -565,89 +641,132 @@ function wizGo(n) {
   $$('.adm-step[data-step]', wizard).forEach(el => (el.hidden = Number(el.dataset.step) !== n));
   $$('#wizardSteps li').forEach(li => {
     const k = Number(li.dataset.step);
-    li.toggleAttribute('data-done', k < n || n === 4);
-    if (k === Math.min(n, 3)) li.setAttribute('aria-current', 'step'); else li.removeAttribute('aria-current');
+    li.toggleAttribute('data-done', k < n || n > WIZ_LAST);
+    if (k === Math.min(n, WIZ_LAST)) li.setAttribute('aria-current', 'step'); else li.removeAttribute('aria-current');
   });
-  $('#wizBack').hidden = n === 1 || n === 4;
-  $('#wizNext').hidden = n >= 3;
-  $('#wizCreate').hidden = n !== 3;
-  $('#wizCancel').hidden = n === 4;
-  $('#wizClose').hidden = n !== 4;
+  $('#wizBack').hidden = n === 1 || n > WIZ_LAST;
+  $('#wizNext').hidden = n >= WIZ_LAST;
+  $('#wizCreate').hidden = n !== WIZ_LAST;
+  $('#wizCancel').hidden = n > WIZ_LAST;
+  $('#wizClose').hidden = n <= WIZ_LAST;
   setBox('wizardError', '');
 }
 
 async function openWizard() {
   await loadMeta();
   fillSessionPicker(defaultSession());
-  wizRows = [wizRow()];
+  wizRows = [{ branchId: '', semester: '' }];
+  cohorts = [];
   renderWizRows();
   wizGo(1);
   wizard.showModal();
   $('#wizSession').focus();
 }
 $('#wizardBtn').addEventListener('click', openWizard);
-$('#wizAddRow').addEventListener('click', () => { wizRows.push(wizRow()); renderWizRows(); });
+$('#wizAddRow').addEventListener('click', () => { wizRows.push({ branchId: '', semester: '' }); renderWizRows(); });
 $('#wizCancel').addEventListener('click', () => wizard.close());
 $('#wizClose').addEventListener('click', () => wizard.close());
 $('#wizBack').addEventListener('click', () => wizGo(step - 1));
 
-function validRows() {
-  return wizRows
-    .map(r => ({ ...r, sections: parseSections(r.sectionsText).list, badSections: parseSections(r.sectionsText).bad }))
-    .filter(r => r.branchId && Number(r.semester) >= 1 && Number(r.semester) <= 8 && r.sections.length && !r.badSections.length);
+async function nextFromClasses() {
+  const seen = new Set();
+  const rows = wizRows.filter(r => r.branchId && r.semester);
+  if (!rows.length || rows.length !== wizRows.length) { $('#wizRowsMsg').textContent = rows.length ? 'Every row needs a branch and a semester.' : 'Add at least one branch and semester.'; $('#wizRowsMsg').hidden = false; return; }
+  for (const r of rows) {
+    const key = `${r.branchId}|${r.semester}`;
+    if (seen.has(key)) { $('#wizRowsMsg').textContent = 'The same branch and semester is listed twice.'; $('#wizRowsMsg').hidden = false; return; }
+    seen.add(key);
+  }
+  $('#wizRowsMsg').hidden = true;
+  const session = wizSessionValue();
+  const previous = new Map(cohorts.map(c => [c.key, c]));
+  cohorts = await Promise.all(rows.map(async r => {
+    const key = `${r.branchId}|${r.semester}`;
+    const found = await api(`/api/admin/master/wizard-students?session=${encodeURIComponent(session)}&branchId=${r.branchId}&semester=${r.semester}`);
+    const old = previous.get(key);
+    const free = found.students.filter(s => !s.assignedTo);
+    const keep = old ? new Set([...old.picked].filter(id => free.some(s => s.id === id))) : new Set(free.map(s => s.id));
+    return { key, branchId: r.branchId, semester: r.semester, label: `${found.branch} · Semester ${found.semester}`, passingYear: found.passingYear, durationYears: found.durationYears,
+      students: found.students, picked: keep, sections: old?.sections || [{ section: '', roomId: '', count: '0' }] };
+  }));
+  renderStudents();
+  wizGo(3);
+}
+
+function sectionsProblem() {
+  const roomSection = new Map();
+  for (const c of cohorts) {
+    const labels = new Set();
+    const sum = c.sections.reduce((n, s) => n + (Number(s.count) || 0), 0);
+    for (const sec of c.sections) {
+      const name = sec.section.trim().toUpperCase();
+      if (!SECTION_OK.test(name)) return `${c.label}: give every section a short label (like A, B or 3).`;
+      if (labels.has(name)) return `${c.label}: section ${name} is listed twice.`;
+      labels.add(name);
+      if (sec.roomId) {
+        const other = roomSection.get(sec.roomId);
+        if (other && other !== name) return `A home room can hold one section only. ${roomOptions().find(r => String(r.value) === String(sec.roomId))?.label} is used for both ${other} and ${name}.`;
+        roomSection.set(sec.roomId, name);
+      }
+    }
+    if (c.sections.length > 1 && sum !== c.picked.size) return `${c.label}: the sections hold ${sum} students but ${c.picked.size} are selected.`;
+  }
+  return '';
 }
 
 $('#wizardForm').addEventListener('submit', async event => {
   event.preventDefault();
   if (step === 1) {
     const value = wizSessionValue();
-    const known = meta.sessions.includes(value);
-    const problem = known ? '' : sessionProblem(value);
+    const problem = meta.sessions.includes(value) ? '' : sessionProblem(value);
     $('#wizSession-msg').textContent = problem;
     $('#wizSession-msg').hidden = !problem;
     $('#wizSession-msg').className = 'field-msg err';
-    ($('#wizSession').value === '__other' ? $('#wizSessionOther') : $('#wizSession')).toggleAttribute('aria-invalid', Boolean(problem));
-    if (problem) return ($('#wizSession').value === '__other' ? $('#wizSessionOther') : $('#wizSession')).focus();
+    const field = $('#wizSession').value === '__other' ? $('#wizSessionOther') : $('#wizSession');
+    field.toggleAttribute('aria-invalid', Boolean(problem));
+    if (problem) return field.focus();
+    renderWizRows();
     return wizGo(2);
   }
   if (step === 2) {
-    const ok = validRows();
-    const bad = wizRows.length !== ok.length;
-    const oddLabel = wizRows.some(r => parseSections(r.sectionsText).bad.length);
-    $('#wizRowsMsg').hidden = !(bad || !ok.length);
-    $('#wizRowsMsg').textContent = oddLabel ? 'A section label can use up to 8 letters, numbers or dashes (like A, B or 3).' : !ok.length ? 'Add at least one complete row.' : 'Each row needs a branch, a semester (1–8) and at least one section.';
-    if (bad || !ok.length) return;
-    const branches = meta.entities.classes.fields.find(f => f.name === 'branch_id').options;
-    const total = ok.reduce((n, r) => n + r.sections.length, 0);
-    $('#wizReview').replaceChildren(
-      h('p', { text: `This will create ${total} class${total === 1 ? '' : 'es'} in ${wizSessionValue()}. Classes that already exist are left as they are.` }),
-      h('ul', { class: 'adm-activity' }, ...ok.map(r => h('li', {},
-        h('strong', { text: `${branches.find(b => String(b.value) === String(r.branchId)).label} · Sem ${r.semester}` }),
-        h('span', { class: 'adm-when', text: `Sections ${r.sections.join(', ')}` })))));
-    return wizGo(3);
+    try { return await nextFromClasses(); } catch (error) { return setBox('wizardError', errorText(error)); }
   }
+  if (step === 3) { renderSections(); cohorts.forEach(c => { if (c.sections.length > 1) evenSplit(c); }); renderSections(); return wizGo(4); }
+
+  const problem = sectionsProblem();
+  if (problem) return setBox('wizardError', problem);
   const button = $('#wizCreate');
   setBusy(button, true);
   try {
     const session = wizSessionValue();
-    const result = await api('/api/admin/master/term-setup', { method: 'POST', body: { session, items: validRows().map(r => ({ branchId: r.branchId, semester: r.semester, sections: r.sections, roomId: r.roomId })) } });
+    const body = { session, cohorts: cohorts.map(c => {
+      const ids = c.students.filter(s => c.picked.has(s.id)).map(s => s.id); // in roll-number order
+      let at = 0;
+      return { branchId: c.branchId, semester: c.semester, sections: c.sections.map(sec => {
+        const take = c.sections.length === 1 ? ids.length : Number(sec.count) || 0;
+        const part = ids.slice(at, at + take);
+        at += take;
+        return { section: sec.section.trim().toUpperCase(), roomId: sec.roomId, studentIds: part };
+      }) };
+    }) };
+    const result = await api('/api/admin/master/wizard-apply', { method: 'POST', body });
     await loadMeta(true);
     cache.classes = false;
+    cache.students = false;
     const status = await api(`/api/admin/master/term-status?session=${encodeURIComponent(session)}`);
     const next = (label, detail, action, fn) => h('li', {}, h('span', { class: 'adm-check-text' }, h('strong', { text: label }), h('span', { text: detail })), h('button', { class: 'btn btn-secondary btn-sm', type: 'button', text: action, onclick: () => { wizard.close(); fn(); } }));
     $('#wizDone').replaceChildren(
-      h('p', { class: 'adm-big', text: `${result.created} class${result.created === 1 ? '' : 'es'} created` }),
-      h('p', { class: 'adm-help', text: result.existing ? `${result.existing} already existed.` : 'Next, fill the term in this order:' }),
+      h('p', { class: 'adm-big', text: `${result.created} class${result.created === 1 ? '' : 'es'} created, ${result.assigned} student${result.assigned === 1 ? '' : 's'} placed` }),
+      h('p', { class: 'adm-help', text: [result.existing ? `${result.existing} class${result.existing === 1 ? '' : 'es'} already existed.` : '', result.skipped ? `${result.skipped} student${result.skipped === 1 ? ' was' : 's were'} skipped because they were already in a class this term.` : ''].filter(Boolean).join(' ') || 'Next, finish the term in this order:' }),
       h('ol', { class: 'adm-checklist' },
         next('Subjects & faculty', `${status.subjects} subjects, ${status.faculty} faculty on file`, 'Open subjects', () => switchTab('subjects')),
-        next('Students', 'Add them one by one or import a CSV', 'Import students', () => { switchTab('students'); openImport('students', refresh); }),
-        next('Timetable', 'Build it in the grid or import a CSV', 'Open timetable', () => goto('timetable'))));
-    wizGo(4);
+        next('Timetable', 'Build it in the grid, one classroom at a time', 'Open timetable', () => goto('timetable'))));
+    wizGo(WIZ_LAST + 1);
     const select = $('#termSession');
     await loadTerm();
     select.value = session;
     loadTerm();
-    if (active === 'classes') loadRows();
+    if (active === 'classes' || active === 'students') refresh();
   } catch (error) {
     setBox('wizardError', errorText(error));
   } finally {

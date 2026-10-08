@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { dbAll, dbGet, dbRun } from '../../utils/db.js';
 import { galleryFolderName } from '../../utils/gallery.js';
-import { HttpError, wrap, clean } from './common.js';
+import { HttpError, wrap, clean, classroomMap } from './common.js';
 
 const router = express.Router();
 const GALLERY_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../gallery');
@@ -32,8 +32,11 @@ router.get('/', wrap(async (req, res) => {
     LEFT JOIN branches b ON b.id = c.branch_id
     WHERE s.active = 1
     ORDER BY s.name`);
+  const rooms = await classroomMap();
   const students = rows.map(r => ({
     ...r,
+    classroomKey: rooms.get(r.classId)?.key ?? '',
+    classroomLabel: rooms.get(r.classId)?.label ?? '',
     enrolled: Boolean(r.enrolled),
     photos: photoCount({ id: r.id, username: r.username, roll_number: r.roll_number }),
   }));
