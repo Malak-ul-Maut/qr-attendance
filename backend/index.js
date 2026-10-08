@@ -12,6 +12,7 @@ import authRouter from './routes/auth.routes.js';
 import sessionRouter from './routes/session.routes.js';
 import attendanceRouter from './routes/attendance.routes.js';
 import studentRouter from './routes/students.routes.js';
+import studentSelfRouter from './routes/student.routes.js';
 import facultyRouter from './routes/faculty.routes.js';
 import adminRouter from './routes/admin.routes.js';
 import cctvRouter from './routes/cctv.routes.js';
@@ -39,7 +40,8 @@ app.use(
 app.use('/api/auth', authRouter);
 app.use('/api/session', sessionRouter);
 app.use('/api/attendance', attendanceRouter);
-app.use('/api/students', studentRouter);
+app.use('/api/students', studentRouter); // admin-only, plus the session roster the faculty page reads
+app.use('/api/student', studentSelfRouter); // a signed-in student's own data
 app.use('/api/faculty', facultyRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/attendance/cctv', cctvRouter);

@@ -1,9 +1,12 @@
 import express from 'express';
 import { dbGet } from '../utils/db.js';
 import { issueAdminToken } from '../utils/admin-auth.js';
+import { issueStudentToken } from '../utils/student-auth.js';
 import { todayLocal } from '../utils/dates.js';
 
 const router = express.Router();
+
+export const DEFAULT_PASSWORD = 'password';
 
 // Login. There is one table per role, so the role decides which table is checked.
 // password_hash is still compared as plain text (hashing comes later).
@@ -23,7 +26,7 @@ router.post('/login', async (req, res) => {
         `
         SELECT faculties.id, faculties.name, faculties.username
         FROM faculties
-        WHERE faculties.username = ? AND faculties.password_hash = ? AND faculties.active = 1
+        WHERE faculties.username = ? AND faculties.password_hash = ?
         `,
         [username, password],
       );
@@ -31,7 +34,8 @@ router.post('/login', async (req, res) => {
     } else if (role === 'student') {
       // Inactive (soft-deleted) students cannot log in.
       account = await dbGet(
-        `SELECT name, username FROM students
+        `SELECT name, username, password_hash, face_embedding IS NOT NULL AS has_face
+         FROM students
          WHERE username = ? AND password_hash = ? AND active = 1`,
         [username, password],
       );
@@ -51,6 +55,12 @@ router.post('/login', async (req, res) => {
       subjectName: account.subjectName ?? null,
     };
     if (role === 'admin') result.adminToken = issueAdminToken(account.username);
+    if (role === 'student') {
+      result.token = issueStudentToken(account.username);
+      // Passwords are still plain text for now. Students on the default one must change it.
+      result.mustChangePassword = account.password_hash === DEFAULT_PASSWORD;
+      result.faceEnrolled = Boolean(account.has_face);
+    }
     return res.json(result);
   } catch (err) {
     console.error('DB error:', err);

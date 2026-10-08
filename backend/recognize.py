@@ -89,7 +89,7 @@ try:
 except ImportError:
     sys.exit("InsightFace is missing. Run: pip install insightface onnxruntime opencv-python numpy")
 
-from tracker import Tracker
+from tracker import Tracker, iou
 
 # ------------------------------------------------------------------ settings
 HERE = Path(__file__).resolve().parent
@@ -470,6 +470,9 @@ class RunState:
         self.track_boxes = {}        # track_id -> last known bbox (for the final annotated image)
         self.track_best_scores = {}  # track_id -> best trusted similarity so far
         self.recognitions = 0        # total face recognitions run (for the timing summary)
+        self.frames_processed = 0    # processed frames so far (the clock for track_last_seen)
+        self.track_sightings = {}    # track_id -> number of processed frames it was detected in
+        self.track_last_seen = {}    # track_id -> frames_processed value at its latest sighting
 
 
 def process_frame(model, tracker, crop, gallery, identity_map, state, args, frame_index, timings, log):
@@ -481,6 +484,7 @@ def process_frame(model, tracker, crop, gallery, identity_map, state, args, fram
     Returns [(record, face), ...] for students newly marked present THIS frame.
     """
     gallery_embeddings, gallery_names = gallery
+    state.frames_processed += 1
 
     faces, detect_ms = model.detect(crop)
     timings.add("detect faces", detect_ms)
@@ -492,6 +496,8 @@ def process_frame(model, tracker, crop, gallery, identity_map, state, args, fram
     with timings.measure("quality pre-checks"):
         for face, track_id in zip(faces, track_ids):
             state.track_boxes[track_id] = face.bbox  # keep the freshest sighting for the final annotated image
+            state.track_sightings[track_id] = state.track_sightings.get(track_id, 0) + 1
+            state.track_last_seen[track_id] = state.frames_processed
 
             if track_id in state.track_identity:
                 continue  # already resolved (matched, or gave up) - nothing left to do for this track
@@ -564,12 +570,37 @@ def save_debug_snapshot(debug_dir, crop, face, record):
     save_image(debug_dir / f"{record['student_id']}.jpg", snapshot)
 
 
-def save_aggregate_annotation(out_path, canvas, track_boxes, track_identity, track_best_scores, present, identity_map):
+# Annotated-image filtering for faces that did NOT resolve to a student (the red boxes)
+ANNOTATE_MIN_SIGHTINGS = 2   # must have been detected in at least this many processed frames (drops 1-frame flickers)
+ANNOTATE_RECENT_FRAMES = 3   # ...and still seen within the last this-many processed frames (drops departed faces)
+ANNOTATE_DUPLICATE_IOU = 0.25  # a box overlapping an already-drawn box by more than this is a duplicate of it
+
+
+def _boxes_are_duplicates(box_a, box_b):
+    """True if two face boxes almost surely show the same face (heavy overlap, or one centre inside the other)."""
+    if iou(box_a, box_b) > ANNOTATE_DUPLICATE_IOU:
+        return True
+    for outer, inner in ((box_a, box_b), (box_b, box_a)):
+        cx, cy = (inner[0] + inner[2]) / 2, (inner[1] + inner[3]) / 2
+        if outer[0] <= cx <= outer[2] and outer[1] <= cy <= outer[3]:
+            return True
+    return False
+
+
+def save_aggregate_annotation(out_path, canvas, track_boxes, track_identity, track_best_scores, present, identity_map,
+                              track_sightings=None, track_last_seen=None, frames_processed=0):
     """
-    One final image summarising the whole clip: every track's LAST known box, drawn on `canvas`
-    (the most recent frame read). Green + name + similarity for a track that resolved to a
-    student; red + "unmatched" for a track that used up its attempts without matching anyone;
-    red + "unknown" for a track that was still unresolved when the clip ended.
+    One final image summarising the whole clip, drawn on `canvas` (the most recent frame read).
+    Green + name + similarity for a track that resolved to a student; red + "unmatched" for a
+    track that used up its attempts without matching anyone; red + "unknown" for a track that was
+    still unresolved when the clip ended.
+
+    Each box is the track's LAST known position, so the red boxes are filtered to keep the picture
+    an honest head count: a face must have been seen in ANNOTATE_MIN_SIGHTINGS frames and still be
+    visible in the last ANNOTATE_RECENT_FRAMES frames, and a box that duplicates another drawn box
+    (same face detected twice, or an old track plus its replacement) is drawn once, green first.
+    Pass track_sightings / track_last_seen / frames_processed (from RunState) to enable the
+    filtering; without them every track is drawn, as before.
     """
     annotated = canvas.copy()
     image_height, image_width = annotated.shape[:2]
@@ -591,10 +622,30 @@ def save_aggregate_annotation(out_path, canvas, track_boxes, track_identity, tra
         if student_id not in best_track_by_student or rank > best_track_by_student[student_id][0]:
             best_track_by_student[student_id] = (rank, track_id)
 
+    # Decide what to draw: resolved (green) tracks first, then the red ones, biggest face first.
+    candidates = []
     for track_id, box in track_boxes.items():
         student_id = track_identity.get(track_id)
-        if student_id is not None and best_track_by_student[student_id][1] != track_id:
+        if student_id is not None:
+            if best_track_by_student[student_id][1] != track_id:
+                continue
+            priority = 0
+        else:
+            if track_sightings is not None and track_sightings.get(track_id, 0) < ANNOTATE_MIN_SIGHTINGS:
+                continue
+            if track_last_seen is not None and track_last_seen.get(track_id, 0) <= frames_processed - ANNOTATE_RECENT_FRAMES:
+                continue
+            priority = 1
+        area = max(0, box[2] - box[0]) * max(0, box[3] - box[1])
+        candidates.append((priority, -area, track_id, box))
+    candidates.sort(key=lambda c: (c[0], c[1]))
+    drawn = []
+    for priority, _, track_id, box in candidates:
+        if any(_boxes_are_duplicates(box, kept_box) for _, kept_box in drawn):
             continue
+        drawn.append((track_id, box))
+
+    for track_id, box in reversed(drawn):  # reversed: green boxes are painted last, on top
         x1, y1, x2, y2 = (int(v) for v in box)
         if track_id not in track_identity:
             student_id = None
@@ -743,7 +794,10 @@ def run_attendance(model, video, identity_map, args, gallery_dir, cache_key, ann
     if annotated_out and last_crop is not None:
         with timings.measure("save annotated image"):
             out_path = save_aggregate_annotation(annotated_out, last_crop, state.track_boxes, state.track_identity,
-                                                 state.track_best_scores, state.present, identity_map)
+                                                 state.track_best_scores, state.present, identity_map,
+                                                 track_sightings=state.track_sightings,
+                                                 track_last_seen=state.track_last_seen,
+                                                 frames_processed=state.frames_processed)
         result["annotated_image"] = str(out_path)
         log(f"  annotated image: {out_path}")
 
@@ -787,7 +841,7 @@ def parse_args():
     parser.add_argument("--no-early-exit", dest="early_exit", action="store_false",
                         help="always scan the full --duration, even when every visible face is already resolved")
     parser.add_argument("--det-size", default="1920x1080")
-    parser.add_argument("--det-thresh", type=float, default=0.3)
+    parser.add_argument("--det-thresh", type=float, default=0.25)
     parser.add_argument("--min-face", type=int, default=DEFAULT_SETTINGS["min_face"],
                         help="skip faces shorter than this (px) on either side - free, no attempt spent")
     parser.add_argument("--min-sharpness", type=float, default=DEFAULT_SETTINGS["min_sharpness"],

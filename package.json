@@ -5,7 +5,7 @@
   "main": "backend/index.js",
   "scripts": {
     "start": "node --env-file=.env backend/index.js",
-    "dev": "node --watch --env-file=.env backend/index.js"
+    "dev": "node --watch-path=backend --watch-path=.env --env-file=.env backend/index.js"
   },
   "keywords": [
     "qr-attendance"

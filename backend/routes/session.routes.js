@@ -245,7 +245,7 @@ router.post('/start', async (req, res) => {
         method === 'qr'
           ? createSessionToken(
               sessionCode,
-              3,
+              TOKEN_LIFETIME_SECONDS,
               await getSessionSections(sessionCode),
             )
           : null,
@@ -296,7 +296,7 @@ router.post('/token', async (req, res) => {
 
     const token = createSessionToken(
       sessionCode,
-      3,
+      TOKEN_LIFETIME_SECONDS,
       await getSessionSections(sessionCode),
     );
     return res.json({ ok: true, token });
@@ -380,6 +380,10 @@ router.post('/finalize', async (req, res) => {
     return res.status(500).json({ ok: false, error: 'database_error' });
   }
 });
+
+// Checked when the request reaches the server, so it must cover slow campus Wi-Fi.
+// The QR still rotates every few seconds, so a screenshot is useless.
+const TOKEN_LIFETIME_SECONDS = 8;
 
 function createSessionToken(sessionCode, expiresInSeconds, section) {
   const token = randomBytes(12).toString('hex');

@@ -4,8 +4,13 @@ export function safePathPart(value) {
   return String(value).replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
-export function galleryFolderName({ id, username, roll_number: rollNumber }) {
-  const parts = [id, safePathPart(username)];
-  if (rollNumber) parts.push(safePathPart(rollNumber));
-  return parts.join('_');
+export function galleryFolderName({ id, name, roll_number: rollNumber }) {
+  const firstName = String(name || '')
+    .split(' ')[0]
+    .toLowerCase();
+
+  const cleanFirstName = safePathPart(firstName);
+  const cleanRollNumber = safePathPart(rollNumber || '');
+
+  return `${id}_${cleanFirstName}_${cleanRollNumber}`;
 }

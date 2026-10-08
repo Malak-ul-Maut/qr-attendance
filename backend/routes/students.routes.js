@@ -5,6 +5,9 @@ import { fileURLToPath } from 'url';
 import { dbAll, dbGet, dbRun, withTransaction } from '../utils/db.js';
 import { galleryFolderName } from '../utils/gallery.js';
 import { getSessionStudents } from '../utils/timetable.js';
+import { requireAdmin } from '../utils/admin-auth.js';
+import { encodeEmbedding } from '../utils/embedding.js';
+import { decodeUploadedImage } from '../utils/images.js';
 
 const router = express.Router();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -27,7 +30,7 @@ const CURRENT_MAPPING_JOIN = `
 `;
 
 // Students list. Inactive (soft-deleted) students are hidden unless ?includeInactive=1.
-router.get('/', async (req, res) => {
+router.get('/', requireAdmin, async (req, res) => {
   const includeInactive = req.query.includeInactive === '1';
   try {
     const rows = await dbAll(`
@@ -58,7 +61,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.get('/meta', async (req, res) => {
+router.get('/meta', requireAdmin, async (req, res) => {
   try {
     const [courses, branches, classes] = await Promise.all([
       dbAll(`SELECT id, abbr AS label FROM courses ORDER BY abbr`),
@@ -80,7 +83,7 @@ router.get('/meta', async (req, res) => {
   }
 });
 
-router.get('/username-available', async (req, res) => {
+router.get('/username-available', requireAdmin, async (req, res) => {
   const username = String(req.query.username || '').trim();
   if (!username) return res.json({ available: false });
 
@@ -96,21 +99,11 @@ router.get('/username-available', async (req, res) => {
   }
 });
 
-// The student's saved face template, as a plain array of numbers.
-router.get('/descriptors', async (req, res) => {
-  try {
-    const row = await dbGet(
-      `SELECT face_embedding FROM students WHERE username = ? AND active = 1`,
-      [req.query.id],
-    );
-    if (!row?.face_embedding)
-      return res.status(404).json({ ok: false, error: 'not_found' });
-    return res.json(decodeEmbedding(row.face_embedding));
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ ok: false, error: 'database_error' });
-  }
-});
+// Moved: a student reads only their own template, at GET /api/student/face/template.
+// This used to return any student's template to anyone.
+router.get('/descriptors', (req, res) =>
+  res.status(410).json({ ok: false, error: 'moved_to_student_api' }),
+);
 
 // The students of a session (everyone it was opened for).
 router.get('/:sessionCode', async (req, res) => {
@@ -123,7 +116,7 @@ router.get('/:sessionCode', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', requireAdmin, async (req, res) => {
   const username = String(req.body.username || '').trim();
   const name = String(req.body.name || '').trim();
   const { password, faceDescriptor } = req.body;
@@ -231,7 +224,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.put('/:username', async (req, res) => {
+router.put('/:username', requireAdmin, async (req, res) => {
   const { username } = req.params;
   const { name, password, faceDescriptor } = req.body;
 
@@ -346,7 +339,7 @@ router.put('/:username', async (req, res) => {
 
 // "Delete" = make the student inactive. The row, class mapping, face data and past
 // attendance all stay, so history is kept and the student can be switched back on.
-router.delete('/:username', async (req, res) => {
+router.delete('/:username', requireAdmin, async (req, res) => {
   try {
     const student = await dbGet(`SELECT id FROM students WHERE username = ?`, [
       req.params.username,
@@ -443,56 +436,6 @@ function conflictName(err) {
   if (message.includes('students.phone_number')) return 'phone_taken';
   if (message.includes('students_mapping')) return 'class_already_assigned';
   return 'student_conflict';
-}
-
-function imageExtension(mimetype) {
-  const extensions = {
-    'image/jpeg': '.jpg',
-    'image/png': '.png',
-    'image/webp': '.webp',
-  };
-  return extensions[mimetype] || '.img';
-}
-
-function decodeUploadedImage(image) {
-  if (!image || typeof image.dataUrl !== 'string') return null;
-  const match = image.dataUrl.match(
-    /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/]+={0,2})$/,
-  );
-  if (!match) return null;
-  const buffer = Buffer.from(match[2], 'base64');
-  if (!buffer.length || buffer.length > 10 * 1024 * 1024) return null;
-  return { buffer, extension: imageExtension(match[1]) };
-}
-
-// ---------------------------------------------------------------------------
-// face_embedding is a BLOB holding the descriptor as little-endian float32 numbers
-// (512 numbers = 2048 bytes). The app still sends and receives plain number arrays.
-// ---------------------------------------------------------------------------
-function encodeEmbedding(descriptor) {
-  let values = descriptor;
-  if (typeof values === 'string') {
-    try {
-      values = JSON.parse(values);
-    } catch {
-      return null;
-    }
-  }
-  if (!Array.isArray(values) || values.length === 0) return null;
-  const numbers = values.map(Number);
-  if (numbers.some(value => !Number.isFinite(value))) return null;
-  const buffer = Buffer.alloc(numbers.length * 4);
-  numbers.forEach((value, index) => buffer.writeFloatLE(value, index * 4));
-  return buffer;
-}
-
-function decodeEmbedding(raw) {
-  const buffer = Buffer.from(raw.buffer, raw.byteOffset, raw.length);
-  const values = [];
-  for (let offset = 0; offset + 4 <= buffer.length; offset += 4) {
-    values.push(buffer.readFloatLE(offset));
-  }
-  return values;
 }
 
 export default router;

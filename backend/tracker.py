@@ -7,6 +7,12 @@ the next sighting gets treated as a brand new person. A real tracker instead let
 survive a few missed frames and still be recognised as "the same track" when the face reappears
 in roughly the same place.
 
+Matching rule: a detection belongs to a track if the two boxes overlap enough (IoU) OR their
+centres are close relative to the face's own size. Plain IoU alone is too strict for the small,
+far-away faces in a classroom: a seated student who shifts by only a few pixels between two
+sampled frames can drop below the IoU threshold on a ~30 px box and be treated as a new person.
+Distance is measured in "face widths" so it works the same for near and far rows.
+
 Simplification made on purpose: there is no motion model (no Kalman filter) here. A tracked
 face's predicted next position is just "wherever it was last seen". For a WALL-MOUNTED CAMERA
 watching SEATED students, that is a good enough prediction - motion between frames is small. A
@@ -19,6 +25,15 @@ Usage (see calibrate.py for a full example):
         track_ids = tracker.update(boxes)                     # one id per box, same order
 """
 import numpy as np
+
+
+def _center(box):
+    return (box[0] + box[2]) / 2.0, (box[1] + box[3]) / 2.0
+
+
+def _size(box):
+    """Average of a box's width and height (at least 1 px) - the unit for 'how far did it move'."""
+    return max(1.0, ((box[2] - box[0]) + (box[3] - box[1])) / 2.0)
 
 
 def iou(box_a, box_b):
@@ -50,13 +65,16 @@ class Track:
 class Tracker:
     """
     Call .update(boxes) once per frame, in frame order. Returns one track id per input box.
-    A box that overlaps an existing track (IoU >= iou_threshold) keeps that track's id. A box
-    that matches nothing becomes a new track. A track not matched for > max_missed frames in a
+    A box that overlaps an existing track (IoU >= iou_threshold), or whose centre is within
+    max_center_dist face-widths of the track's last box and is a similar size (within
+    max_size_ratio), keeps that track's id. A box that matches nothing becomes a new track. A track not matched for > max_missed frames in a
     row is dropped (its id will not be reused).
     """
 
-    def __init__(self, iou_threshold=0.3, max_missed=15):
+    def __init__(self, iou_threshold=0.3, max_missed=15, max_center_dist=0.6, max_size_ratio=1.6):
         self.iou_threshold = iou_threshold
+        self.max_center_dist = max_center_dist   # 0 turns the distance rule off (IoU only, as before)
+        self.max_size_ratio = max_size_ratio
         self.max_missed = max_missed
         self.tracks = []       # currently alive tracks (includes ones missed recently, not yet dropped)
         self._next_id = 1
@@ -64,16 +82,23 @@ class Tracker:
     def update(self, boxes):
         assigned_ids = [None] * len(boxes)
 
-        # Rank every (track, box) pair by how well they overlap, best first, then assign greedily.
+        # Rank every plausible (track, box) pair, closest first, then assign greedily.
         # This is simpler than an optimal (Hungarian) assignment, and is accurate enough here
         # because seated students' faces rarely overlap each other in the frame.
         candidates = []
         for track in self.tracks:
+            track_cx, track_cy = _center(track.box)
+            track_size = _size(track.box)
             for box_i, box in enumerate(boxes):
-                score = iou(track.box, box)
-                if score >= self.iou_threshold:
-                    candidates.append((score, track, box_i))
-        candidates.sort(key=lambda c: c[0], reverse=True)
+                box_cx, box_cy = _center(box)
+                distance = ((box_cx - track_cx) ** 2 + (box_cy - track_cy) ** 2) ** 0.5 / track_size
+                overlaps = iou(track.box, box) >= self.iou_threshold
+                size_ratio = max(track_size, _size(box)) / min(track_size, _size(box))
+                close = (self.max_center_dist > 0 and distance <= self.max_center_dist
+                         and size_ratio <= self.max_size_ratio)
+                if overlaps or close:
+                    candidates.append((distance, track, box_i))
+        candidates.sort(key=lambda c: c[0])  # smallest normalised distance first
 
         used_tracks, used_boxes = set(), set()
         for score, track, box_i in candidates:

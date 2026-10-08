@@ -37,7 +37,10 @@ const ANNOTATED_DIR = path.resolve(
 );
 // Limit for one /run call, including any time spent waiting in the service's queue.
 const RECOGNIZE_TIMEOUT_MS = Number(
-  process.env.CCTV_RECOGNIZE_TIMEOUT_MS || 60_000,
+  process.env.CCTV_RECOGNIZE_TIMEOUT_MS || 300_000,
+);
+console.log(
+  `[cctv] per-request recognition timeout: ${RECOGNIZE_TIMEOUT_MS} ms`,
 );
 
 // Run the current CCTV recognizer against the selected class.

@@ -16,6 +16,9 @@ export function storeUser(data) {
       username: data.username,
       name: data.name,
       adminToken: data.adminToken || null,
+      token: data.token || null, // student token
+      mustChangePassword: Boolean(data.mustChangePassword),
+      faceEnrolled: Boolean(data.faceEnrolled),
       subName: data.subjectName,
       section: data.section,
     }),
@@ -26,6 +29,11 @@ export function storeUser(data) {
 // The admin token is "payload.signature"; the payload says when it stops working.
 // (Read only to show a clear message early. The server is still the one that decides.)
 export function adminTokenExpiry(token) {
+  return tokenExpiry(token);
+}
+
+// Student and admin tokens share one format, so one reader serves both.
+export function tokenExpiry(token) {
   try {
     const payload = token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
     const claims = JSON.parse(atob(payload.padEnd(Math.ceil(payload.length / 4) * 4, '=')));

@@ -83,6 +83,98 @@
   font-size: var(--text-lg);
 }
 
+/* ---- Session header: which class (or merged classes) this session is for ---- */
+.session-header {
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border-left: 4px solid var(--line-strong);
+}
+.session-header[hidden] {
+  display: none;
+}
+/* Merged classes get the brand accent, so a combined lecture is obvious at a glance */
+.session-header[data-merged='true'] {
+  border-left-color: var(--red-600);
+}
+.sh-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+.sh-kicker {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink-500);
+}
+.session-header[data-merged='true'] .sh-kicker {
+  color: var(--red-600);
+}
+.sh-subject {
+  margin: 0;
+  font-size: var(--text-xl);
+  line-height: 1.25;
+}
+.sh-count {
+  flex: none;
+  margin: 0;
+  text-align: right;
+  color: var(--ink-500);
+  white-space: nowrap;
+}
+.sh-count b {
+  font-size: var(--text-2xl);
+  color: var(--ink-900);
+}
+.sh-count-label {
+  display: block;
+  font-size: var(--text-sm);
+}
+.sh-meta,
+.sh-class-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sh-meta li {
+  font-size: var(--text-sm);
+  color: var(--ink-700);
+}
+.sh-meta li + li::before {
+  content: '·';
+  margin-right: var(--space-2);
+  color: var(--ink-400);
+}
+.sh-label {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink-500);
+}
+.sh-class {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: var(--text-sm);
+}
+.sh-class-name {
+  font-weight: 600;
+  color: var(--ink-900);
+}
+.sh-class-count {
+  color: var(--ink-500);
+}
+
 /* ---- Live session ---- */
 .live-grid {
   display: grid;
@@ -104,6 +196,84 @@
 }
 .panel-head h2 {
   font-size: var(--text-xl);
+}
+.panel-title-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
+}
+.cctv-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+}
+.cctv-summary[hidden] {
+  display: none;
+}
+
+/* ---- About this result: plain-language facts under the CCTV picture ---- */
+.cctv-details {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+.cctv-details[hidden] {
+  display: none;
+}
+.cctv-details h3 {
+  margin: 0;
+  font-size: var(--text-base);
+}
+.cctv-facts,
+.cctv-legend {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+}
+.cctv-facts li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+.cf-label {
+  min-width: 8.5rem;
+  color: var(--ink-500);
+}
+.cf-value {
+  font-weight: 600;
+  color: var(--ink-900);
+}
+.cctv-legend li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ink-700);
+}
+.swatch {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 3px;
+}
+/* Same colours the annotated picture uses */
+.swatch-green {
+  background: #00c800;
+}
+.swatch-red {
+  background: #dc0000;
+}
+.cctv-advice {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-500);
 }
 .qr-panel {
   padding: var(--space-5);

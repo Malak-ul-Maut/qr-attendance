@@ -26,27 +26,49 @@ db.serialize(() => {
   // Added after the first release: the class counsellor printed on timetable sheets.
   // Safe to run every time - SQLite refuses a second ADD COLUMN and we ignore that one error.
   db.run('ALTER TABLE classes ADD COLUMN counsellor TEXT', err => {
-    if (err && !/duplicate column/i.test(err.message)) console.error('Could not add classes.counsellor:', err);
+    if (err && !/duplicate column/i.test(err.message))
+      console.error('Could not add classes.counsellor:', err);
   });
 
+  // Face enrolment by the student: which recognition model made face_embedding, and when.
+  for (const [column, type] of [
+    ['face_embedding_model', 'TEXT'],
+    ['face_enrolled_at', 'DATETIME'],
+  ]) {
+    db.run(`ALTER TABLE students ADD COLUMN ${column} ${type}`, err => {
+      if (err && !/duplicate column/i.test(err.message))
+        console.error(`Could not add students.${column}:`, err);
+    });
+  }
+
   // Stage 5: a course has a length in years (B.Tech = 4); the term wizard uses it to find each semester's passing year.
-  db.run('ALTER TABLE courses ADD COLUMN duration_years INTEGER NOT NULL DEFAULT 4', err => {
-    if (err && !/duplicate column/i.test(err.message)) console.error('Could not add courses.duration_years:', err);
-  });
+  db.run(
+    'ALTER TABLE courses ADD COLUMN duration_years INTEGER NOT NULL DEFAULT 4',
+    err => {
+      if (err && !/duplicate column/i.test(err.message))
+        console.error('Could not add courses.duration_years:', err);
+    },
+  );
   // Stage 5: faculty can leave the institute, so they get an active flag like students.
-  db.run('ALTER TABLE faculties ADD COLUMN active INTEGER NOT NULL DEFAULT 1', err => {
-    if (err && !/duplicate column/i.test(err.message)) console.error('Could not add faculties.active:', err);
-  });
+  db.run(
+    'ALTER TABLE faculties ADD COLUMN active INTEGER NOT NULL DEFAULT 1',
+    err => {
+      if (err && !/duplicate column/i.test(err.message))
+        console.error('Could not add faculties.active:', err);
+    },
+  );
 
   // Stage 4: sections are free text now (any value). Older databases carry a CHECK that only
   // allows A-E, and SQLite cannot drop a CHECK in place, so the table is rebuilt once.
-  db.get(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'classes'`, (err, row) => {
-    if (err || !row || !/CHECK\s*\(\s*section\s+IN/i.test(row.sql)) return;
-    db.serialize(() => {
-      db.run('PRAGMA foreign_keys = OFF');
-      db.run('PRAGMA legacy_alter_table = ON');
-      db.run('BEGIN');
-      db.run(`CREATE TABLE classes_new (
+  db.get(
+    `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'classes'`,
+    (err, row) => {
+      if (err || !row || !/CHECK\s*\(\s*section\s+IN/i.test(row.sql)) return;
+      db.serialize(() => {
+        db.run('PRAGMA foreign_keys = OFF');
+        db.run('PRAGMA legacy_alter_table = ON');
+        db.run('BEGIN');
+        db.run(`CREATE TABLE classes_new (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         branch_id INTEGER NOT NULL REFERENCES branches(id),
         semester INTEGER NOT NULL,
@@ -55,18 +77,21 @@ db.serialize(() => {
         academic_session TEXT NOT NULL,
         counsellor TEXT,
         UNIQUE (branch_id, semester, section, academic_session))`);
-      db.run(`INSERT INTO classes_new (id, branch_id, semester, room_id, section, academic_session, counsellor)
+        db.run(`INSERT INTO classes_new (id, branch_id, semester, room_id, section, academic_session, counsellor)
               SELECT id, branch_id, semester, room_id, section, academic_session, counsellor FROM classes`);
-      db.run('DROP TABLE classes');
-      db.run('ALTER TABLE classes_new RENAME TO classes');
-      db.run('COMMIT', e => {
-        if (e) { console.error('Could not free up classes.section:', e); db.run('ROLLBACK'); }
-        else console.log('classes.section is now free text');
+        db.run('DROP TABLE classes');
+        db.run('ALTER TABLE classes_new RENAME TO classes');
+        db.run('COMMIT', e => {
+          if (e) {
+            console.error('Could not free up classes.section:', e);
+            db.run('ROLLBACK');
+          } else console.log('classes.section is now free text');
+        });
+        db.run('PRAGMA legacy_alter_table = OFF');
+        db.run('PRAGMA foreign_keys = ON');
       });
-      db.run('PRAGMA legacy_alter_table = OFF');
-      db.run('PRAGMA foreign_keys = ON');
-    });
-  });
+    },
+  );
 
   // Enforce foreign keys (off by default in SQLite, and per connection).
   db.run('PRAGMA foreign_keys = ON');

@@ -149,11 +149,38 @@
             it is back.
           </p>
 
+          <!-- Which class this session is for (and which classes are merged), shown once a session starts -->
+          <section
+            id="sessionHeader"
+            class="card session-header"
+            aria-labelledby="shSubject"
+            hidden>
+            <div class="sh-top">
+              <div class="sh-title">
+                <p id="shKind" class="sh-kicker"></p>
+                <h2 id="shSubject" class="sh-subject"></h2>
+              </div>
+              <p class="sh-count" aria-live="polite">
+                <b id="shPresent">0</b><span id="shTotal"></span>
+                <span class="sh-count-label">present</span>
+              </p>
+            </div>
+            <ul id="shMeta" class="sh-meta" aria-label="Session details"></ul>
+            <div id="shClassesWrap" class="sh-classes" hidden>
+              <p id="shClassesLabel" class="sh-label"></p>
+              <ul id="shClasses" class="sh-class-list" aria-labelledby="shClassesLabel"></ul>
+            </div>
+          </section>
+
           <div class="live-grid">
             <!-- Full screen includes both the QR code and the live student roster -->
             <div id="qrPanel" class="card qr-panel">
               <div class="panel-head">
-                <h2 id="panelTitle" tabindex="-1">Scan to mark attendance</h2>
+                <div class="panel-title-wrap">
+                  <h2 id="panelTitle" tabindex="-1">Scan to mark attendance</h2>
+                  <!-- CCTV only: how many faces the camera found, and how many of them were recognised -->
+                  <p id="cctvSummary" class="cctv-summary" hidden></p>
+                </div>
                 <button
                   id="fullscreenBtn"
                   class="btn btn-secondary"
@@ -256,6 +283,27 @@
                     to zoom in.
                   </p>
                 </div>
+
+                <!-- Plain-language facts about the picture above -->
+                <section
+                  id="cctvDetails"
+                  class="cctv-details"
+                  aria-labelledby="cctvDetailsTitle"
+                  hidden>
+                  <h3 id="cctvDetailsTitle">About this result</h3>
+                  <ul id="cctvFacts" class="cctv-facts"></ul>
+                  <ul class="cctv-legend" aria-label="What the box colours mean">
+                    <li>
+                      <span class="swatch swatch-green" aria-hidden="true"></span>
+                      Green box: a student the system recognised (name and match score shown)
+                    </li>
+                    <li>
+                      <span class="swatch swatch-red" aria-hidden="true"></span>
+                      Red box: a face the camera found but could not match to this class
+                    </li>
+                  </ul>
+                  <p id="cctvAdvice" class="cctv-advice"></p>
+                </section>
               </div>
             </div>
 

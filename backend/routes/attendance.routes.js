@@ -3,6 +3,7 @@ import { dbGet, dbRun } from '../utils/db.js';
 import utils from '../utils/in-memory-db.js';
 import { getIO } from '../utils/socket-io.js';
 import { getSessionRows, isSessionEnded } from '../utils/timetable.js';
+import { todayLocal } from '../utils/dates.js';
 
 const router = express.Router();
 
@@ -25,19 +26,20 @@ router.post('/verify', async (req, res) => {
         .json({ ok: false, error: 'invalid_or_expired_token' });
 
     try {
-      const student = await getEligibleStudent(
+      const check = await checkStudentForSession(
         tokenData.sessionCode,
         studentId,
       );
-      if (!student)
-        return res.status(400).json({ ok: false, error: 'not_your_section' });
-      if (student.marked_at)
-        return res.status(400).json({ ok: false, error: 'already_marked' });
+      if (check.error)
+        return res
+          .status(400)
+          .json({ ok: false, error: check.error, subject: check.subject });
 
       return res.json({
         ok: true,
         sessionId: tokenData.sessionCode,
         section: tokenData.section,
+        subject: check.subject,
       });
     } catch (err) {
       console.error(err);
@@ -46,11 +48,12 @@ router.post('/verify', async (req, res) => {
   }
 
   try {
-    const student = await getEligibleStudent(sessionId, studentId);
-    if (!student)
-      return res.status(400).json({ ok: false, error: 'not_your_section' });
-    if (student.marked_at)
-      return res.status(400).json({ ok: false, error: 'already_marked' });
+    const check = await checkStudentForSession(sessionId, studentId);
+    if (check.error)
+      return res
+        .status(400)
+        .json({ ok: false, error: check.error, subject: check.subject });
+    const student = check.student;
 
     // Same phone already used by someone else in this session?
     if (cameraFingerprint) {
@@ -90,7 +93,28 @@ router.post('/verify', async (req, res) => {
       sessionId,
       time: currentDate.toLocaleTimeString(),
     });
-    return res.json({ ok: true, message: 'Attendance recorded' });
+    return res.json({
+      ok: true,
+      message: 'Attendance recorded',
+      subject: check.subject,
+      markedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ ok: false, error: 'database_error' });
+  }
+});
+
+// Lets the face-check screen notice that the teacher closed attendance mid-check.
+// open:true means the student can still mark; otherwise `error` says why not.
+router.get('/session-status', async (req, res) => {
+  const sessionId = String(req.query.sessionId ?? '');
+  const studentId = String(req.query.studentId ?? '');
+  if (!sessionId || !studentId)
+    return res.status(400).json({ ok: false, error: 'missing_fields' });
+  try {
+    const check = await checkStudentForSession(sessionId, studentId);
+    return res.json({ ok: true, open: !check.error, error: check.error });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ ok: false, error: 'database_error' });
@@ -161,6 +185,44 @@ router.post('/manual', async (req, res) => {
     return res.status(500).json({ ok: false, error: 'database_error' });
   }
 });
+
+// Why a student can or cannot mark in this session, as one specific error code:
+// session_not_found, session_ended, wrong_method, account_inactive, not_on_roster,
+// already_marked. On success returns { student, subject }.
+async function checkStudentForSession(sessionCode, username) {
+  const rows = await getSessionRows(sessionCode);
+  if (rows.length === 0) return { error: 'session_not_found' };
+
+  const subjectRow = await dbGet(
+    `SELECT subjects.name AS name
+     FROM sessions
+     JOIN timetable ON timetable.id = sessions.timetable_id
+     JOIN subjects ON subjects.id = timetable.subject_id
+     WHERE sessions.session_code = ? LIMIT 1`,
+    [sessionCode],
+  );
+  const subject = subjectRow?.name ?? null;
+
+  // A session left open from an earlier day counts as ended.
+  const today = todayLocal();
+  if (isSessionEnded(rows) || rows.every(row => row.date !== today))
+    return { error: 'session_ended', subject };
+  // Camera (CCTV) sessions are marked by the camera, never by a phone.
+  if (rows.some(row => row.method !== 'qr'))
+    return { error: 'wrong_method', subject };
+
+  const account = await dbGet(
+    'SELECT id, active FROM students WHERE username = ?',
+    [String(username ?? '')],
+  );
+  if (!account) return { error: 'not_on_roster', subject };
+  if (!account.active) return { error: 'account_inactive', subject };
+
+  const student = await getEligibleStudent(sessionCode, username);
+  if (!student) return { error: 'not_on_roster', subject };
+  if (student.marked_at) return { error: 'already_marked', subject };
+  return { student, subject };
+}
 
 // The student's row in an open session, found by session code + username.
 function getEligibleStudent(sessionCode, username) {

@@ -197,6 +197,8 @@ let sessionMeta = null; // { date, slot, method } saved to History on submit
 let qrTimer = null;
 let renderTimer = null;
 let classIds = [];
+let classInfo = []; // full class records for the selected slot (merged classes have several)
+let headerInfo = null; // what the session header shows; fixed when the session starts
 let slotRequestId = 0;
 let classRequestId = 0;
 let rosterFilter = 'present'; // 'present' | 'absent'
@@ -323,6 +325,7 @@ async function loadSlots() {
 async function loadClasses() {
   const requestId = ++classRequestId; // a slow answer for an old slot must not win
   classIds = []; // reset every time so old ids never pile up
+  classInfo = [];
   updateSubjectHeader();
   if (!getSlotId()) return;
 
@@ -333,6 +336,7 @@ async function loadClasses() {
     if (!res.ok) throw new Error();
     const classes = await res.json();
     if (requestId !== classRequestId) return;
+    classInfo = classes;
     classes.forEach(item => {
       classIds.push(item.class_id);
     });
@@ -391,6 +395,98 @@ function updateCounts() {
   $('#fsCount').textContent = shown;
   // Handy when the tab is in the background behind the slides
   if (sessionCode) document.title = `(${shown}) ${baseTitle}`;
+  renderSessionHeader();
+}
+
+// ---------- Session header: which class (or merged classes) this session is for ----------
+const titleCase = text => (text ? text[0].toUpperCase() + text.slice(1) : '');
+
+// "CSE · Sem 5 · Sec A". Reads whichever name fields the server sends for a class.
+function classLabel(c) {
+  const branch = c.branch_abbr || c.branchAbbr || c.branch || '';
+  const sem = c.semester ?? c.sem ?? '';
+  const section = c.section ?? '';
+  const label = [
+    branch,
+    sem !== '' ? `Sem ${sem}` : '',
+    section !== '' ? `Sec ${section}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const base = label || c.label || c.name || `Class ${c.class_id ?? ''}`.trim();
+  return c.batch ? `${base} · ${c.batch}` : base;
+}
+
+// Present / total for one class. Needs students that say which class they belong to;
+// otherwise falls back to a headcount from the class record, if the server sent one.
+function classCounts(c, isIn = isPresent) {
+  const id = String(c.class_id);
+  const mine = [...allStudents.values()].filter(
+    s => String(s.class_id ?? s.classId) === id,
+  );
+  if (mine.length)
+    return { total: mine.length, present: mine.filter(s => isIn(s.id)).length };
+  const total = c.student_count ?? c.students ?? c.total_students ?? null;
+  return { total: Number.isFinite(Number(total)) && total !== null ? Number(total) : null, present: null };
+}
+
+let headerKey = '';
+function renderSessionHeader() {
+  const header = $('#sessionHeader');
+  if (!headerInfo) {
+    header.hidden = true;
+    return;
+  }
+  header.hidden = false;
+  const { slot, classes, date, method, sessionType } = headerInfo;
+  const merged = classes.length > 1;
+  $('#shPresent').textContent = presentCount();
+  $('#shTotal').textContent = allStudents.size ? ` / ${allStudents.size}` : '';
+
+  const rows = classes.map(c => ({ name: classLabel(c), ...classCounts(c) }));
+  const meta = [
+    formatDate(date),
+    slot ? `${slot.start_time} - ${slot.end_time}` : '',
+    slot?.block && slot?.room_number ? `Room ${slot.block}-${slot.room_number}` : '',
+    method === 'qr' ? 'QR session' : 'CCTV session',
+    sessionType ? `${titleCase(sessionType)} class` : '',
+  ].filter(Boolean);
+  const key = JSON.stringify([meta, rows, merged, slot?.subject_label]);
+  if (key === headerKey) return; // nothing new: leave the DOM alone
+  headerKey = key;
+
+  $('#shKind').textContent = merged
+    ? `Merged class · ${classes.length} classes together`
+    : 'Single class';
+  header.dataset.merged = merged ? 'true' : 'false';
+  $('#shSubject').textContent =
+    slot?.subject_label || slot?.subject_abbr || defaultSubjectLabel || 'Class';
+  $('#shMeta').replaceChildren(
+    ...meta.map(text => Object.assign(document.createElement('li'), { textContent: text })),
+  );
+
+  $('#shClassesWrap').hidden = rows.length === 0;
+  $('#shClassesLabel').textContent = merged ? 'Merged classes' : 'Class';
+  $('#shClasses').replaceChildren(
+    ...rows.map(row => {
+      const li = document.createElement('li');
+      li.className = 'sh-class';
+      const name = document.createElement('span');
+      name.className = 'sh-class-name';
+      name.textContent = row.name;
+      li.append(name);
+      if (row.total !== null) {
+        const count = document.createElement('span');
+        count.className = 'sh-class-count';
+        count.textContent =
+          row.present === null
+            ? `${row.total} students`
+            : `${row.present} / ${row.total}`;
+        li.append(count);
+      }
+      return li;
+    }),
+  );
 }
 
 function buildRows() {
@@ -689,6 +785,14 @@ startBtn.addEventListener('click', async () => {
       slot: selectedSlot()?.label || 'Class',
       method,
     };
+    headerInfo = {
+      date: dateInput.value,
+      slot: selectedSlot() ? { ...selectedSlot() } : null,
+      classes: [...classInfo],
+      method,
+      sessionType: $('input[name="session-type"]:checked').value,
+    };
+    headerKey = '';
     roster.clear();
     allStudents.clear();
     rowEls.clear();
@@ -701,6 +805,7 @@ startBtn.addEventListener('click', async () => {
 
     beforeStart.hidden = true;
     afterStart.hidden = false;
+    renderSessionHeader();
     const isQr = method === 'qr';
     qrCanvas.hidden = !isQr;
     $('#qrLive').hidden = !isQr;
@@ -792,13 +897,108 @@ function scheduleTokenRefresh(delay) {
 }
 
 // ---------- CCTV ----------
+// How many faces the camera found in the picture. If the server reports it, use that.
+// Without it the card still shows who was recognised, just not the number of faces seen.
+function reportedFaces(response, recognised) {
+  const sent = Number(
+    response.facesDetected ?? response.faces_detected ?? response.detected,
+  );
+  return Number.isFinite(sent) && sent >= recognised ? sent : null;
+}
+
+// "28 faces seen · 8 recognised · 20 not recognised" beside the CCTV result title
+function renderCctvSummary() {
+  const summary = $('#cctvSummary');
+  if (!cctvResult) {
+    summary.hidden = true;
+    return;
+  }
+  const recognised = cctvResult.recognisedIds.size;
+  const { detected } = cctvResult;
+  const chip = (className, count, text) => {
+    const el = document.createElement('span');
+    el.className = `badge ${className}`.trim();
+    const num = document.createElement('b');
+    num.textContent = count;
+    el.append(num, ` ${text}`);
+    return el;
+  };
+  const chips = [];
+  if (detected !== null)
+    chips.push(chip('', detected, detected === 1 ? 'face seen' : 'faces seen'));
+  chips.push(chip('badge-success', recognised, 'recognised'));
+  if (detected !== null)
+    chips.push(chip('badge-warning', detected - recognised, 'not recognised'));
+  summary.replaceChildren(...chips);
+  summary.hidden = false;
+}
+
+// ---- "About this result": plain-language details under the CCTV picture ----
+// A snapshot of what the camera found. Marking students by hand later does not change it.
+// cctvResult: { time, recognisedIds, detected (null = unknown), width, height }
+let cctvResult = null;
+
+function drawCctvDetails() {
+  const box = $('#cctvDetails');
+  if (!cctvResult) {
+    box.hidden = true;
+    return;
+  }
+  const { time, recognisedIds, detected, width, height } = cctvResult;
+  const recognised = recognisedIds.size;
+  const room = headerInfo?.slot;
+
+  const facts = [];
+  if (room?.block && room?.room_number)
+    facts.push(['Camera', `Room ${room.block}-${room.room_number}`]);
+  facts.push(['Checked at', time]);
+  if (width && height) facts.push(['Picture size', `${width} × ${height} pixels`]);
+  if (detected !== null) {
+    facts.push(['Seen in the picture', `${detected} ${detected === 1 ? 'face' : 'faces'}`]);
+    facts.push(['Recognised', `${recognised} of ${detected} faces matched to a student of this class`]);
+  } else {
+    facts.push(['Recognised', `${recognised} ${recognised === 1 ? 'student' : 'students'}`]);
+  }
+  const classes = headerInfo?.classes || [];
+  if (classes.length > 1) {
+    for (const c of classes) {
+      const { present } = classCounts(c, id => recognisedIds.has(String(id)));
+      if (present !== null)
+        facts.push([classLabel(c), `${present} ${present === 1 ? 'student' : 'students'} recognised`]);
+    }
+  }
+  if (detected !== null)
+    facts.push([
+      'Not recognised',
+      `${detected - recognised}. They may be students of another class, the teacher, people at the door, or faces too small or unclear`,
+    ]);
+
+  $('#cctvFacts').replaceChildren(
+    ...facts.map(([label, value]) => {
+      const li = document.createElement('li');
+      const l = Object.assign(document.createElement('span'), { className: 'cf-label', textContent: label });
+      const v = Object.assign(document.createElement('span'), { className: 'cf-value', textContent: value });
+      li.append(l, v);
+      return li;
+    }),
+  );
+  $('#cctvAdvice').textContent =
+    recognised === 0
+      ? 'No one could be recognised this time. Check that the camera view is clear and well lit, then try again, or mark students by hand.'
+      : 'Students who sit far from the camera, look down or turn away are often missed. Students not recognised are not marked absent automatically. Check the Absent tab and use Add manually for anyone who is in class.';
+  box.hidden = false;
+}
+
 async function runCCTV() {
   const status = $('#liveStatus');
+  $('#cctvDetails').hidden = true;
+  cctvResult = null;
   $('#cctvError').hidden = true;
   $('#cctvSkeleton').hidden = false;
   cctvViewer.hidden = true;
   status.textContent = 'Processing CCTV footage...';
 
+  $('#cctvSummary').hidden = true;
   const response = await postData('/api/attendance/cctv/run', { sessionCode });
   if (!sessionCode) return; // session ended while we waited
   if (!response?.ok) {
@@ -822,8 +1022,24 @@ async function runCCTV() {
     .filter(s => presentIds.has(String(s.id)))
     .forEach(s => markPresent(s.id, s.name, 'cctv', time));
   renderRoster({ force: true });
+  const reported = reportedFaces(response, presentIds.size);
+  cctvResult = {
+    time,
+    recognisedIds: presentIds,
+    detected: reported, // null when the server does not say how many faces it found
+    width: null,
+    height: null,
+  };
+  renderCctvSummary();
+  drawCctvDetails();
+  status.textContent = `${presentIds.size} ${presentIds.size === 1 ? 'student' : 'students'} recognised. Check the Absent tab for anyone the camera missed.`;
 
   cctvResultImage.onload = () => {
+    if (cctvResult) {
+      cctvResult.width = cctvResultImage.naturalWidth;
+      cctvResult.height = cctvResultImage.naturalHeight;
+      drawCctvDetails(); // now it also knows the picture size
+    }
     $('#cctvSkeleton').hidden = true;
     cctvViewer.hidden = false;
     resetView(); // every new picture starts fitted
@@ -833,7 +1049,6 @@ async function runCCTV() {
     notify('The annotated CCTV image could not be loaded.', 'error');
   };
   cctvResultImage.src = `/results/${sessionCode}.jpg?t=${Date.now()}`;
-  status.textContent = `${presentCount()} of ${allStudents.size} recognised. Check the Absent tab for anyone the camera missed.`;
 }
 
 $('#cctvRetryBtn').addEventListener('click', async event => {
@@ -1202,6 +1417,8 @@ function endSessionUI() {
   sessionCode = null;
   sessionMethod = null;
   sessionMeta = null;
+  headerInfo = null;
+  renderSessionHeader();
   roster.clear();
   allStudents.clear();
   rowEls.clear();
@@ -1213,6 +1430,9 @@ function endSessionUI() {
   document.title = baseTitle;
   if (document.fullscreenElement) document.exitFullscreen();
   cctvViewer.hidden = true;
+  $('#cctvSummary').hidden = true;
+  cctvResult = null;
+  $('#cctvDetails').hidden = true;
   cctvResultImage.removeAttribute('src');
   resetView();
   $('#cctvSkeleton').hidden = false;
