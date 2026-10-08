@@ -193,7 +193,7 @@ router.post('/', requireAdmin, async (req, res) => {
 
       const galleryFolder = galleryFolderName({
         id: student.lastID,
-        username,
+        name, // the CCTV roster and admin pages build the folder name from the first name too
         roll_number: rollNumber,
       });
       galleryPath = path.join(GALLERY_DIR, galleryFolder);

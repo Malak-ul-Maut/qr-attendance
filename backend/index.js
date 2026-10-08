@@ -67,12 +67,12 @@ const __dirname = path.dirname(__filename);
 
 const FRONTEND_DIR = path.join(__dirname, '../frontend');
 
-// Cache models locally
+// Face models: the folder is utils/models (this used to point at a folder that does not exist).
+// Not "immutable": if a model file is ever replaced, browsers should pick up the new one within a week.
 app.use(
   '/utils/models',
-  express.static(path.join(FRONTEND_DIR, 'models'), {
-    maxAge: '365d',
-    immutable: true,
+  express.static(path.join(FRONTEND_DIR, 'utils/models'), {
+    maxAge: '7d',
   }),
 );
 

@@ -42,7 +42,7 @@ router.post('/login', async (req, res) => {
     }
 
     if (!account) {
-      return res.status(401).json({ ok: false, error: 'invallid_credentials' });
+      return res.status(401).json({ ok: false, error: 'invalid_credentials' });
     }
 
     const result = {

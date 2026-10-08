@@ -494,7 +494,7 @@ router.post('/face', async (req, res) => {
 
     // Photos first (as .part files), then swap in, then the database. Any failure removes what was written.
     const folder = path.join(GALLERY_DIR, galleryFolderName(await dbGet(
-      `SELECT id, username, roll_number FROM students WHERE id = ?`, [id])));
+      `SELECT id, name, roll_number FROM students WHERE id = ?`, [id])));
     await fs.mkdir(folder, { recursive: true });
     const stamp = Date.now().toString(36);
     const parts = [];
@@ -525,7 +525,7 @@ router.post('/face', async (req, res) => {
 
 async function selfPhotos(student) {
   try {
-    const folder = path.join(GALLERY_DIR, galleryFolderName({ id: student.id, username: student.username, roll_number: student.roll_number }));
+    const folder = path.join(GALLERY_DIR, galleryFolderName({ id: student.id, name: student.name, roll_number: student.roll_number }));
     return (await fs.readdir(folder)).filter(n => SELF_PHOTO.test(n));
   } catch {
     return [];

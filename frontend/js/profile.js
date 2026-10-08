@@ -12,6 +12,7 @@ const root = document.querySelector('#profileRoot');
 let me = null;
 let face = null; // GET /face: photo count and date, once enrolled
 let failed = null;
+let passwordOpen = false; // the change-password form stays closed until the student asks for it
 
 const PASSWORD_ERRORS = {
   wrong_password: 'The current password is not right.',
@@ -98,7 +99,23 @@ function passwordCard() {
     field('pwNew', 'New password (at least 8 characters)', 'new-password'),
     field('pwConfirm', 'Repeat new password', 'new-password'),
     msg,
-    h('button', { class: 'btn btn-primary', type: 'submit', text: 'Change password' }));
+    h('div', { class: 'form-actions' },
+      h('button', { class: 'btn btn-primary', type: 'submit', text: 'Save new password' }),
+      h('button', { class: 'btn btn-secondary', type: 'button', onclick: () => setOpen(false), text: 'Cancel' })));
+
+  // A student on the default password must change it, so the form starts open for them
+  const startOpen = passwordOpen || me.mustChangePassword;
+  form.hidden = !startOpen;
+  const openButton = h('button', { class: 'btn btn-secondary', type: 'button', 'aria-expanded': String(startOpen), 'aria-controls': 'pwForm', onclick: () => setOpen(true), text: 'Change password' });
+  form.id = 'pwForm';
+  openButton.hidden = startOpen;
+  function setOpen(open) {
+    passwordOpen = open;
+    form.hidden = !open;
+    openButton.hidden = open;
+    openButton.setAttribute('aria-expanded', String(open));
+    if (open) form.querySelector('input')?.focus(); else { form.reset(); msg.hidden = true; openButton.focus(); }
+  }
 
   form.addEventListener('submit', async ev => {
     ev.preventDefault();
@@ -122,10 +139,11 @@ function passwordCard() {
     } catch { /* storage blocked: the server value still wins on the next load */ }
     showToast('Password changed.', 'success');
     form.reset();
+    passwordOpen = false; // fold the form away again
     await refresh();
     window.dispatchEvent(new CustomEvent('student:changed'));
   });
-  return h('section', { class: 'card profile-card' }, h('h2', { text: 'Password' }), form);
+  return h('section', { class: 'card profile-card' }, h('h2', { text: 'Password' }), openButton, form);
 }
 
 window.addEventListener('student:tab', ev => { if (ev.detail === 'profile') refresh(); });

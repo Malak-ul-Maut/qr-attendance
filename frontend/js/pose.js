@@ -37,6 +37,30 @@ export function estimatePose(landmarks, rollRef = null) {
   };
 }
 
+// The detector sometimes fires on things that are not faces (a ceiling fan, a lamp). A real face has its
+// landmarks in a fixed arrangement: eyes level and apart, nose below the eyes, mouth below the nose.
+// Returns true when the five landmarks (and the box around them) are arranged like a face.
+export function plausibleFace(face) {
+  const [le, re, nose, lm, rm] = face.landmarks;
+  const eyeDist = re.x - le.x;
+  const boxWidth = face.box.x2 - face.box.x1;
+  const boxHeight = face.box.y2 - face.box.y1;
+  if (!(eyeDist > 0) || boxWidth <= 0 || boxHeight <= 0) return false;
+  const eyeY = (le.y + re.y) / 2;
+  const mouthY = (lm.y + rm.y) / 2;
+  const mouthWidth = rm.x - lm.x;
+  const rollDeg = Math.abs(Math.atan2(re.y - le.y, re.x - le.x)) * 180 / Math.PI;
+  return (
+    eyeY < nose.y && nose.y < mouthY && // top to bottom: eyes, nose, mouth
+    eyeDist / boxWidth > 0.25 && eyeDist / boxWidth < 0.75 && // eyes about a third to a half of the box width
+    mouthWidth > 0 && mouthWidth < eyeDist * 1.4 && // the mouth is not wider than the eyes
+    (mouthY - eyeY) / boxHeight > 0.2 && // eyes and mouth are well apart vertically
+    (mouthY - eyeY) / boxHeight < 0.75 &&
+    rollDeg < 40 &&
+    boxWidth / boxHeight > 0.5 && boxWidth / boxHeight < 1.4
+  );
+}
+
 // yaw: allowed window of the yaw ratio. dPitch: allowed window of (pitch - the student's own front pitch).
 export const SHOTS = [
   { id: 'front', title: 'Look straight at the camera', hint: 'Phone at eye level, light on your face.', yaw: [-0.07, 0.07], dPitch: [-0.07, 0.07], template: true },

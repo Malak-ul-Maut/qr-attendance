@@ -75,7 +75,8 @@ async function fetchModelInChunks(url) {
   return new Blob(chunks, { type: 'application/octet-stream' });
 }
 
-async function fetchModelBlob(url) {
+// onBytes(n) is called with the size of every piece that arrives, so the page can show a progress bar.
+async function fetchModelBlob(url, onBytes = () => {}) {
   let resp;
   try {
     resp = await fetch(url, { cache: 'no-store' });
@@ -92,7 +93,18 @@ async function fetchModelBlob(url) {
   }
 
   try {
-    return await resp.blob();
+    if (!resp.body?.getReader) return await resp.blob(); // very old browser: no streaming, no progress
+    const reader = resp.body.getReader();
+    const pieces = [];
+    let received = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      pieces.push(value);
+      received += value.length;
+      onBytes(value.length);
+    }
+    return new Blob(pieces, { type: 'application/octet-stream' });
   } catch (error) {
     console.warn('Model response was interrupted; retrying in chunks', url, error);
     return fetchModelInChunks(url);
@@ -100,8 +112,10 @@ async function fetchModelBlob(url) {
 }
 
 // ================== prefetch & store models from manifest ==================
+// onProgress({ loaded, total }) gets bytes of the models still to download (never called when all are cached).
 async function cacheModelsFromManifest(
   manifestUrl = '/utils/models/models-manifest.json',
+  onProgress = null,
 ) {
   try {
     // normalize manifest URL
@@ -117,18 +131,36 @@ async function cacheModelsFromManifest(
     // Clone response before reading to avoid stream consumed error
     const files = await manifestResp.clone().json();
 
-    // files is an array of relative or absolute URLs
+    // files is an array of relative or absolute URLs. First find which ones are not stored yet.
+    const missing = [];
     for (const relative of files) {
       // normalize to absolute URL so keys are exact
       const url = new URL(relative, location.origin).href;
+      if (!(await idbGet(url))) missing.push(url);
+    }
 
-      // already cached?
-      const existing = await idbGet(url);
-      if (existing) {
-        continue;
-      }
+    // Total size of the missing files, so the bar has an end (0 when the server does not say)
+    let total = 0;
+    if (onProgress) {
+      const sizes = await Promise.all(
+        missing.map(url =>
+          fetch(url, { method: 'HEAD', cache: 'no-store' })
+            .then(r => Number(r.headers.get('content-length')) || 0)
+            .catch(() => 0),
+        ),
+      );
+      total = sizes.reduce((a, b) => a + b, 0);
+    }
+    let loaded = 0;
+    const report = () => onProgress && onProgress({ loaded, total });
+    report();
+
+    for (const url of missing) {
       console.log('cacheModelsFromManifest: downloading', url);
-      const blob = await fetchModelBlob(url);
+      const blob = await fetchModelBlob(url, n => {
+        loaded += n;
+        report();
+      });
       await idbPut(url, blob);
       console.log('Cached model', url);
     }
