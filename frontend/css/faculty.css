@@ -264,6 +264,9 @@
   border-radius: 3px;
 }
 /* Same colours the annotated picture uses */
+.swatch-orange {
+  background: #ffa500;
+}
 .swatch-green {
   background: #00c800;
 }
@@ -589,17 +592,74 @@
   gap: var(--space-3);
   margin-bottom: var(--space-3);
 }
-@media (min-width: 600px) {
-  .roster-filter {
-    grid-template-columns: minmax(12rem, 16rem) 1fr;
-  }
+/* ---- Please verify: students the camera was not sure about ---- */
+.cctv-verify {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding: var(--space-3);
+  border: 2px solid var(--warning-600);
+  border-radius: var(--radius-md);
+  background: var(--warning-50);
 }
-/* .segmented spans are grids; keep the label and its count on one line */
-.roster-tabs span {
+.cctv-verify[hidden] {
+  display: none;
+}
+.cctv-verify h3 {
+  margin: 0;
+  font-size: var(--text-base);
+  color: var(--warning-600);
+}
+.cctv-verify-note {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-700);
+}
+.verify-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.verify-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--surface, #fff);
+  border: 1px solid var(--line);
+}
+.verify-score {
+  display: block;
+  font-size: var(--text-sm);
+  color: var(--ink-500);
+}
+.verify-actions {
   display: flex;
   gap: var(--space-2);
-  align-items: center;
-  justify-content: center;
+}
+/* In the Present list, an unconfirmed student has a yellow edge */
+.roster-row[data-verify='true'] {
+  border: 2px solid var(--warning-600);
+  background: var(--warning-50);
+}
+.roster-row[data-verify='true'] .roster-meta {
+  color: var(--warning-600);
+  font-weight: 600;
+}
+
+/* A student marked absent stays in the Present list, outlined in red */
+.roster-row[data-mode='absent'] {
+  border: 2px solid var(--danger-600);
+  background: var(--danger-50);
+}
+.roster-row[data-mode='absent'] .roster-meta {
+  color: var(--danger-600);
+  font-weight: 600;
 }
 
 /* ---- Projector full screen (QR panel and roster) ---- */
