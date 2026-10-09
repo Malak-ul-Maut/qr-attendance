@@ -1323,7 +1323,7 @@ def parse_args():
     parser.add_argument("--start", type=float, default=DEFAULT_SETTINGS["start"], help="seconds into the clip to start at")
     parser.add_argument("--verbose", action="store_true", help="log one line per processed frame")
     parser.add_argument("--debug-dir", default=None, help="save a snapshot of each newly-confirmed match here")
-    parser.add_argument("--snapshot-dir", default=str(HERE / "snapshots"),
+    parser.add_argument("--snapshot-dir", default=str(HERE / "backend" / "snapshots"),
                         help="save every processed frame with all detected faces drawn (plus detections.csv) in a sub-folder here; "
                              "the CCTV_SNAPSHOT_DIR environment variable does the same")
     return parser.parse_args()

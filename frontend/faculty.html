@@ -293,6 +293,17 @@
                   </p>
                 </div>
 
+                <!-- Students the camera was not sure about (orange box): teacher confirms each -->
+                <section
+                  id="cctvVerify"
+                  class="cctv-verify"
+                  aria-labelledby="cctvVerifyTitle"
+                  hidden>
+                  <h3 id="cctvVerifyTitle">Please verify</h3>
+                  <p id="cctvVerifyNote" class="cctv-verify-note"></p>
+                  <ul id="cctvVerifyList" class="verify-list"></ul>
+                </section>
+
                 <!-- Plain-language facts about the picture above -->
                 <section
                   id="cctvDetails"
@@ -305,6 +316,10 @@
                     <li>
                       <span class="swatch swatch-green" aria-hidden="true"></span>
                       Green box: a student the system recognised (name and match score shown)
+                    </li>
+                    <li>
+                      <span class="swatch swatch-orange" aria-hidden="true"></span>
+                      Orange box: the camera is not sure, so please verify
                     </li>
                     <li>
                       <span class="swatch swatch-red" aria-hidden="true"></span>
@@ -341,28 +356,6 @@
               </div>
 
               <div class="roster-filter">
-                <div
-                  class="segmented roster-tabs"
-                  role="radiogroup"
-                  aria-label="Show students who are">
-                  <label
-                    ><input
-                      type="radio"
-                      name="roster-filter"
-                      value="present"
-                      checked /><span
-                      >Present <b id="tabPresent">0</b></span
-                    ></label
-                  >
-                  <label
-                    ><input
-                      type="radio"
-                      name="roster-filter"
-                      value="absent" /><span
-                      >Absent <b id="tabAbsent">0</b></span
-                    ></label
-                  >
-                </div>
                 <input
                   id="rosterSearch"
                   class="input"
