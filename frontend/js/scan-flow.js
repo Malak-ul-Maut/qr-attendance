@@ -1,7 +1,8 @@
 import QrScanner from '../utils/qr-scanner.min.js';
 import { postJson } from '../utils/fetch.js';
 import { getCurrentUser } from '../utils/storage.js';
-import { loadFaceModels } from './face-models.js';
+import { engine } from './face/engine.js';
+import { openCamera } from './face/camera.js';
 import { session } from './state.js';
 import { showToast } from './ui.js';
 import { apiGet } from './api.js';
@@ -18,15 +19,12 @@ const user = getCurrentUser() ?? {};
 const studentId = user.username;
 const studentName = user.name;
 
-// ---------- Face models + saved face (loaded in the background) ----------
+// ---------- Saved face template (the face models load later, in a worker, when the scanner opens) ----------
 let descriptor;
 let notApproved = false; // photos saved but not yet approved by an admin
-let faceModels;
-let faceSettled = false; // false while the models are still loading
+let faceSettled = false; // false while the saved face template is still loading
 
 const faceReady = (async () => {
-  faceModels = await loadFaceModels();
-
   const normalizeDescriptor = values => {
     if (
       (!Array.isArray(values) && !(values instanceof Float32Array)) ||
@@ -99,7 +97,7 @@ window.addEventListener('student:scan', async ev => {
     showToast('Change your password first. You can do it in Profile.', 'error');
     return window.dispatchEvent(new CustomEvent('student:goto', { detail: 'profile' }));
   }
-  // Spinner on the card's button while the face models finish loading
+  // Spinner on the card's button while the saved face template loads
   if (!faceSettled) button?.setAttribute('aria-busy', 'true');
   try {
     await faceReady;
@@ -156,6 +154,8 @@ async function openScanner() {
   $('#cameraArea').hidden = false;
   $('#resultPanel').hidden = true;
   setStep(1);
+  // Load the face models in the worker while the student is still finding the QR code.
+  engine.start().catch(error => console.warn('Face engine did not start yet', error));
 
   // Without BarcodeDetector the library needs its worker file. Say so now instead of
   // showing a camera that can never scan.
@@ -349,23 +349,32 @@ async function startFaceStep() {
   setStatus(
     flow.subject ? `${flow.subject}. Look at the camera.` : 'Look at the camera.',
   );
-  let stream;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user' },
-    });
-    if (!active || generation !== scanGeneration) {
-      stream.getTracks().forEach(track => track.stop());
-      return;
-    }
-    video.srcObject = stream;
-    await video.play();
+    await openCamera(video, { facingMode: 'user', onWaiting: setStatus });
   } catch (error) {
     console.error('Could not start face verification camera', error);
     stopCamera();
     if (!active || generation !== scanGeneration) return;
     return showFailure(cameraErrorCode(error), { primary: 'retryFace' });
   }
+  if (!active || generation !== scanGeneration) return stopCamera();
+
+  // The preview is already live. The face models may still be loading, so say so.
+  try {
+    setStatus('Preparing the face check…');
+    await engine.start(({ phase, fraction }) => {
+      if (!active || generation !== scanGeneration) return;
+      setStatus(phase === 'download' && fraction !== null
+        ? `Preparing the face check… ${Math.round(fraction * 100)}%`
+        : 'Preparing the face check…');
+    });
+  } catch (error) {
+    console.error('Face engine failed to load', error);
+    stopCamera();
+    if (!active || generation !== scanGeneration) return;
+    return showFailure('face_engine', { primary: 'retryFace' });
+  }
+  if (!active || generation !== scanGeneration) return stopCamera();
   setStatus('Keep your face visible in the frame.');
 
   // If the teacher closes attendance while the check runs, stop and say so.
@@ -386,7 +395,7 @@ async function startFaceStep() {
     result = await runFaceCheck({
       video,
       canvas,
-      models: faceModels,
+      engine,
       descriptor,
       isActive: isRunning,
       onStatus: setStatus,
@@ -409,6 +418,10 @@ async function startFaceStep() {
       { error: stopCode.error, subject: flow.subject },
       { primary: 'close' },
     );
+  }
+  if (result.status === 'camera_stalled') {
+    stopCamera();
+    return showFailure(cameraErrorCode({ code: 'stalled' }), { primary: 'retryFace' });
   }
   if (result.status === 'timeout') {
     stopCamera();

@@ -20,11 +20,14 @@ import cctvRouter from './routes/cctv.routes.js';
 // ----------------- Server Config -----------------
 const app = express();
 
-// Cross-origin isolation: these two headers let the browser use SharedArrayBuffer,
-// which ONNX Runtime needs to run WASM on several CPU threads.
+// No COOP/COEP headers on purpose. They were only there to give ONNX Runtime several WASM threads, which for the
+// face models is slower than one thread (measured), and they make every page and file stricter (a cross-origin
+// image, script or frame without a CORP header is blocked). The face models run in a worker, single threaded.
+//
+// upgrade-insecure-requests: if any page ever asks for an http:// address, the browser asks for https:// instead.
+// (Chrome's own automatic upgrade skips hosts that are IP addresses, which is what this server is opened on.)
 app.use((req, res, next) => {
-  res.set('Cross-Origin-Opener-Policy', 'same-origin');
-  res.set('Cross-Origin-Embedder-Policy', 'require-corp');
+  res.set('Content-Security-Policy', 'upgrade-insecure-requests');
   next();
 });
 
@@ -67,8 +70,8 @@ const __dirname = path.dirname(__filename);
 
 const FRONTEND_DIR = path.join(__dirname, '../frontend');
 
-// Face models: the folder is utils/models (this used to point at a folder that does not exist).
-// Not "immutable": if a model file is ever replaced, browsers should pick up the new one within a week.
+// Face models: the folder is utils/models. Not "immutable": if a model file is ever replaced, bump VERSION in
+// js/face/engine.js and phones fetch the new file once.
 app.use(
   '/utils/models',
   express.static(path.join(FRONTEND_DIR, 'utils/models'), {
@@ -88,6 +91,12 @@ app.use(
 app.use(express.static(FRONTEND_DIR));
 
 app.use('/results', express.static(path.join(__dirname, 'results')));
+
+// Anything that looks like a file (has an extension) and was not found above is a real 404. It used to get the
+// home page with status 200, so a missing model or script arrived as HTML and failed with a confusing error.
+app.get(/^\/[^?]*\.[A-Za-z0-9]+$/, (req, res) =>
+  res.status(404).type('text/plain').send('Not found'),
+);
 
 // If someone hits a route that's not an API (fallback)
 app.get(/^\/(?!api).*/, (req, res) => {

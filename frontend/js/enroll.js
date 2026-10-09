@@ -2,16 +2,15 @@
 // Photos are taken live only: a gallery upload would let a student enrol someone else's picture.
 import { apiGet, apiPost } from './api.js';
 import { h } from './dom.js';
-import { loadFaceModels } from './face-models.js';
-import { assessFrame, snapshotFrame, runFaceCheck, clearOverlay, HINT_TEXT, FACE_TIPS } from './face-verify.js';
+import { engine } from './face/engine.js';
+import { openCamera, nextFrame, stopCamera as stopVideo } from './face/camera.js';
+import { assessFrame, snapshotFrame, embedSnapshot, runFaceCheck, clearOverlay, drawDetection, HINT_TEXT, FACE_TIPS } from './face-verify.js';
 import { averageTemplate, checkPose, cosine, estimatePose, plausibleFace, shotsFor } from './pose.js';
-import { detectFaces, embedFace, scoreLiveness } from '../utils/face-onnx.js';
 import { getCurrentUser } from '../utils/storage.js';
 
 const FACE_MODEL = 'w600k_mbf'; // must match the server
 const SETTINGS = {
   detectionThreshold: 0.7, // stricter than the QR check: these photos are kept for good, and a lower value let a ceiling fan through
-  liveLogitThreshold: Math.log(0.8 / 0.2),
   stableFrames: 4, // frames in a row inside the pose window before a photo is taken
   intervalMs: 110,
   shotBudgetMs: 40000, // per photo
@@ -48,8 +47,7 @@ function setInert(on) {
   document.querySelectorAll('.app-header, .app-nav, .app-main').forEach(el => (el.inert = on));
 }
 function stopCamera() {
-  video.srcObject?.getTracks().forEach(t => t.stop());
-  video.srcObject = null;
+  stopVideo(video);
 }
 function open(title) {
   run++;
@@ -76,20 +74,16 @@ function close() {
 $('#captureCancel').addEventListener('click', close);
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !dialog.hidden) close(); });
 
-async function openFrontCamera() {
-  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 960 } } });
-  video.srcObject = stream;
-  await video.play();
-}
-
 const CAMERA_ERRORS = {
   NotAllowedError: ['Camera access is blocked.', 'Allow the camera for this site in your browser settings, then try again.'],
   NotFoundError: ['No camera found on this device.', 'Use a phone with a front camera.'],
   NotReadableError: ['The camera is being used by another app.', 'Close other apps or tabs that use the camera, then try again.'],
+  stalled: ['The camera did not start.', 'Close other apps or tabs that use the camera, then try again.'],
+  no_picture: ['The camera opened but sent no picture.', 'Close other apps or tabs that use the camera, then try again.'],
 };
 function cameraProblem(error) {
   if (window.isSecureContext === false) return ['The camera needs a secure (https) connection.', 'Open this page using the https address.'];
-  return CAMERA_ERRORS[error?.name] || ['Could not start the camera.', 'Close the page, open it again and allow the camera.'];
+  return CAMERA_ERRORS[error?.name] || CAMERA_ERRORS[error?.code] || ['Could not start the camera.', 'Close the page, open it again and allow the camera.'];
 }
 
 // A result screen inside the dialog. buttons: [{label, primary, onclick}]
@@ -97,7 +91,6 @@ function showPanel({ tone = 'warn', title, text, tip, thumbs, buttons }) {
   stopCamera();
   clearOverlay(overlay);
   cameraArea.hidden = true;
-  clearTimeout(slowTimer);
   loading.hidden = true;
   dots.hidden = true; // the progress bars only belong with the live camera
   setStatus('');
@@ -114,63 +107,78 @@ function showPanel({ tone = 'warn', title, text, tip, thumbs, buttons }) {
   panel.querySelector('#capturePanelTitle').focus();
 }
 
-// The loading screen: a bar while the models download, then a message while they start.
-let slowTimer = null;
+// The loading strip. The camera preview stays visible above it the whole time, so the person can always see
+// that the camera works while the face check downloads or starts.
 const NOTE_FIRST_TIME = 'The first time, about 27 MB is downloaded. After that it opens straight away.';
-function showLoading({ phase, fraction }) {
+function showLoading(text, fraction = null, note = NOTE_FIRST_TIME) {
   loading.hidden = false;
-  cameraArea.hidden = true;
-  setStatus('');
-  clearTimeout(slowTimer);
-  $('#captureLoadingNote').textContent = NOTE_FIRST_TIME;
-  if (phase === 'camera') {
-    loadingText.textContent = 'Opening the camera…';
-    progressBar.removeAttribute('value');
-    return;
-  }
-  if (phase === 'download') {
-    const percent = fraction === null ? null : Math.round(fraction * 100);
-    loadingText.textContent = percent === null ? 'Downloading the face check…' : `Downloading the face check… ${percent}%`;
-    if (percent === null) progressBar.removeAttribute('value'); else progressBar.value = percent; // no value = moving bar
-  } else {
-    loadingText.textContent = 'Starting the face check…';
-    progressBar.removeAttribute('value');
-    // Starting three models is done by the phone itself and can take a while on a slow one
-    slowTimer = setTimeout(() => { $('#captureLoadingNote').textContent = 'Still starting. On some phones this takes up to a minute. Please keep this page open.'; }, 10000);
-  }
+  loadingText.textContent = text;
+  $('#captureLoadingNote').textContent = note;
+  if (fraction === null) progressBar.removeAttribute('value'); else progressBar.value = Math.round(fraction * 100); // no value = moving bar
+}
+function engineText({ phase, fraction }) {
+  if (phase === 'download') return [fraction === null ? 'Downloading the face check…' : `Downloading the face check… ${Math.round(fraction * 100)}%`, fraction];
+  return ['Starting the face check…', null];
 }
 
+// Opens the camera and the face engine side by side. Resolves to the engine, or null after showing a message.
 async function prepare(id) {
-  showLoading({ phase: 'prepare' });
-  // Ask for the camera at the same time, so the permission question appears while the models download
-  const cameraStarted = openFrontCamera().then(() => null, error => error);
-  let models;
+  cameraArea.hidden = false;
+  showLoading('Opening the camera…');
+  let cameraLive = false;
+  let engineUpdate = { phase: 'download', fraction: null };
+  const refresh = () => {
+    if (!isRunning(id)) return;
+    if (!cameraLive) return; // the camera message has priority until the preview is live
+    const [text, fraction] = engineText(engineUpdate);
+    showLoading(text, fraction, fraction === null ? 'Still starting. This can take a little while on some phones.' : NOTE_FIRST_TIME);
+  };
+  const engineReady = engine.start(update => { engineUpdate = update; refresh(); });
+  engineReady.catch(() => {}); // handled below, once the camera question is settled
+
+  let camera;
   try {
-    models = await loadFaceModels(showLoading);
+    camera = await openCamera(video, {
+      facingMode: 'user',
+      onWaiting: text => { if (isRunning(id) && !cameraLive) showLoading(text, null, ''); },
+    });
   } catch (error) {
-    console.error('Face models failed to load', error);
-    if (isRunning(id)) showPanel({ title: "Couldn't get the face check ready", text: 'Check your connection, reload the page and try again.', buttons: [{ label: 'Close', primary: true, onclick: close }] });
+    console.error('Camera failed', error);
+    stopCamera();
+    if (!isRunning(id)) return null;
+    const [title, text] = cameraProblem(error);
+    showPanel({ title, text, buttons: [{ label: 'Try again', primary: true, onclick: retry }, { label: 'Close', onclick: close }] });
+    return null;
+  }
+  if (!isRunning(id)) { stopCamera(); return null; } // closed while the camera was opening
+  cameraLive = true;
+  camera.track.addEventListener('ended', () => {
+    if (isRunning(id)) showPanel({ title: 'The camera stopped.', text: 'Another app may have taken it. Close other apps that use the camera, then try again.', buttons: [{ label: 'Try again', primary: true, onclick: retry }, { label: 'Close', onclick: close }] });
+  });
+  refresh();
+
+  try {
+    await engineReady;
+  } catch (error) {
+    console.error('Face engine failed to load', error);
+    if (isRunning(id)) showPanel({ title: "Couldn't get the face check ready", text: 'Check your connection and try again.', tip: String(error.message || error), buttons: [{ label: 'Try again', primary: true, onclick: retry }, { label: 'Close', onclick: close }] });
     else stopCamera();
     return null;
   }
-  showLoading({ phase: 'camera' }); // the models are ready; only the camera is left
-  const cameraError = await cameraStarted;
-  if (!isRunning(id)) { stopCamera(); return null; } // closed while loading
-  if (cameraError) {
-    const [title, text] = cameraProblem(cameraError);
-    showPanel({ title, text, buttons: [{ label: 'Close', primary: true, onclick: close }] });
-    return null;
-  }
-  clearTimeout(slowTimer);
+  if (!isRunning(id)) { stopCamera(); return null; }
   loading.hidden = true;
-  cameraArea.hidden = false;
-  return models;
+  return engine;
 }
+
+// Starts again from the first screen of whichever flow is open.
+let retryAction = null;
+function retry() { close(); retryAction?.(); }
 
 // ---------------------------------------------------------------------------
 // Enrolment
 // ---------------------------------------------------------------------------
 export function startEnrolment({ wearsGlasses = false } = {}) {
+  retryAction = () => startEnrolment({ wearsGlasses });
   const id = open('Add your face photos');
   enrol(id, shotsFor(wearsGlasses));
 }
@@ -178,8 +186,8 @@ export function startEnrolment({ wearsGlasses = false } = {}) {
 async function enrol(id, shots) {
   dots.hidden = false;
   dots.replaceChildren(...shots.map((s, i) => h('li', { 'data-i': i, 'aria-label': `Photo ${i + 1}` })));
-  const models = await prepare(id);
-  if (!models) return;
+  const eng = await prepare(id);
+  if (!eng) return;
 
   const taken = []; // { shot, dataUrl, embedding }
   let baseline = null; // { pitch, roll } from the first photo
@@ -192,8 +200,19 @@ async function enrol(id, shots) {
     hint.textContent = `${shot.hint}  (Photo ${i + 1} of ${shots.length})`;
     $('#captureCamera').hidden = false;
 
-    const result = await captureShot({ id, models, shot, baseline, taken, onMismatch: () => ++mismatches });
+    let result;
+    try {
+      result = await captureShot({ id, engine: eng, shot, baseline, taken, onMismatch: () => ++mismatches });
+    } catch (error) {
+      // The engine stopped (crashed or hung). Say so, instead of leaving a frozen camera view.
+      console.error('Face check failed', error);
+      if (!isRunning(id)) return;
+      return showPanel({ title: 'The face check stopped working.', text: 'Please try again.', tip: String(error.message || error), buttons: [{ label: 'Try again', primary: true, onclick: retry }, { label: 'Close', onclick: close }] });
+    }
     if (!isRunning(id)) return;
+    if (result.status === 'camera_stalled') {
+      return showPanel({ title: 'The camera stopped sending pictures.', text: 'Close other apps that use the camera, then try again.', buttons: [{ label: 'Try again', primary: true, onclick: retry }, { label: 'Close', onclick: close }] });
+    }
     if (result.status === 'timeout') {
       return showPanel({
         title: "Couldn't take this photo",
@@ -232,14 +251,13 @@ function markDots(current, done) {
 }
 
 // One photo: wait until the face is right for this shot, hold, then take it.
-async function captureShot({ id, models, shot, baseline, taken, onMismatch }) {
+async function captureShot({ id, engine: eng, shot, baseline, taken, onMismatch }) {
   const startedAt = performance.now();
   const problems = {};
   const note = key => (problems[key] = (problems[key] || 0) + 1);
   let stable = 0;
   let misses = 0; // frames in a row outside the pose window
   let noticeUntil = 0; // while now < noticeUntil a failure message stays on screen
-  let lastLogit = null; // liveness score of the latest rejected frame, shown on the timeout screen
   const say = (text, bad = false) => { if (performance.now() >= noticeUntil) setStatus(text, bad); };
   const notice = (text, bad = true) => { setStatus(text, bad); noticeUntil = performance.now() + SETTINGS.noticeMs; };
   const templateSoFar = taken.filter(t => t.shot.template).map(t => t.embedding);
@@ -249,25 +267,27 @@ async function captureShot({ id, models, shot, baseline, taken, onMismatch }) {
       const top = Object.entries(problems).sort((a, b) => b[1] - a[1])[0]?.[0] || 'noface';
       // The tip for the most common problem, plus the raw counts so a failure can be understood
       const tip = top === 'pose' ? `Follow the instruction on screen: ${shot.title.toLowerCase()}, and hold still.` : FACE_TIPS[top] || 'Make sure your face is well lit and fully in view.';
-      const names = { noface: 'no face', multiple: 'more than one face', far: 'too far', dark: 'too dark', blurry: 'blurry', pose: 'head position', liveness: 'liveness check' };
+      const names = { noface: 'no face', multiple: 'more than one face', far: 'too far', dark: 'too dark', blurry: 'blurry', pose: 'head position', };
       const detail = Object.entries(problems).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${names[k] || k}: ${n}`).join(', ');
-      console.warn('[enrol] photo timed out', { shot: shot.id, problems, lastLogit });
-      return { status: 'timeout', tip, detail: detail ? `${detail}${lastLogit === null ? '' : ` (liveness score ${lastLogit.toFixed(2)}, needs ${SETTINGS.liveLogitThreshold.toFixed(2)})`}` : '' };
+      console.warn('[enrol] photo timed out', { shot: shot.id, problems });
+      return { status: 'timeout', tip, detail };
     }
     const loopStart = performance.now();
-    const faces = await detectFaces(video, models.detector, SETTINGS.detectionThreshold);
+    if (document.hidden) { await sleep(400); continue; } // a background tab gets no camera frames
+    if (!(await nextFrame(video, 3000))) { if (!isRunning(id)) break; return { status: 'camera_stalled' }; }
+    const faces = await engine.detect(video, SETTINGS.detectionThreshold);
     if (!isRunning(id)) break;
 
     if (faces.length !== 1) {
       const key = faces.length ? 'multiple' : 'noface';
-      note(key); stable = 0; misses = 0; clearOverlay(overlay); say(HINT_TEXT[key]);
+      note(key); stable = 0; misses = 0; if (faces[0]) drawBox(faces[0], null); else clearOverlay(overlay); say(HINT_TEXT[key]);
     } else if (!plausibleFace(faces[0])) {
-      note('noface'); stable = 0; misses = 0; clearOverlay(overlay); say(HINT_TEXT.noface);
+      note('noface'); stable = 0; misses = 0; drawBox(faces[0], null); say(HINT_TEXT.noface);
     } else {
       const face = faces[0];
       const gate = assessFrame(video, face);
       if (!gate.ok) {
-        note(gate.hint); stable = 0; misses = 0; clearOverlay(overlay); say(HINT_TEXT[gate.hint]);
+        note(gate.hint); stable = 0; misses = 0; drawBox(face, null); say(HINT_TEXT[gate.hint]);
       } else {
         const pose = estimatePose(face.landmarks, baseline ? baseline.roll : null);
         const check = checkPose(shot, pose, baseline ? { pitch: baseline.pitch } : null);
@@ -279,14 +299,13 @@ async function captureShot({ id, models, shot, baseline, taken, onMismatch }) {
         } else {
           misses = 0;
           stable++;
-          // Everything below uses THIS frame (the crop canvas is reused, so an older frame's crop is gone).
-          const current = { face, quality: gate.quality, pose, crop: gate.crop };
+          // Everything below uses THIS frame (frames are not kept between loops).
+          const current = { face, quality: gate.quality, pose };
           say(`Hold still (${Math.min(stable, SETTINGS.stableFrames)}/${SETTINGS.stableFrames})`);
           if (stable >= SETTINGS.stableFrames) {
-            const taken1 = await takePhoto({ models, current, templateSoFar });
+            const taken1 = await takePhoto({ engine, current, templateSoFar });
             if (!isRunning(id)) break;
             if (taken1.status === 'ok') return { ...taken1, baseline: shot.id === 'front' ? { pitch: current.pose.pitch, roll: current.pose.roll } : null };
-            if (taken1.status === 'not-live') { note('liveness'); lastLogit = taken1.logit; notice(HINT_TEXT.liveness); }
             if (taken1.status === 'mismatch') {
               if (onMismatch() >= SETTINGS.maxMismatches) return { status: 'different-person' };
               notice('That does not look like the earlier photos. Face the camera and try again.');
@@ -302,13 +321,10 @@ async function captureShot({ id, models, shot, baseline, taken, onMismatch }) {
   return { status: 'cancelled' };
 }
 
-// Liveness on the chosen frame, then the embedding and the saved photo, from the same instant.
-async function takePhoto({ models, current, templateSoFar }) {
-  const live = await scoreLiveness(current.crop, models.liveness);
-  if (live.logitDifference < SETTINGS.liveLogitThreshold) return { status: 'not-live', logit: live.logitDifference };
-
+// The embedding and the saved photo, from the same instant.
+async function takePhoto({ engine, current, templateSoFar }) {
   const small = snapshotFrame(video, current.face, current.quality, 640);
-  const embedding = await embedFace(small.canvas, small.face, models.recognizer);
+  const embedding = await embedSnapshot(engine, small);
   if (templateSoFar.length) {
     const mean = averageTemplate(templateSoFar);
     if (cosine(embedding, mean) < SETTINGS.samePersonMin) return { status: 'mismatch' };
@@ -317,15 +333,9 @@ async function takePhoto({ models, current, templateSoFar }) {
   return { status: 'ok', embedding: Array.from(embedding), dataUrl: still.canvas.toDataURL('image/jpeg', SETTINGS.jpegQuality) };
 }
 
+// good: true = green (right pose), false = red (wrong pose), null = amber (frame not usable yet, see the hint)
 function drawBox(face, good) {
-  const w = video.videoWidth, hgt = video.videoHeight;
-  if (overlay.width !== w || overlay.height !== hgt) { overlay.width = w; overlay.height = hgt; }
-  const ctx = overlay.getContext('2d');
-  ctx.clearRect(0, 0, w, hgt);
-  const { x1, y1, x2, y2 } = face.box;
-  ctx.strokeStyle = good ? '#2f9e44' : '#e5484d';
-  ctx.lineWidth = Math.max(3, w / 240);
-  ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+  drawDetection(overlay, video, face, '', good === null ? '#f59f00' : good ? '#2f9e44' : '#e5484d');
 }
 
 // ---- review and save ----
@@ -388,19 +398,28 @@ async function save(taken) {
 // Camera and lighting self-test: the real face check, but nothing is submitted.
 // ---------------------------------------------------------------------------
 export async function startSelfTest() {
+  retryAction = () => startSelfTest();
   const id = open('Test your camera');
   dots.hidden = true;
   instruction.textContent = 'Look at the camera';
   hint.textContent = 'This only tests your camera and lighting. Nothing is sent or marked.';
-  const [models, templateRes] = await Promise.all([prepare(id), apiGet('/api/student/face/template')]);
-  if (!models || !isRunning(id)) return;
+  const [eng, templateRes] = await Promise.all([prepare(id), apiGet('/api/student/face/template')]);
+  if (!eng || !isRunning(id)) return;
   if (!templateRes.ok) {
     return showPanel({ title: 'Your photos are not saved yet', text: 'Add your face photos first, then test your camera.', buttons: [{ label: 'Close', primary: true, onclick: close }] });
   }
   const descriptor = Float32Array.from(templateRes.data);
-  const result = await runFaceCheck({ video, canvas: overlay, models, descriptor, isActive: () => isRunning(id), onStatus: setStatus });
+  let result;
+  try {
+    result = await runFaceCheck({ video, canvas: overlay, engine: eng, descriptor, isActive: () => isRunning(id), onStatus: setStatus });
+  } catch (error) {
+    console.error('Face check failed', error);
+    if (!isRunning(id)) return;
+    return showPanel({ title: 'The face check stopped working.', text: 'Please try again.', tip: String(error.message || error), buttons: [{ label: 'Try again', primary: true, onclick: () => { close(); startSelfTest(); } }, { label: 'Close', onclick: close }] });
+  }
   if (!isRunning(id)) return;
   const again = () => { close(); startSelfTest(); };
+  if (result.status === 'camera_stalled') return showPanel({ title: 'The camera stopped sending pictures.', text: 'Close other apps that use the camera, then try again.', buttons: [{ label: 'Try again', primary: true, onclick: again }, { label: 'Close', onclick: close }] });
   if (result.status === 'matched')
     return showPanel({ tone: 'ok', title: 'Looks good', text: 'Your camera and lighting work. The app recognised you.', buttons: [{ label: 'Done', primary: true, onclick: close }, { label: 'Test again', onclick: again }] });
   showPanel({ title: "We couldn't recognise you", text: 'Fix this before class so marking is quick.', tip: result.tip, buttons: [{ label: 'Test again', primary: true, onclick: again }, { label: 'Close', onclick: close }] });

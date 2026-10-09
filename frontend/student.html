@@ -12,9 +12,7 @@
 
     <script src="js/theme.js"></script>
     <script src="utils/auth-guard.js" type="module"></script>
-    <script src="utils/cache-models.js"></script>
-    <!-- Shared ONNX runtime for face detection, liveness, and recognition -->
-    <script src="/utils/ort/ort.wasm.min.js"></script>
+    <!-- The face models run in js/face/engine.worker.js, which loads its own copy of ONNX Runtime -->
     <script defer src="js/app.js" type="module"></script>
   </head>
 

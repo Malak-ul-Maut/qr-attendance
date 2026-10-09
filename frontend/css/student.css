@@ -170,7 +170,8 @@
 #captureStatus { text-align: center; font-size: var(--text-lg); font-weight: 600; color: var(--ink-900); min-height: 1.6em; }
 #captureStatus.error { color: var(--danger-600); }
 #captureStatus:empty { display: none; } /* an empty line would leave a gap in the dialog */
-#captureLoading { display: grid; gap: var(--space-3); max-width: 32rem; width: 100%; margin: auto; padding: var(--space-6) 0; text-align: center; }
+#captureLoading { display: grid; gap: var(--space-2); max-width: 32rem; width: 100%; margin: 0 auto; padding: var(--space-2) 0; text-align: center; }
+#captureLoading[hidden] { display: none; }
 #captureLoading p { margin: 0; }
 #captureLoadingText { font-size: var(--text-lg); font-weight: 600; color: var(--ink-900); }
 #captureLoadingNote { font-size: var(--text-sm); color: var(--ink-500); }

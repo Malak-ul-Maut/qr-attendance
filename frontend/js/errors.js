@@ -111,6 +111,12 @@ const MESSAGES = {
     title: 'Could not start the camera.',
     text: 'Close the page, open it again and allow the camera.',
   },
+  face_engine: {
+    tone: 'warning',
+    title: "Couldn't get the face check ready.",
+    text: 'Check your connection and try again.',
+    retryable: true,
+  },
   qr_unsupported: {
     tone: 'error',
     title: "This browser can't scan QR codes yet.",
@@ -147,6 +153,7 @@ export function describeError(codeOrResponse) {
 export function cameraErrorCode(error) {
   if (typeof window !== 'undefined' && window.isSecureContext === false)
     return 'camera_insecure';
+  if (error?.code === 'stalled' || error?.code === 'no_picture') return 'camera_busy';
   switch (error?.name) {
     case 'NotAllowedError':
     case 'SecurityError':
