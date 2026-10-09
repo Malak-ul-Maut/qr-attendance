@@ -68,10 +68,11 @@ const ERROR_TEXT = {
   missing_session_code: 'This session is not active any more.',
   class_has_no_students: 'This class has no students enrolled.',
   camera_unreachable:
-    "The classroom camera did not respond. Check that it is online and try again, or add students manually.",
+    'The classroom camera did not respond. Check that it is online and try again, or add students manually.',
   no_camera_configured:
     'No camera is set up for this classroom yet. Ask the admin to add it.',
-  invalid_camera_url: "This classroom's camera address is not valid. Ask the admin to fix it.",
+  invalid_camera_url:
+    "This classroom's camera address is not valid. Ask the admin to fix it.",
   cctv_processing_failed:
     'The CCTV image could not be processed. Try again, or add students manually.',
 };
