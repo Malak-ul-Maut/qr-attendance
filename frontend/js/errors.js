@@ -63,6 +63,11 @@ const MESSAGES = {
     title: 'Add your face photos to use QR attendance.',
     text: 'Take your photos in your Profile, then come back here.',
   },
+  face_not_approved: {
+    tone: 'warning',
+    title: 'Your face photos are waiting for approval.',
+    text: 'Ask your teacher to mark you present for now.',
+  },
   database_error: {
     tone: 'error',
     title: "We couldn't save this. Nothing was recorded.",

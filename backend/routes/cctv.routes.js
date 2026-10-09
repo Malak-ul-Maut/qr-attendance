@@ -3,7 +3,7 @@ import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createHash } from 'crypto';
-import { dbGet, dbRun } from '../utils/db.js';
+import { dbAll, dbGet, dbRun } from '../utils/db.js';
 import { galleryFolderName } from '../utils/gallery.js';
 import {
   getSessionRows,
@@ -32,6 +32,17 @@ const SERVICE_STARTUP_WAIT_MS = Number(
 const TEST_CLIP = path.resolve(
   process.env.CCTV_TEST_CLIP || path.resolve(__dirname, '../f310.avi'),
 );
+// Where the video comes from:
+//   'clip' (default) - always the recorded test clip above (the original behaviour)
+//   'auto'           - the room's camera_url (an rtsp:// address) when it has one, else the clip
+//   'live'           - always the room's camera_url; a room without one is reported as an error
+const CCTV_SOURCE = ['clip', 'auto', 'live'].includes(
+  (process.env.CCTV_SOURCE || '').toLowerCase(),
+)
+  ? process.env.CCTV_SOURCE.toLowerCase()
+  : 'clip';
+const isLiveUrl = value => /^rtsps?:\/\//i.test(String(value || '').trim());
+
 const ANNOTATED_DIR = path.resolve(
   process.env.CCTV_ANNOTATED_DIR || path.resolve(__dirname, '../results'),
 );
@@ -39,6 +50,87 @@ const ANNOTATED_DIR = path.resolve(
 const RECOGNIZE_TIMEOUT_MS = Number(
   process.env.CCTV_RECOGNIZE_TIMEOUT_MS || 300_000,
 );
+
+// Chooses the video for a session (see CCTV_SOURCE). Returns { video, live } or { error }.
+function pickVideoSource(context) {
+  const clip = { video: TEST_CLIP, live: false };
+  if (CCTV_SOURCE === 'clip') return clip;
+  const url = String(context.camera_url || '').trim();
+  if (!url)
+    return CCTV_SOURCE === 'live' ? { error: 'no_camera_configured' } : clip;
+  if (!isLiveUrl(url)) {
+    return CCTV_SOURCE === 'live' ? { error: 'invalid_camera_url' } : clip;
+  }
+  return { video: url, live: true };
+}
+
+// Opens the session's camera connection ahead of time, so the first "Run attendance" does not
+// have to wait for it. Fire and forget: it never fails or delays the caller.
+export async function warmSessionCamera(sessionCode) {
+  if (CCTV_SOURCE === 'clip') return;
+  try {
+    const context = await getSessionContext(sessionCode);
+    const url = String(context?.camera_url || '').trim();
+    if (!isLiveUrl(url)) return;
+    await fetch(`${SERVICE_URL}/stream/warm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+      signal: AbortSignal.timeout(3000),
+    });
+  } catch (error) {
+    console.warn(`[cctv] could not warm the camera: ${error.message}`);
+  }
+}
+
+// Closes the session's camera connection once the session is finalized - unless another CCTV
+// session in the same room is still open. Fire and forget, like warmSessionCamera.
+export async function releaseSessionCamera(sessionCode) {
+  if (CCTV_SOURCE === 'clip') return;
+  try {
+    const context = await getSessionContext(sessionCode);
+    const url = String(context?.camera_url || '').trim();
+    if (!context || !isLiveUrl(url)) return;
+    const stillOpen = await dbGet(
+      `
+      SELECT 1 AS open FROM sessions
+      JOIN timetable ON timetable.id = sessions.timetable_id
+      WHERE timetable.room_id = ? AND sessions.method = 'cctv'
+        AND sessions.end_time IS NULL AND sessions.session_code != ?
+      LIMIT 1
+      `,
+      [context.room_id, sessionCode],
+    );
+    if (stillOpen) return;
+    await fetch(`${SERVICE_URL}/stream/release`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+      signal: AbortSignal.timeout(3000),
+    });
+  } catch (error) {
+    console.warn(`[cctv] could not release the camera: ${error.message}`);
+  }
+}
+
+// How many classes are being scanned right now (the page shows it while a scan runs).
+router.get('/queue', async (req, res) => {
+  const idle = { ok: true, activeScans: 0, waiting: 0 };
+  if (!serviceReady) return res.json(idle);
+  try {
+    const response = await fetch(`${SERVICE_URL}/queue`, {
+      signal: AbortSignal.timeout(1500),
+    });
+    const body = await response.json();
+    return res.json({
+      ok: true,
+      activeScans: body.active_scans || 0,
+      waiting: body.waiting_for_models || 0,
+    });
+  } catch {
+    return res.json(idle);
+  }
+});
 
 // Run the current CCTV recognizer against the selected class.
 router.post('/run', async (req, res) => {
@@ -62,6 +154,11 @@ router.post('/run', async (req, res) => {
     }
     const context = await getSessionContext(sessionCode);
 
+    const source = pickVideoSource(context);
+    if (source.error) {
+      return res.status(400).json({ ok: false, error: source.error });
+    }
+
     const allStudents = await getSessionStudents(sessionCode);
 
     if (allStudents.length === 0) {
@@ -70,7 +167,24 @@ router.post('/run', async (req, res) => {
         .json({ ok: false, error: 'class_has_no_students' });
     }
 
-    const roster = allStudents.map(student => ({
+    // Only students whose photos an admin approved are searched for; the rest stay absent
+    // until the teacher marks them by hand.
+    const approvedIds = new Set(
+      (
+        await dbAll(
+          `SELECT id FROM students WHERE face_status = 'approved' AND id IN (${allStudents.map(() => '?').join(',')})`,
+          allStudents.map(student => student.id),
+        )
+      ).map(row => row.id),
+    );
+    const searchable = allStudents.filter(student =>
+      approvedIds.has(student.id),
+    );
+    // if (searchable.length === 0) {
+    //   return res.status(400).json({ ok: false, error: 'no_approved_photos' });
+    // }
+
+    const roster = searchable.map(student => ({
       student_id: student.id,
       name: student.name,
       gallery_folder: galleryFolderName(student),
@@ -82,7 +196,7 @@ router.post('/run', async (req, res) => {
     // periods (a lab batch, a combined lecture) gets a separate cache for each roster
     // instead of rebuilding one cache over and over.
     const rosterHash = createHash('sha1')
-      .update(allStudents.map(student => student.id).join(','))
+      .update(searchable.map(student => student.id).join(','))
       .digest('hex')
       .slice(0, 10);
     const cacheKey = context.room_number
@@ -91,7 +205,7 @@ router.post('/run', async (req, res) => {
 
     // The roster travels inside the request, so there are no temp files to write or clean up.
     const output = await callRecognitionService({
-      video: TEST_CLIP,
+      video: source.video,
       roster,
       class_id: cacheKey,
       annotated_out: annotatedPath,
@@ -110,12 +224,15 @@ router.post('/run', async (req, res) => {
       `[cctv] ${sessionCode}: ${present.length}/${allStudents.length} present, ` +
         `${Date.now() - requestStartedAt} ms total ` +
         `(scan ${Math.round((output.elapsed_seconds || 0) * 1000)} ms, ` +
-        `queue wait ${output.queue_wait_ms || 0} ms, stopped: ${output.stop_reason})`,
+        `queue wait ${output.queue_wait_ms || 0} ms, ${source.live ? 'live camera' : 'test clip'}, ` +
+        `stopped: ${output.stop_reason})`,
     );
 
     return res.json({
       ok: true,
       sessionCode,
+      source: source.live ? 'live' : 'clip',
+      stopReason: output.stop_reason || null,
       timetableId: context.timetable_id,
       presentStudents: present,
       students: allStudents.map(student => ({
@@ -133,11 +250,14 @@ router.post('/run', async (req, res) => {
   } catch (error) {
     console.error('CCTV attendance failed:', error);
     const unavailable = error.code === 'cctv_service_unavailable';
-    return res.status(unavailable ? 503 : 500).json({
+    const cameraDown = error.code === 'camera_unreachable';
+    return res.status(unavailable ? 503 : cameraDown ? 502 : 500).json({
       ok: false,
       error: unavailable
         ? 'cctv_service_unavailable'
-        : 'cctv_processing_failed',
+        : cameraDown
+          ? 'camera_unreachable'
+          : 'cctv_processing_failed',
       message: error.message,
     });
   }
@@ -152,7 +272,8 @@ function getSessionContext(sessionCode) {
       sessions.timetable_id,
       timetable.room_id,
       rooms.block,
-      rooms.number AS room_number
+      rooms.number AS room_number,
+      rooms.camera_url
     FROM sessions
     JOIN timetable ON timetable.id = sessions.timetable_id
     LEFT JOIN rooms ON rooms.id = timetable.room_id
@@ -312,9 +433,12 @@ async function callRecognitionService(payload) {
 
   const body = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(
+    const failure = new Error(
       `recognition service returned ${response.status}: ${body?.detail ?? response.statusText}`,
     );
+    // 502 = the camera itself could not be reached (offline, wrong login, no frames)
+    if (response.status === 502) failure.code = 'camera_unreachable';
+    throw failure;
   }
   return body;
 }

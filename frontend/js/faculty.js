@@ -55,8 +55,7 @@ const ERROR_TEXT = {
   faculty_not_found: 'Your faculty account could not be found. Sign in again.',
   subject_does_not_take_attendance:
     'This subject does not take attendance, so a session cannot be started.',
-  date_outside_timetable:
-    'This class is not in the timetable on that date.',
+  date_outside_timetable: 'This class is not in the timetable on that date.',
   session_already_ended:
     'Attendance for this class was already submitted today.',
   session_method_mismatch:
@@ -68,6 +67,11 @@ const ERROR_TEXT = {
   session_ended: 'This session has already ended.',
   missing_session_code: 'This session is not active any more.',
   class_has_no_students: 'This class has no students enrolled.',
+  camera_unreachable:
+    "The classroom camera did not respond. Check that it is online and try again, or add students manually.",
+  no_camera_configured:
+    'No camera is set up for this classroom yet. Ask the admin to add it.',
+  invalid_camera_url: "This classroom's camera address is not valid. Ask the admin to fix it.",
   cctv_processing_failed:
     'The CCTV image could not be processed. Try again, or add students manually.',
 };
@@ -427,7 +431,11 @@ function classCounts(c, isIn = isPresent) {
   if (mine.length)
     return { total: mine.length, present: mine.filter(s => isIn(s.id)).length };
   const total = c.student_count ?? c.students ?? c.total_students ?? null;
-  return { total: Number.isFinite(Number(total)) && total !== null ? Number(total) : null, present: null };
+  return {
+    total:
+      Number.isFinite(Number(total)) && total !== null ? Number(total) : null,
+    present: null,
+  };
 }
 
 let headerKey = '';
@@ -447,7 +455,9 @@ function renderSessionHeader() {
   const meta = [
     formatDate(date),
     slot ? `${slot.start_time} - ${slot.end_time}` : '',
-    slot?.block && slot?.room_number ? `Room ${slot.block}-${slot.room_number}` : '',
+    slot?.block && slot?.room_number
+      ? `Room ${slot.block}-${slot.room_number}`
+      : '',
     method === 'qr' ? 'QR session' : 'CCTV session',
     sessionType ? `${titleCase(sessionType)} class` : '',
   ].filter(Boolean);
@@ -462,7 +472,9 @@ function renderSessionHeader() {
   $('#shSubject').textContent =
     slot?.subject_label || slot?.subject_abbr || defaultSubjectLabel || 'Class';
   $('#shMeta').replaceChildren(
-    ...meta.map(text => Object.assign(document.createElement('li'), { textContent: text })),
+    ...meta.map(text =>
+      Object.assign(document.createElement('li'), { textContent: text }),
+    ),
   );
 
   $('#shClassesWrap').hidden = rows.length === 0;
@@ -952,19 +964,32 @@ function drawCctvDetails() {
   if (room?.block && room?.room_number)
     facts.push(['Camera', `Room ${room.block}-${room.room_number}`]);
   facts.push(['Checked at', time]);
-  if (width && height) facts.push(['Picture size', `${width} × ${height} pixels`]);
+  if (width && height)
+    facts.push(['Picture size', `${width} × ${height} pixels`]);
   if (detected !== null) {
-    facts.push(['Seen in the picture', `${detected} ${detected === 1 ? 'face' : 'faces'}`]);
-    facts.push(['Recognised', `${recognised} of ${detected} faces matched to a student of this class`]);
+    facts.push([
+      'Seen in the picture',
+      `${detected} ${detected === 1 ? 'face' : 'faces'}`,
+    ]);
+    facts.push([
+      'Recognised',
+      `${recognised} of ${detected} faces matched to a student of this class`,
+    ]);
   } else {
-    facts.push(['Recognised', `${recognised} ${recognised === 1 ? 'student' : 'students'}`]);
+    facts.push([
+      'Recognised',
+      `${recognised} ${recognised === 1 ? 'student' : 'students'}`,
+    ]);
   }
   const classes = headerInfo?.classes || [];
   if (classes.length > 1) {
     for (const c of classes) {
       const { present } = classCounts(c, id => recognisedIds.has(String(id)));
       if (present !== null)
-        facts.push([classLabel(c), `${present} ${present === 1 ? 'student' : 'students'} recognised`]);
+        facts.push([
+          classLabel(c),
+          `${present} ${present === 1 ? 'student' : 'students'} recognised`,
+        ]);
     }
   }
   if (detected !== null)
@@ -976,8 +1001,14 @@ function drawCctvDetails() {
   $('#cctvFacts').replaceChildren(
     ...facts.map(([label, value]) => {
       const li = document.createElement('li');
-      const l = Object.assign(document.createElement('span'), { className: 'cf-label', textContent: label });
-      const v = Object.assign(document.createElement('span'), { className: 'cf-value', textContent: value });
+      const l = Object.assign(document.createElement('span'), {
+        className: 'cf-label',
+        textContent: label,
+      });
+      const v = Object.assign(document.createElement('span'), {
+        className: 'cf-value',
+        textContent: value,
+      });
       li.append(l, v);
       return li;
     }),
@@ -999,7 +1030,30 @@ async function runCCTV() {
   status.textContent = 'Processing CCTV footage...';
 
   $('#cctvSummary').hidden = true;
-  const response = await postData('/api/attendance/cctv/run', { sessionCode });
+  $('#cctvRescan').hidden = true;
+
+  // While the scan runs, tell the faculty if other classes are being scanned too.
+  let scanning = true;
+  const watchQueue = setInterval(async () => {
+    try {
+      const queue = await (await fetch('/api/attendance/cctv/queue')).json();
+      if (!scanning || !sessionCode) return;
+      const others = Math.max(0, (queue.activeScans || 0) - 1);
+      status.textContent =
+        others > 0
+          ? `Processing CCTV footage... ${others} other ${others === 1 ? 'class is' : 'classes are'} being scanned too, so this may take a little longer.`
+          : 'Processing CCTV footage...';
+    } catch {
+      // the hint is optional; never let it disturb the scan
+    }
+  }, 2000);
+  let response;
+  try {
+    response = await postData('/api/attendance/cctv/run', { sessionCode });
+  } finally {
+    scanning = false;
+    clearInterval(watchQueue);
+  }
   if (!sessionCode) return; // session ended while we waited
   if (!response?.ok) {
     $('#cctvSkeleton').hidden = true;
@@ -1032,6 +1086,7 @@ async function runCCTV() {
   };
   renderCctvSummary();
   drawCctvDetails();
+  $('#cctvRescan').hidden = false;
   status.textContent = `${presentIds.size} ${presentIds.size === 1 ? 'student' : 'students'} recognised. Check the Absent tab for anyone the camera missed.`;
 
   cctvResultImage.onload = () => {
@@ -1051,12 +1106,18 @@ async function runCCTV() {
   cctvResultImage.src = `/results/${sessionCode}.jpg?t=${Date.now()}`;
 }
 
-$('#cctvRetryBtn').addEventListener('click', async event => {
-  const btn = event.currentTarget;
-  btn.setAttribute('aria-busy', 'true');
-  await runCCTV();
-  btn.removeAttribute('aria-busy');
-});
+// "Try again" (after an error) and "Scan again" (after a result) run the same scan. Students already
+// marked stay marked; a new scan only adds the ones the camera sees now (late arrivals).
+for (const id of ['#cctvRetryBtn', '#cctvRescanBtn']) {
+  $(id).addEventListener('click', async event => {
+    const btn = event.currentTarget;
+    btn.setAttribute('aria-busy', 'true');
+    btn.disabled = true;
+    await runCCTV();
+    btn.removeAttribute('aria-busy');
+    btn.disabled = false;
+  });
+}
 
 // ---------- CCTV image zoom ----------
 // Buttons, Ctrl + scroll or a pinch to zoom; drag to move; double-click to zoom in or fit.
@@ -1234,7 +1295,9 @@ fullscreenBtn.addEventListener('click', () => {
 });
 document.addEventListener('fullscreenchange', () => {
   fullscreenBtn.textContent =
-    document.fullscreenElement === liveGrid ? 'Exit full screen' : 'Full screen';
+    document.fullscreenElement === liveGrid
+      ? 'Exit full screen'
+      : 'Full screen';
   cctvFullscreenBtn.textContent =
     document.fullscreenElement === cctvViewer
       ? 'Exit full screen'

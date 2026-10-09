@@ -287,7 +287,7 @@ async function load() {
     stat('Average attendance', overall.total ? `${avg}%` : '–', overall.total ? `${overall.sessions} sessions in range · target 75%` : `${overall.sessions} sessions in range`, null,
       overall.total && avg < 75 ? `▲ ${75 - avg} point${75 - avg === 1 ? '' : 's'} below the 75% target` : null),
     stat('Live now', totals.liveSessions, `${totals.sessionsToday} session${totals.sessionsToday === 1 ? '' : 's'} today`),
-    stat('Photos uploaded', `${pct(totals.enrolled, totals.students)}%`, `${totals.students - totals.enrolled} still pending`, 'enrollment'),
+    stat('Photos approved', `${pct(totals.enrolled, totals.students)}%`, totals.pendingReview ? `${totals.pendingReview} waiting for review` : `${totals.students - totals.enrolled} not approved yet`, 'enrollment'),
   );
   trendChart($('#trendChart'), daily);
   $('#homeEnroll').replaceChildren(

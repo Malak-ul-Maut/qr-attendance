@@ -108,11 +108,17 @@ hostTunnel(url);
 
 function getServerIpAddress() {
   try {
+    const interfaces = Object.entries(os.networkInterfaces()).flatMap(
+      ([name, addresses]) =>
+        (addresses || [])
+          .filter(details => details.family === 'IPv4' && !details.internal)
+          .map(details => ({ name, address: details.address })),
+    );
+
     return (
-      Object.values(os.networkInterfaces())
-        .flat()
-        .find(details => details.family === 'IPv4' && !details.internal)
-        ?.address || null
+      interfaces.find(({ name }) => /wi-?fi|wireless/i.test(name))?.address ||
+      interfaces[0]?.address ||
+      null
     );
   } catch (err) {
     return null;

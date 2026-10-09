@@ -54,7 +54,60 @@ PORT = int(os.environ.get("CCTV_SERVICE_PORT", "8765"))
 
 state = {"model": None}      # filled in at startup
 gallery_memory_cache = {}    # cache_key -> gallery embeddings kept in memory between requests
-run_lock = threading.Lock()  # only one scan at a time
+
+
+class SharedModels:
+    """
+    The models run ONE job at a time (the CPU is the bottleneck: two jobs at once would each run at half
+    speed). The lock is held per FRAME, not per scan - while one class's scan waits for its camera's next
+    frame, another class's frame is being recognised. Counts let the UI say "N other classes are being scanned".
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._count = threading.Lock()
+        self.active_scans = 0
+        self.waiting = 0     # scans currently waiting for the models
+
+    def turn(self):
+        return ScanTurn(self)
+
+    def scan_started(self):
+        with self._count:
+            self.active_scans += 1
+
+    def scan_finished(self):
+        with self._count:
+            self.active_scans -= 1
+
+
+class ScanTurn:
+    """One scan's handle on the shared lock: `with turn:` takes it, wait_ms adds up the time spent waiting."""
+
+    def __init__(self, shared):
+        self.shared = shared
+        self.wait_ms = 0.0
+
+    def __enter__(self):
+        started = time.perf_counter()
+        with self.shared._count:
+            self.shared.waiting += 1
+        self.shared._lock.acquire()
+        with self.shared._count:
+            self.shared.waiting -= 1
+        self.wait_ms += (time.perf_counter() - started) * 1000
+        return self
+
+    def __exit__(self, *exc):
+        self.shared._lock.release()
+        return False
+
+
+models = SharedModels()
+# One open connection per live camera, shared by every scan of it; closed after sitting idle.
+streams = recognize.StreamManager(
+    idle_seconds=float(os.environ.get("CCTV_STREAM_IDLE_SEC", "600")),
+    max_streams=int(os.environ.get("CCTV_MAX_STREAMS", "12")))
 
 
 @asynccontextmanager
@@ -73,8 +126,10 @@ async def lifespan(app):
         print(f"  warm-up skipped: {error}", flush=True)
 
     state["model"] = model
+    streams.start_sweeper()
     print(f"Recognition service ready on http://127.0.0.1:{PORT}", flush=True)
     yield
+    streams.stop_all()
 
 
 app = FastAPI(title="CCTV recognition service", lifespan=lifespan)
@@ -86,6 +141,39 @@ class RunRequest(BaseModel):
     class_id: str                                 # keys the gallery cache (we use "<block>_<room>")
     annotated_out: Optional[str] = None           # where to save the annotated image
     options: Dict[str, Any] = Field(default_factory=dict)  # overrides for recognize.DEFAULT_SETTINGS
+
+
+class StreamRequest(BaseModel):
+    url: str                                      # rtsp:// address of one camera
+
+
+def live_url_or_400(url):
+    if not recognize.is_live_source(url):
+        raise HTTPException(status_code=400, detail="url must start with rtsp:// or rtsps://")
+    return url.strip()
+
+
+@app.post("/stream/warm")
+def stream_warm(request: StreamRequest):
+    """Open (or keep open) the camera connection NOW, so a later /run does not pay for connecting."""
+    stream = streams.get(live_url_or_400(request.url))
+    return stream.status()
+
+
+@app.post("/stream/release")
+def stream_release(request: StreamRequest):
+    return {"released": streams.release(live_url_or_400(request.url))}
+
+
+@app.get("/stream/status")
+def stream_status():
+    return {"streams": streams.status()}
+
+
+@app.get("/queue")
+def queue():
+    """How busy the service is - the page shows it while a scan runs."""
+    return {"active_scans": models.active_scans, "waiting_for_models": models.waiting}
 
 
 @app.get("/health")
@@ -116,22 +204,32 @@ def run(request: RunRequest):
         print(message, flush=True)   # shows up in the Node console
         log_lines.append(message)    # and is sent back to Node in the response
 
-    queued_at = time.perf_counter()
-    with run_lock:
-        queue_wait_ms = (time.perf_counter() - queued_at) * 1000
+    # A live camera is connected BEFORE waiting for the lock, so connecting overlaps the queue.
+    stream = None
+    if recognize.is_live_source(request.video):
+        stream = streams.get(request.video.strip())
+
+    turn = models.turn()
+    models.scan_started()
+    try:
         log(f"[run] class {request.class_id}: {len(identity_map)} student(s) with photos; "
-            f"waited {queue_wait_ms:.0f} ms in the queue")
+            f"{models.active_scans - 1} other scan(s) in progress")
         try:
             result = recognize.run_attendance(
                 state["model"], request.video, identity_map, settings, GALLERY_DIR, request.class_id,
-                annotated_out=request.annotated_out, memory_cache=gallery_memory_cache, log=log)
+                annotated_out=request.annotated_out, memory_cache=gallery_memory_cache, log=log, stream=stream,
+                infer_lock=turn)
+        except recognize.CameraError as error:      # camera offline / wrong login / no frames
+            raise HTTPException(status_code=502, detail=recognize.mask_url(error))
         except recognize.RecognitionError as error:
-            raise HTTPException(status_code=400, detail=str(error))
+            raise HTTPException(status_code=400, detail=recognize.mask_url(error))
         except Exception as error:
             traceback.print_exc()
-            raise HTTPException(status_code=500, detail=f"{type(error).__name__}: {error}")
+            raise HTTPException(status_code=500, detail=recognize.mask_url(f"{type(error).__name__}: {error}"))
+    finally:
+        models.scan_finished()
 
-    result["queue_wait_ms"] = round(queue_wait_ms)
+    result["queue_wait_ms"] = round(turn.wait_ms)   # total time this scan spent waiting for the models
     result["log"] = log_lines
     return result
 

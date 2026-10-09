@@ -41,6 +41,25 @@ db.serialize(() => {
     });
   }
 
+  // Face review: photos are 'pending' until an admin approves them. Only 'approved' photos are used for
+  // QR attendance and CCTV. Everyone who already had a template is grandfathered in as approved.
+  for (const [column, type] of [
+    ['face_status', 'TEXT'],
+    ['face_reviewed_at', 'DATETIME'],
+    ['face_reviewed_by', 'TEXT'],
+    ['face_reject_reason', 'TEXT'],
+  ]) {
+    db.run(`ALTER TABLE students ADD COLUMN ${column} ${type}`, err => {
+      if (err && !/duplicate column/i.test(err.message))
+        console.error(`Could not add students.${column}:`, err);
+      if (column === 'face_status')
+        db.run(
+          `UPDATE students SET face_status = 'approved' WHERE face_embedding IS NOT NULL AND face_status IS NULL`,
+          e => e && console.error('Could not approve existing face templates:', e),
+        );
+    });
+  }
+
   // Stage 5: a course has a length in years (B.Tech = 4); the term wizard uses it to find each semester's passing year.
   db.run(
     'ALTER TABLE courses ADD COLUMN duration_years INTEGER NOT NULL DEFAULT 4',

@@ -62,6 +62,15 @@ just speed - matching against the whole school's gallery means an unrelated stud
 win the nearest-match search over the correct (but slightly lower-scoring) class student, silently
 losing a real match.
 
+Live cameras (RTSP)
+-------------------
+--video can also be an rtsp:// URL (a CP Plus / Dahua NVR channel). A live source is read by a
+background thread (LiveStream) that keeps the connection open and remembers only the NEWEST frame;
+the scan takes a fresh frame about every --sample-interval seconds and skips any it has no time
+for, so it never works on stale video. --duration and the sampling are measured in WALL-CLOCK
+seconds (an RTSP stream's reported fps cannot be trusted). server.py keeps one LiveStream per
+camera (StreamManager) so the connection can be opened ahead of time ("warmed").
+
 Timing log
 -----------
 Every run measures how long each step took (decoding, detection, recognition, ...) and prints a
@@ -80,11 +89,16 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
+import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from types import SimpleNamespace
+
+# RTSP over TCP (UDP drops packets on a busy network -> grey/smeared frames) and no input buffering.
+os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay")
 
 import cv2
 import numpy as np
@@ -126,6 +140,9 @@ DEFAULT_SETTINGS = {
     "min_sharpness": 0.0,   # skip blurry crops below this Laplacian variance - free
     "min_norm": 0.0,        # distrust an attempt whose AdaFace quality score is below this
     "start": 0.0,           # seconds into the clip to start at
+    "sample_interval": 0.72,  # LIVE only: seconds between processed frames (the clip default, every=18 at 25 fps, is 0.72)
+    "first_frame_timeout": 10.0,  # LIVE only: give up if the camera sends no frame within this many seconds
+    "stall_timeout": 5.0,   # LIVE only: stop the scan if no new frame arrives for this many seconds
     "early_exit": True,     # stop once every visible face is resolved
     "verbose": False,       # log one line per processed frame
 }
@@ -470,6 +487,277 @@ def load_cached_roi(video_path):
     if cache_path.exists():
         return tuple(json.loads(cache_path.read_text())["roi"])
     return None
+
+
+# ------------------------------------------------------------ live cameras (RTSP)
+LIVE_PREFIXES = ("rtsp://", "rtsps://")
+LIVE_MAX_FRAME_AGE = 1.0   # s: a frame older than this is not fresh enough to START a scan with
+LIVE_MAX_SCAN = 60.0       # s: hard cap for a live scan when --duration is 0
+
+
+class CameraError(RecognitionError):
+    """The camera could not be reached or stopped sending frames - report it, it is not a bug."""
+
+
+def is_live_source(video):
+    return str(video).strip().lower().startswith(LIVE_PREFIXES)
+
+
+def mask_url(text):
+    """Hide 'user:password@' in an RTSP URL (or in any text containing one) before it reaches logs,
+    error messages or API replies."""
+    return re.sub(r"(?i)(rtsps?://)[^/@\s]*@", r"\1***@", str(text))
+
+
+class LiveStream:
+    """
+    ONE open camera connection, read by a background thread that keeps only the newest frame.
+
+    Why a thread: the scan (face detection + recognition) can take longer than the gap between
+    sampled frames. If it read the camera itself, frames would pile up in the network buffer and
+    it would end up analysing video that is seconds old - or the connection would drop. Here the
+    thread always drains the camera, and the scan simply asks for "a frame newer than T".
+    It also reconnects by itself (1, 2, 4, 8, 10 s ... between tries) when the camera drops.
+    The thread is a daemon: a camera that hangs while opening can never block the scan - the scan
+    gives up after first_frame_timeout - and it never keeps the server from exiting.
+    """
+
+    def __init__(self, url, open_timeout=8.0, read_timeout=5.0, keep_every=0.1, log=print):
+        self.url = url
+        self.label = mask_url(url)
+        self.open_timeout = open_timeout
+        self.read_timeout = read_timeout
+        self.keep_every = keep_every      # convert at most this often (decoding every frame is unavoidable, converting is not)
+        self.log = log
+        self.connected = False
+        self.last_error = None
+        self.last_used = time.monotonic()
+        self._cond = threading.Condition()
+        self._frame, self._frame_time, self._seq = None, 0.0, 0
+        self._stop = threading.Event()
+        self._thread = None
+
+    # -- control
+    def start(self):
+        self._thread = threading.Thread(target=self._run, name=f"camera-{abs(hash(self.label)) % 10000}", daemon=True)
+        self._thread.start()
+        return self
+
+    def stop(self):
+        self._stop.set()
+        with self._cond:
+            self._cond.notify_all()
+
+    def alive(self):
+        return self._thread is not None and self._thread.is_alive() and not self._stop.is_set()
+
+    def touch(self):
+        self.last_used = time.monotonic()
+
+    def status(self):
+        with self._cond:
+            age = time.monotonic() - self._frame_time if self._frame is not None else None
+        return {"camera": self.label, "connected": self.connected, "last_frame_age_s": None if age is None else round(age, 2),
+                "last_error": self.last_error, "idle_s": round(time.monotonic() - self.last_used, 1)}
+
+    # -- consumer side
+    def wait_for_frame(self, after, timeout):
+        """(seq, frame_time, frame) of the newest frame taken after time `after` (time.monotonic()
+        clock), waiting up to `timeout` seconds for one; None if none arrives (or we were stopped)."""
+        end = time.monotonic() + timeout
+        with self._cond:
+            while True:
+                if self._frame is not None and self._frame_time > after:
+                    return self._seq, self._frame_time, self._frame
+                left = end - time.monotonic()
+                if left <= 0 or self._stop.is_set():
+                    return None
+                self._cond.wait(left)
+
+    # -- reader thread
+    def _open(self):
+        params = [cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, int(self.open_timeout * 1000),
+                  cv2.CAP_PROP_READ_TIMEOUT_MSEC, int(self.read_timeout * 1000)]
+        try:
+            return cv2.VideoCapture(self.url, cv2.CAP_FFMPEG, params)
+        except (TypeError, cv2.error):   # an OpenCV build without the timeout parameters
+            return cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
+
+    def _publish(self, frame):
+        with self._cond:
+            self._frame, self._frame_time = frame, time.monotonic()
+            self._seq += 1
+            self._cond.notify_all()
+
+    def _run(self):
+        backoff = 1.0
+        while not self._stop.is_set():
+            capture = None
+            try:
+                capture = self._open()
+                if not capture.isOpened():
+                    self.last_error = "could not open the stream (check address, login, channel number, or that the camera is online)"
+                else:
+                    self.connected, self.last_error, backoff = True, None, 1.0
+                    self.log(f"[camera] connected: {self.label}")
+                    last_kept = 0.0
+                    while not self._stop.is_set():
+                        if not capture.grab():
+                            self.last_error = "the stream stopped delivering frames"
+                            break
+                        now = time.monotonic()
+                        if now - last_kept >= self.keep_every:
+                            ok, frame = capture.retrieve()
+                            if ok:
+                                self._publish(frame)
+                                last_kept = now
+            except Exception as error:   # a reader thread must never die silently
+                self.last_error = f"{type(error).__name__}: {error}"
+            finally:
+                was_connected, self.connected = self.connected, False
+                if capture is not None:
+                    try:
+                        capture.release()
+                    except Exception:
+                        pass
+            if was_connected and not self._stop.is_set():
+                self.log(f"[camera] lost: {self.label} - {self.last_error}; reconnecting")
+            self._stop.wait(backoff)
+            backoff = min(backoff * 2, 10.0)
+
+
+class StreamManager:
+    """One LiveStream per camera URL, shared by every scan of that camera, closed after sitting idle.
+    'Warming' a camera = calling get() before anyone needs it, so the connection (and the wait for
+    the camera's first full frame, which can take seconds) is already done when attendance starts."""
+
+    def __init__(self, idle_seconds=600.0, max_streams=12, log=print):
+        self.idle_seconds = idle_seconds
+        self.max_streams = max_streams
+        self.log = log
+        self._streams = {}
+        self._lock = threading.Lock()
+
+    def start_sweeper(self):
+        def loop():
+            while True:
+                time.sleep(30)
+                self.sweep()
+        threading.Thread(target=loop, name="camera-sweeper", daemon=True).start()
+
+    def get(self, url):
+        with self._lock:
+            stream = self._streams.get(url)
+            if stream is not None and not stream.alive():
+                self._streams.pop(url, None)
+                stream = None
+            if stream is None:
+                while len(self._streams) >= self.max_streams:   # drop the least recently used camera
+                    oldest = min(self._streams, key=lambda key: self._streams[key].last_used)
+                    self._streams.pop(oldest).stop()
+                stream = LiveStream(url, log=self.log).start()
+                self._streams[url] = stream
+            stream.touch()
+            return stream
+
+    def release(self, url):
+        with self._lock:
+            stream = self._streams.pop(url, None)
+        if stream is not None:
+            stream.stop()
+        return stream is not None
+
+    def sweep(self):
+        with self._lock:
+            idle = [url for url, s in self._streams.items() if time.monotonic() - s.last_used > self.idle_seconds]
+            stale = [self._streams.pop(url) for url in idle]
+        for stream in stale:
+            self.log(f"[camera] closing idle connection: {stream.label}")
+            stream.stop()
+
+    def status(self):
+        with self._lock:
+            return [stream.status() for stream in self._streams.values()]
+
+    def stop_all(self):
+        with self._lock:
+            streams, self._streams = list(self._streams.values()), {}
+        for stream in streams:
+            stream.stop()
+
+
+def file_frame_source(capture, fps, args, end_time, timings, stop_note):
+    """Yields (frame_no, t, frame) for every args.every-th frame of a recorded clip - the original loop."""
+    # Sequential read + skip (no seeking). grab() decodes a frame but skips the (costly) conversion
+    # to a BGR image; retrieve() does that conversion, and we only need it for the 1-in-N frames we use.
+    frame_no = 0
+    while True:
+        with timings.measure("video: grab (decode)"):
+            grabbed = capture.grab()
+        if not grabbed:
+            return
+        frame_no += 1
+        t = frame_no / fps
+        if t < args.start:
+            continue
+        if end_time is not None and t >= end_time:
+            stop_note["reason"] = f"reached --duration ({args.duration:.1f}s of video)"
+            return
+        if frame_no % args.every != 0:
+            continue
+        with timings.measure("video: retrieve (convert)"):
+            ok, frame = capture.retrieve()
+        if not ok:
+            return
+        yield frame_no, t, frame
+
+
+def live_frame_source(stream, args, timings, stop_note, log, lock=None):
+    """
+    Yields (frame_no, t, frame) from a LiveStream: the newest frame at least args.sample_interval
+    seconds after the previous one. If processing a frame took longer than that, the next call
+    returns immediately with the latest frame (frames in between are skipped, never queued).
+    t = wall-clock seconds since the first frame; the scan ends args.duration seconds after it, not counting
+    time spent waiting for the shared models (lock.wait_ms) - a busy server must not shorten anyone's scan -
+    and at most duration / sample_interval + 1 frames.
+    """
+    stream.touch()
+    with timings.measure("live: wait for first frame"):
+        item = stream.wait_for_frame(after=time.monotonic() - LIVE_MAX_FRAME_AGE, timeout=args.first_frame_timeout)
+    if item is None:
+        raise CameraError(f"No video from the camera within {args.first_frame_timeout:.0f}s: "
+                          f"{stream.last_error or 'no frames received'} ({stream.label})")
+    scan_started = item[1]
+    duration = args.duration if args.duration > 0 else LIVE_MAX_SCAN
+    # The same number of samples a scan gets when the server is idle. Without this cap, a busy server
+    # (waits do not use up the time budget) would make every scan process EXTRA frames back to back.
+    max_samples = int(duration / max(args.sample_interval, 0.05)) + 1
+    samples = 0
+    waited_before = getattr(lock, "wait_ms", 0.0)
+
+    def deadline():
+        return scan_started + duration + (getattr(lock, "wait_ms", 0.0) - waited_before) / 1000
+
+    while True:
+        seq, frame_time, frame = item
+        yield seq, frame_time - scan_started, frame      # the caller processes the frame, then resumes us here
+        stream.touch()
+        samples += 1
+        if samples >= max_samples:
+            stop_note["reason"] = f"reached --duration ({duration:.1f}s of live video)"
+            return
+        target = frame_time + args.sample_interval
+        if target > deadline():
+            stop_note["reason"] = f"reached --duration ({duration:.1f}s of live video)"
+            return
+        item = stream.wait_for_frame(after=target, timeout=min(args.stall_timeout, max(0.1, deadline() - time.monotonic())))
+        if item is None:
+            if time.monotonic() >= deadline() - 0.05:
+                stop_note["reason"] = f"reached --duration ({duration:.1f}s of live video)"
+            else:
+                stop_note["reason"] = f"camera stopped delivering frames ({stream.last_error or 'stalled'})"
+                log(f"  warning: {stop_note['reason']}")
+            return
 
 
 # ---------------------------------------------------------------- attendance
@@ -845,7 +1133,7 @@ def save_aggregate_annotation(out_path, canvas, track_boxes, track_identity, tra
 
 
 def run_attendance(model, video, identity_map, args, gallery_dir, cache_key, annotated_out=None,
-                   debug_dir=None, memory_cache=None, log=print, snapshot_dir=None):
+                   debug_dir=None, memory_cache=None, log=print, snapshot_dir=None, stream=None, infer_lock=None):
     """
     Scan one video and return the result dict (present/absent students, timings, ...).
 
@@ -854,12 +1142,19 @@ def run_attendance(model, video, identity_map, args, gallery_dir, cache_key, ann
     args         settings object from make_settings() (or the parsed command line)
     memory_cache optional dict that keeps gallery embeddings in memory between calls
     log          function that receives each progress line (print, or the server's collector)
-    Raises RecognitionError for problems the caller should report (no gallery, video will not open).
+    stream       optional LiveStream (server.py passes a shared, already-open one). Without it, an rtsp:// `video`
+                 gets a private LiveStream that is closed when the scan ends.
+    infer_lock   optional context manager held while the models run (gallery build, one frame of detection +
+                 recognition) - NOT while waiting for the camera. server.py shares one between all scans, so several
+                 classes can be scanned at once: while one waits for its next frame, another uses the models.
+    Raises RecognitionError for problems the caller should report (no gallery, video will not open);
+    CameraError (a RecognitionError) when a live camera cannot be reached.
     """
     timings = Timings()
     run_started = time.perf_counter()
+    infer_lock = infer_lock if infer_lock is not None else nullcontext()
 
-    with timings.measure("gallery (load/build)"):
+    with timings.measure("gallery (load/build)"), infer_lock:
         gallery = build_gallery(model, gallery_dir, cache_key, only_folders=set(identity_map),
                                 memory_cache=memory_cache, log=log)
     if gallery[0] is None:
@@ -868,10 +1163,17 @@ def run_attendance(model, video, identity_map, args, gallery_dir, cache_key, ann
     target_ids = {identity["student_id"] for identity in identity_map.values()}
     log(f"  {len(target_ids)} enrollable student(s) to look for")
 
-    with timings.measure("open video"):
-        capture = cv2.VideoCapture(str(video))
-    if not capture.isOpened():
-        raise RecognitionError(f"Could not open video: {video}")
+    live = stream is not None or is_live_source(video)
+    owns_stream = False
+    capture = None
+    if live:
+        if stream is None:   # private connection for this scan only (command line use)
+            stream, owns_stream = LiveStream(video, log=log).start(), True
+    else:
+        with timings.measure("open video"):
+            capture = cv2.VideoCapture(str(video))
+        if not capture.isOpened():
+            raise RecognitionError(f"Could not open video: {video}")
 
     state = RunState()
     tracker = Tracker()
@@ -881,41 +1183,27 @@ def run_attendance(model, video, identity_map, args, gallery_dir, cache_key, ann
     snapshot_names = {identity["student_id"]: (identity.get("name") or str(identity["student_id"])).split()[0]
                       for identity in identity_map.values()}
     frame_no, processed, last_crop, scanned_to = 0, 0, None, 0.0
-    stop_reason = "end of video"
+    stop_reason = None   # set by the loop body; otherwise taken from the frame source (stop_note)
     try:
-        fps = capture.get(cv2.CAP_PROP_FPS) or 25.0
-        total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
-        end_time = args.start + args.duration if args.duration > 0 else None
-        if end_time is None and total_frames <= 0:
-            log("  warning: this source doesn't report a frame count (likely a live stream) and "
-                "--duration is 0 - this run will not stop on its own until the stream ends.")
-        roi = load_cached_roi(video)  # None = whole frame; filled in from the first frame we process
-        log(f"  video: {fps:.1f} fps; sampling every {args.every} frames from t={args.start:.1f}s"
-            + (f" to t={end_time:.1f}s" if end_time else " to end of source"))
+        stop_note = {"reason": "end of video"}
+        if live:
+            roi = None   # no saved region for live cameras (yet): use the whole frame
+            frames = live_frame_source(stream, args, timings, stop_note, log, infer_lock)
+            log(f"  live camera {stream.label}: a frame about every {args.sample_interval:.2f}s, "
+                f"for up to {args.duration if args.duration > 0 else LIVE_MAX_SCAN:.1f}s")
+        else:
+            fps = capture.get(cv2.CAP_PROP_FPS) or 25.0
+            total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+            end_time = args.start + args.duration if args.duration > 0 else None
+            if end_time is None and total_frames <= 0:
+                log("  warning: this source doesn't report a frame count and --duration is 0 - "
+                    "this run will not stop on its own until the video ends.")
+            roi = load_cached_roi(video)  # None = whole frame; filled in from the first frame we process
+            log(f"  video: {fps:.1f} fps; sampling every {args.every} frames from t={args.start:.1f}s"
+                + (f" to t={end_time:.1f}s" if end_time else " to end of source"))
+            frames = file_frame_source(capture, fps, args, end_time, timings, stop_note)
 
-        # Sequential read + skip (no seeking): works the same for a recorded file and a live/RTSP
-        # stream, where seeking to an arbitrary frame index either fails or is meaningless.
-        # grab() decodes a frame but skips the (costly) conversion to a BGR image; retrieve() does
-        # that conversion. We only need it for the 1-in-N frames we actually process.
-        while True:
-            with timings.measure("video: grab (decode)"):
-                grabbed = capture.grab()
-            if not grabbed:
-                break
-            frame_no += 1
-            t = frame_no / fps
-            if t < args.start:
-                continue
-            if end_time is not None and t >= end_time:
-                stop_reason = f"reached --duration ({args.duration:.1f}s of video)"
-                break
-            if frame_no % args.every != 0:
-                continue
-            with timings.measure("video: retrieve (convert)"):
-                ok, frame = capture.retrieve()
-            if not ok:
-                break
-
+        for frame_no, t, frame in frames:
             if roi is None:
                 roi = (0, 0, frame.shape[1], frame.shape[0])
                 log(f"  region: {roi[2]}x{roi[3]} (whole frame)")
@@ -924,8 +1212,9 @@ def run_attendance(model, video, identity_map, args, gallery_dir, cache_key, ann
             last_crop = crop
             scanned_to = t
 
-            newly_present = process_frame(model, tracker, crop, gallery, identity_map, state, args,
-                                          frame_no, timings, log)
+            with infer_lock:   # the models: one frame at a time across all scans
+                newly_present = process_frame(model, tracker, crop, gallery, identity_map, state, args,
+                                              frame_no, timings, log)
             for record, face in newly_present:
                 log(f"  frame {frame_no} (t={t:.1f}s): "
                     f"{record.get('name') or record['student_id']} present (score {record['best_score']:.2f})")
@@ -950,15 +1239,20 @@ def run_attendance(model, video, identity_map, args, gallery_dir, cache_key, ann
             if args.early_exit and all_visible_faces_resolved(tracker, state):
                 stop_reason = "every visible face resolved"
                 break
+        if stop_reason is None:
+            stop_reason = stop_note["reason"]
     finally:
-        capture.release()  # always, even on an error - a long-lived server must not leak cameras
+        if capture is not None:
+            capture.release()  # always, even on an error - a long-lived server must not leak cameras
+        if owns_stream:
+            stream.stop()
     log(f"  scan ended at t={scanned_to:.1f}s: {stop_reason}")
 
     present_students = list(state.present.values())
     seen_ids = set(state.present)
     absent_students = [identity for identity in identity_map.values() if identity["student_id"] not in seen_ids]
 
-    result = {"video": str(video), "processed_frames": processed,
+    result = {"video": mask_url(video), "source": "live" if live else "file", "processed_frames": processed,
               "present_students": present_students, "absent_students": absent_students}
 
     if annotated_out and last_crop is not None:
@@ -1010,6 +1304,12 @@ def parse_args():
     parser.add_argument("--every", type=int, default=DEFAULT_SETTINGS["every"], help="process every Nth frame")
     parser.add_argument("--duration", type=float, default=DEFAULT_SETTINGS["duration"],
                         help="stop after this many seconds of video time, regardless of who has been found - the real scan budget. 0 = no limit (to the end of the file); never use 0 for a live/RTSP source")
+    parser.add_argument("--sample-interval", type=float, default=DEFAULT_SETTINGS["sample_interval"],
+                        help="LIVE (rtsp://) only: seconds between processed frames; --every is used for recorded files")
+    parser.add_argument("--first-frame-timeout", type=float, default=DEFAULT_SETTINGS["first_frame_timeout"],
+                        help="LIVE only: give up if the camera sends no frame within this many seconds")
+    parser.add_argument("--stall-timeout", type=float, default=DEFAULT_SETTINGS["stall_timeout"],
+                        help="LIVE only: stop the scan if no new frame arrives for this many seconds")
     parser.add_argument("--no-early-exit", dest="early_exit", action="store_false",
                         help="always scan the full --duration, even when every visible face is already resolved")
     parser.add_argument("--det-size", default="1920x1080")
@@ -1051,7 +1351,7 @@ def main():
                                 annotated_out=args.annotated_out, debug_dir=args.debug_dir,
                                 snapshot_dir=args.snapshot_dir)
     except RecognitionError as error:
-        sys.exit(str(error))
+        sys.exit(mask_url(error))
 
     out_path = Path(args.json_out)
     out_path.parent.mkdir(parents=True, exist_ok=True)

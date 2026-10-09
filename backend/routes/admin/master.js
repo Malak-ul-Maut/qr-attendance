@@ -451,7 +451,10 @@ router.get('/term-status', wrap(async (req, res) => {
          AND NOT EXISTS (SELECT 1 FROM timetable t WHERE t.faculty_id = f.id AND ${current})`),
     withoutFace: await one(
       `SELECT COUNT(DISTINCT s.id) AS n FROM students s JOIN students_mapping sm ON sm.student_id = s.id
-       WHERE s.active = 1 AND s.face_embedding IS NULL AND sm.class_id IN ${inSession}`),
+       WHERE s.active = 1 AND (s.face_status IS NULL OR s.face_status IN ('none','rejected')) AND sm.class_id IN ${inSession}`),
+    pendingReview: await one(
+      `SELECT COUNT(DISTINCT s.id) AS n FROM students s JOIN students_mapping sm ON sm.student_id = s.id
+       WHERE s.active = 1 AND s.face_status = 'pending' AND sm.class_id IN ${inSession}`),
     batchAssigned,
     batchNeeded,
     rooms: await one(`SELECT COUNT(*) AS n FROM rooms`),

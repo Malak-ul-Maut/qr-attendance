@@ -34,7 +34,7 @@ router.post('/login', async (req, res) => {
     } else if (role === 'student') {
       // Inactive (soft-deleted) students cannot log in.
       account = await dbGet(
-        `SELECT name, username, password_hash, face_embedding IS NOT NULL AS has_face
+        `SELECT name, username, password_hash, face_status = 'approved' AS has_face, face_status
          FROM students
          WHERE username = ? AND password_hash = ? AND active = 1`,
         [username, password],
@@ -59,7 +59,8 @@ router.post('/login', async (req, res) => {
       result.token = issueStudentToken(account.username);
       // Passwords are still plain text for now. Students on the default one must change it.
       result.mustChangePassword = account.password_hash === DEFAULT_PASSWORD;
-      result.faceEnrolled = Boolean(account.has_face);
+      result.faceEnrolled = Boolean(account.has_face); // approved by an admin
+      result.faceStatus = account.face_status || 'none';
     }
     return res.json(result);
   } catch (err) {

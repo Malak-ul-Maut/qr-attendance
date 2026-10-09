@@ -212,11 +212,14 @@ async function checkStudentForSession(sessionCode, username) {
     return { error: 'wrong_method', subject };
 
   const account = await dbGet(
-    'SELECT id, active FROM students WHERE username = ?',
+    `SELECT id, active, face_embedding IS NOT NULL AS has_face, face_status FROM students WHERE username = ?`,
     [String(username ?? '')],
   );
   if (!account) return { error: 'not_on_roster', subject };
   if (!account.active) return { error: 'account_inactive', subject };
+  // QR attendance needs photos an admin has approved; otherwise the teacher marks the student by hand
+  if (account.face_status !== 'approved')
+    return { error: account.has_face ? 'face_not_approved' : 'face_not_enrolled', subject };
 
   const student = await getEligibleStudent(sessionCode, username);
   if (!student) return { error: 'not_on_roster', subject };

@@ -213,6 +213,21 @@
 .cctv-summary[hidden] {
   display: none;
 }
+.cctv-rescan {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.cctv-rescan[hidden] {
+  display: none;
+}
+.cctv-rescan p {
+  margin: 0;
+  color: var(--ink-500);
+  font-size: 0.875rem;
+}
 
 /* ---- About this result: plain-language facts under the CCTV picture ---- */
 .cctv-details {

@@ -173,8 +173,8 @@ router.post('/', requireAdmin, async (req, res) => {
       const student = await dbRun(
         `INSERT INTO students
            (name, roll_number, college_email, phone_number, year_of_passing,
-            face_embedding, username, password_hash)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            face_embedding, face_status, username, password_hash)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           name,
           rollNumber,
@@ -182,6 +182,7 @@ router.post('/', requireAdmin, async (req, res) => {
           optionalText(req.body.phoneNumber),
           yearOfPassing,
           embedding,
+          embedding ? 'approved' : null, // photos added by an admin need no review
           username,
           password || 'password',
         ],
@@ -268,6 +269,7 @@ router.put('/:username', requireAdmin, async (req, res) => {
            phone_number = CASE WHEN ? THEN ? ELSE phone_number END,
            year_of_passing = COALESCE(?, year_of_passing),
            face_embedding = COALESCE(?, face_embedding),
+           face_status = CASE WHEN ? IS NOT NULL THEN 'approved' ELSE face_status END,
            active = COALESCE(?, active)
          WHERE id = ?`,
         [
@@ -283,6 +285,7 @@ router.put('/:username', requireAdmin, async (req, res) => {
           Number.isInteger(Number(req.body.yearOfPassing))
             ? Number(req.body.yearOfPassing)
             : null,
+          embedding,
           embedding,
           req.body.active === undefined ? null : req.body.active ? 1 : 0,
           student.id,

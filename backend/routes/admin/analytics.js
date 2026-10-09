@@ -15,7 +15,8 @@ router.get('/', wrap(async (req, res) => {
   const totals = await dbGet(
     `SELECT
        (SELECT COUNT(*) FROM students WHERE active = 1) AS students,
-       (SELECT COUNT(*) FROM students WHERE active = 1 AND face_embedding IS NOT NULL) AS enrolled,
+       (SELECT COUNT(*) FROM students WHERE active = 1 AND face_status = 'approved') AS enrolled,
+       (SELECT COUNT(*) FROM students WHERE active = 1 AND face_status = 'pending') AS pendingReview,
        (SELECT COUNT(*) FROM faculties WHERE active = 1) AS faculty,
        (SELECT COUNT(*) FROM classes) AS classes,
        (SELECT COUNT(DISTINCT session_code) FROM sessions WHERE end_time IS NULL) AS liveSessions,

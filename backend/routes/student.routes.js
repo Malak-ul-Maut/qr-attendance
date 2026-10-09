@@ -73,10 +73,12 @@ router.get('/me', async (req, res) => {
     const row = await dbGet(
       `SELECT name, username, roll_number AS rollNumber, college_email AS email,
          phone_number AS phone, year_of_passing AS yearOfPassing,
-         password_hash AS password, face_embedding IS NOT NULL AS hasFace
+         password_hash AS password, face_embedding IS NOT NULL AS hasFace,
+         face_status AS faceStatus, face_reject_reason AS faceRejectReason
        FROM students WHERE id = ?`,
       [req.student.id],
     );
+    const faceStatus = faceStateOf(row);
     const klass = await currentClass(req.student.id);
     return res.json({
       ok: true,
@@ -87,7 +89,10 @@ router.get('/me', async (req, res) => {
       phone: row.phone,
       yearOfPassing: row.yearOfPassing,
       class: klass || null, // null: not assigned to a class yet
-      faceEnrolled: Boolean(row.hasFace),
+      // faceEnrolled means "approved by an admin": that is what unlocks QR attendance
+      faceEnrolled: faceStatus === 'approved',
+      faceStatus,
+      faceRejectReason: faceStatus === 'rejected' ? row.faceRejectReason : null,
       mustChangePassword: row.password === DEFAULT_PASSWORD,
     });
   } catch (err) {
@@ -409,9 +414,12 @@ function passwordProblem(next, row) {
 // Only the signed-in student's own template. Stage 6 removes this once matching moves to the server.
 router.get('/face/template', async (req, res) => {
   try {
-    const row = await dbGet(`SELECT face_embedding FROM students WHERE id = ?`, [req.student.id]);
+    const row = await dbGet(`SELECT face_embedding, face_status FROM students WHERE id = ?`, [req.student.id]);
     if (!row?.face_embedding)
       return res.status(404).json({ ok: false, error: 'face_not_enrolled' });
+    // Photos an admin has not approved yet are never handed out for matching
+    if (row.face_status !== 'approved')
+      return res.status(404).json({ ok: false, error: 'face_not_approved' });
     return res.json(decodeEmbedding(row.face_embedding));
   } catch (err) {
     return fail(res, err);
@@ -423,12 +431,16 @@ router.get('/face', async (req, res) => {
   try {
     const row = await dbGet(
       `SELECT face_embedding IS NOT NULL AS enrolled, face_enrolled_at AS enrolledAt,
-         face_embedding_model AS model, password_hash AS password FROM students WHERE id = ?`,
+         face_embedding_model AS model, password_hash AS password,
+         face_status AS faceStatus, face_reject_reason AS faceRejectReason FROM students WHERE id = ?`,
       [req.student.id],
     );
+    const status = faceStateOf({ hasFace: row.enrolled, faceStatus: row.faceStatus });
     return res.json({
       ok: true,
       enrolled: Boolean(row.enrolled),
+      status,
+      rejectReason: status === 'rejected' ? row.faceRejectReason : null,
       enrolledAt: utcIso(row.enrolledAt),
       model: row.model,
       photoCount: (await selfPhotos(req.student)).length,
@@ -510,7 +522,8 @@ router.post('/face', async (req, res) => {
     for (const [part, final] of parts) { await fs.rename(part, final); written.push(final); }
 
     await dbRun(
-      `UPDATE students SET face_embedding = ?, face_embedding_model = ?, face_enrolled_at = datetime('now') WHERE id = ?`,
+      `UPDATE students SET face_embedding = ?, face_embedding_model = ?, face_enrolled_at = datetime('now'),
+         face_status = 'pending', face_reviewed_at = NULL, face_reviewed_by = NULL, face_reject_reason = NULL WHERE id = ?`,
       [encodeEmbedding(Array.from(vector)), FACE_MODEL, id],
     );
     written = [];
@@ -550,6 +563,12 @@ function cosine(a, b) {
   let dot = 0, na = 0, nb = 0;
   for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
   return na && nb ? dot / Math.sqrt(na * nb) : 0;
+}
+
+// 'none' | 'pending' | 'approved' | 'rejected'
+function faceStateOf(row) {
+  if (row.faceStatus) return row.faceStatus;
+  return row.hasFace ? 'approved' : 'none';
 }
 
 function fail(res, err) {

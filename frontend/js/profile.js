@@ -67,7 +67,11 @@ function render() {
 
 function faceCard() {
   const body = [];
-  if (me.faceEnrolled) {
+  if (me.faceStatus === 'pending') {
+    body.push(
+      h('p', {}, h('span', { class: 'chip chip-warning', text: 'Waiting for approval' }), ' Your photos are saved. The admin office will check them soon.'),
+      h('p', { class: 'meta', text: 'QR attendance starts working once they are approved. Until then, ask your teacher to mark you present.' }));
+  } else if (me.faceEnrolled) {
     const when = face?.enrolledAt ? new Date(face.enrolledAt).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : null;
     body.push(
       h('p', {}, h('span', { class: 'chip chip-success', text: '✓ Enrolled' }), ` Your face is set up for QR attendance${when ? `, saved on ${when}` : ''}${face?.photoCount ? ` (${face.photoCount} photos)` : ''}.`),
@@ -77,7 +81,9 @@ function faceCard() {
     const glasses = h('input', { type: 'checkbox', id: 'wearsGlasses' });
     const blocked = me.mustChangePassword;
     body.push(
-      h('p', {}, h('span', { class: 'chip chip-warning', text: '! Not added yet' }), " You can't mark attendance until your face photos are added."),
+      me.faceStatus === 'rejected'
+        ? h('p', { class: 'note note-warning', role: 'status', text: `Your last photos were rejected: ${me.faceRejectReason || 'please take them again'}. Take new ones below.` })
+        : h('p', {}, h('span', { class: 'chip chip-warning', text: '! Not added yet' }), " You can't mark attendance until your face photos are added."),
       h('p', { class: 'meta', text: 'You will take 7 photos with the front camera, each from a slightly different angle, like the way a classroom camera sees you. It takes about two minutes.' }),
       h('ul', { class: 'photo-plan' }, shotsFor(false).map(s => h('li', { text: s.title }))),
       h('p', { class: 'meta', text: 'Sit somewhere well lit, facing the light. Take off any cap or mask. Do this by yourself, one person in view.' }),

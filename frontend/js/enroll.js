@@ -378,9 +378,9 @@ async function save(taken) {
   }
   try {
     const user = getCurrentUser();
-    if (user) localStorage.setItem('user', JSON.stringify({ ...user, faceEnrolled: true }));
+    if (user) localStorage.setItem('user', JSON.stringify({ ...user, faceEnrolled: false, faceStatus: 'pending' }));
   } catch { /* storage blocked: the server value wins on the next load */ }
-  showPanel({ tone: 'ok', title: "You're all set", text: 'Your photos are saved. You can now mark attendance with the QR code.', buttons: [{ label: 'Done', primary: true, onclick: () => { close(); window.dispatchEvent(new CustomEvent('student:changed')); } }] });
+  showPanel({ tone: 'ok', title: "You're all set", text: 'Your photos are saved and waiting for approval by the admin office. QR attendance starts once they are approved.', buttons: [{ label: 'Done', primary: true, onclick: () => { close(); window.dispatchEvent(new CustomEvent('student:changed')); } }] });
   window.dispatchEvent(new CustomEvent('student:changed'));
 }
 

@@ -3,6 +3,7 @@ import { randomBytes } from 'crypto';
 import utils from '../utils/in-memory-db.js';
 import { dbAll, dbGet, dbRun, withTransaction } from '../utils/db.js';
 import { getIO } from '../utils/socket-io.js';
+import { warmSessionCamera, releaseSessionCamera } from './cctv.routes.js';
 import { isValidDate, weekdayName } from '../utils/dates.js';
 import {
   resolveFacultyId,
@@ -264,6 +265,9 @@ router.post('/start', async (req, res) => {
       response.presentStudentIds = present.map(row => row.id);
     }
 
+    // Connect to the room's camera now, while the faculty is still on the start screen.
+    if (method === 'cctv') void warmSessionCamera(sessionCode);
+
     return res.json(response);
   } catch (err) {
     if (err.status) {
@@ -374,6 +378,8 @@ router.post('/finalize', async (req, res) => {
     });
 
     getIO().to(sessionCode).emit('session_finalized', { sessionCode });
+    // The class is over: close its camera connection (no-op for QR sessions).
+    void releaseSessionCamera(sessionCode);
     return res.json({ ok: true, message: 'Finalized' });
   } catch (err) {
     console.error(err);

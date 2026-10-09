@@ -20,6 +20,7 @@ const studentName = user.name;
 
 // ---------- Face models + saved face (loaded in the background) ----------
 let descriptor;
+let notApproved = false; // photos saved but not yet approved by an admin
 let faceModels;
 let faceSettled = false; // false while the models are still loading
 
@@ -46,6 +47,8 @@ const faceReady = (async () => {
   const res = await apiGet('/api/student/face/template');
   if (res.ok) {
     descriptor = normalizeDescriptor(res.data);
+  } else if (res.error === 'face_not_approved') {
+    notApproved = true;
   } else if (res.status !== 404) {
     throw new Error(`Could not load your face template (${res.status}).`);
   }
@@ -106,7 +109,7 @@ window.addEventListener('student:scan', async ev => {
     button?.removeAttribute('aria-busy');
   }
   if (!descriptor) {
-    const e = describeError('face_not_enrolled');
+    const e = describeError(notApproved ? 'face_not_approved' : 'face_not_enrolled');
     showToast(`${e.title} ${e.text}`, 'error');
     return window.dispatchEvent(new CustomEvent('student:goto', { detail: 'profile' }));
   }

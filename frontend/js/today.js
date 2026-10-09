@@ -126,11 +126,13 @@ function alerts(data) {
   if (me.mustChangePassword || !me.faceEnrolled) {
     const items = [];
     if (me.mustChangePassword) items.push(['Change your password', 'You are still using the default one.']);
-    if (!me.faceEnrolled) items.push(['Add your face photos', "You can't mark attendance until your face is enrolled."]);
+    if (!me.faceEnrolled) items.push(me.faceStatus === 'pending' ? ['Face photos waiting for approval', 'The admin office is checking them. Until then, ask your teacher to mark you.']
+      : me.faceStatus === 'rejected' ? ['Face photos were rejected', `${me.faceRejectReason || 'Please take them again.'} Take new photos in Profile.`]
+      : ['Add your face photos', "You can't mark attendance until your face is enrolled."]);
     out.push(h('section', { class: 'card checklist', 'aria-labelledby': 'setupTitle' },
       h('h2', { id: 'setupTitle', text: 'Finish setting up' }),
       h('ul', {}, items.map(([title, why]) => h('li', {}, h('strong', { text: title }), h('span', { text: why })))),
-      h('button', { class: 'btn btn-secondary', type: 'button', 'data-focus-key': 'goto-profile', onclick: () => window.dispatchEvent(new CustomEvent('student:goto', { detail: 'profile' })), text: me.mustChangePassword ? 'Change password' : 'Add face photos' })));
+      h('button', { class: 'btn btn-secondary', type: 'button', 'data-focus-key': 'goto-profile', onclick: () => window.dispatchEvent(new CustomEvent('student:goto', { detail: 'profile' })), text: me.mustChangePassword ? 'Change password' : me.faceStatus === 'pending' ? 'View status' : 'Add face photos' })));
   }
   if (data.timetableChange)
     out.push(h('p', { class: 'note note-info', text: `Your timetable changes on ${formatDay(data.timetableChange.startsOn)}.` }));

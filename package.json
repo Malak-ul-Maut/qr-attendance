@@ -5,7 +5,8 @@
   "main": "backend/index.js",
   "scripts": {
     "start": "node --env-file=.env backend/index.js",
-    "dev": "node --watch-path=backend --watch-path=.env --env-file=.env backend/index.js"
+    "dev": "node --watch-path=backend --watch-path=.env --env-file=.env backend/index.js",
+    "host": "zrok2 share public https://localhost:4000 --backend-mode proxy -n public:smart-attendance --insecure"
   },
   "keywords": [
     "qr-attendance"
