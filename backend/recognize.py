@@ -3,7 +3,7 @@
 recognize.py - CCTV classroom attendance: given a video clip (or live stream), detect faces,
 track them across frames, and recognize each track (AdaFace ir101) only as often as needed.
 
-Setup:    pip install openvino opencv-python numpy gdown uvicorn
+Setup:    pip install insightface onnxruntime opencv-python numpy gdown uvicorn
           pip install openvino        (optional: runs the models on the Intel iGPU / faster on the CPU - see accel.py)
 
 Usage:
@@ -41,15 +41,13 @@ live track already holds that student with a score clearly higher (CLAIM_MARGIN)
 cannot sit in two seats, so the weaker face is a look-alike and ends up "unmatched". The price is
 about one extra sampled frame for genuinely borderline students.
 
---max-attempts bounds the cost of ONE face, not the length of the scan: a classroom almost always
-has absentees, so waiting for "everyone present" to stop is not a real exit condition. Two things
-end the scan instead:
-  * --duration: the scan budget, in seconds of VIDEO time (default 5). 0 means "no limit" (until
-    the file ends) - never use 0 on a live/RTSP stream, which does not end on its own.
-  * early exit: as soon as every face currently visible (and seen on 3+ sampled frames) is
-    resolved - matched, or out of attempts - there is nothing left to learn, so the scan stops.
-    The catch: a student who only appears after that point is not scanned for. Turn it off with
-    --no-early-exit if you want the full --duration every time.
+--max-attempts bounds the cost of ONE face, not the length of the scan. The scan length is fixed:
+  * --duration: the scan window, in seconds of VIDEO time. Every scan processes the same frames
+    (one every --every frames) whoever has been found, so the time students must look at the camera
+    is known in advance and every laptop gets the same input. 0 means "no limit" (until the file
+    ends) - never use 0 on a live/RTSP stream, which does not end on its own.
+  There is deliberately no early exit: it made the scan length depend on who was in the room.
+  scripts/window_study.py measures how long the window and the attempt budget need to be.
 
 Attendance is kept by STUDENT IDENTITY, not by track ID: if a track is lost and the same student
 is re-detected later as a new track, they simply get recognized again under their existing
@@ -148,7 +146,6 @@ DEFAULT_SETTINGS = {
     "sample_interval": 0.72,  # LIVE only: seconds between processed frames (the clip default, every=18 at 25 fps, is 0.72)
     "first_frame_timeout": 10.0,  # LIVE only: give up if the camera sends no frame within this many seconds
     "stall_timeout": 5.0,   # LIVE only: stop the scan if no new frame arrives for this many seconds
-    "early_exit": True,     # stop once every visible face is resolved
     "verbose": False,       # log one line per processed frame
     "pool_attempts": True,  # also match the AVERAGE of a track's best looks (quality-weighted), not only each look alone
     "pool_top_k": 5,        # how many of a track's best looks go into that average
@@ -914,6 +911,8 @@ class RunState:
         self.track_pools = {}        # track_id -> TrackPool: the best looks at that face (for pooled matching + saved crops)
         self.track_thumbs = {}       # track_id -> (det score, small BGR picture of the face with some margin)
         self.track_widths = {}       # track_id -> latest face width in pixels
+        self.track_attempt_frames = {}  # track_id -> [processed-frame number of each recognition attempt] (for window_study.py)
+        self.frame_stats = []        # one dict per processed frame: faces, recognitions, detect/recognize ms, new matches
 
 
 def remember_thumb(state, track_id, face, frame, size=80, margin=0.5):
@@ -990,6 +989,7 @@ def process_frame(model, tracker, crop, gallery, identity_map, state, args, fram
         for face, track_id in to_recognize:
             attempts = state.attempts_used.get(track_id, 0) + 1
             state.attempts_used[track_id] = attempts
+            state.track_attempt_frames.setdefault(track_id, []).append(state.frames_processed)
             matched = False
             info = state.frame_faces[track_id]
             info["status"] = "tried (no match)"
@@ -1033,7 +1033,9 @@ def process_frame(model, tracker, crop, gallery, identity_map, state, args, fram
                     info["status"] = "MATCHED"
                     state.track_identity[track_id] = identity["student_id"]
                     if identity["student_id"] not in state.present:
-                        record = {**identity, "best_score": round(score, 4), "frame": frame_index, "track_id": track_id}
+                        record = {**identity, "best_score": round(score, 4), "frame": frame_index, "track_id": track_id,
+                                  "attempt": attempts,   # which recognition attempt on this track matched (for window_study.py)
+                                  "sightings": state.track_sightings.get(track_id, 0)}
                         state.present[identity["student_id"]] = record
                         newly_present.append((record, face))
 
@@ -1042,6 +1044,9 @@ def process_frame(model, tracker, crop, gallery, identity_map, state, args, fram
             if not matched and attempts >= args.max_attempts:
                 state.track_identity[track_id] = None  # out of attempts: resolved as "unmatched" right away
 
+    state.frame_stats.append({"frame": frame_index, "faces": len(faces), "recognized": len(to_recognize),
+                              "detect_ms": round(detect_ms, 1), "recognize_ms": round(recognize_ms, 1),
+                              "new_matches": len(newly_present)})
     if args.verbose:
         log(f"  frame {frame_index}: {len(faces)} face(s) detected ({detect_ms:.0f} ms), "
             f"{len(to_recognize)} recognized ({recognize_ms:.0f} ms), {len(newly_present)} newly matched")
@@ -1062,16 +1067,6 @@ def stronger_live_claim(state, track_id, student_id, score):
         if state.track_best_scores.get(other_id, float("-inf")) >= score + CLAIM_MARGIN:
             return other_id
     return None
-
-
-def all_visible_faces_resolved(tracker, state):
-    """
-    Early-exit check: True when at least one face is currently visible on a trusted (confirmed)
-    track, and every such track is resolved. Tracks that are not visible this frame
-    (missed > 0) do not hold the scan open - they may be gone for good.
-    """
-    visible = [track for track in tracker.tracks if track.confirmed and track.missed == 0]
-    return bool(visible) and all(track.id in state.track_identity for track in visible)
 
 
 SNAPSHOT_COLORS = {          # BGR box colour per outcome on that frame
@@ -1387,7 +1382,7 @@ def run_attendance(model, video, identity_map, args, gallery_dir, cache_key, ann
     snapshot_names = {identity["student_id"]: (identity.get("name") or str(identity["student_id"])).split()[0]
                       for identity in identity_map.values()}
     frame_no, processed, last_crop, scanned_to = 0, 0, None, 0.0
-    stop_reason = None   # set by the loop body; otherwise taken from the frame source (stop_note)
+    stop_reason = None   # taken from the frame source (stop_note) once the window is used up
     try:
         stop_note = {"reason": "end of video"}
         if live:
@@ -1419,7 +1414,9 @@ def run_attendance(model, video, identity_map, args, gallery_dir, cache_key, ann
             with infer_lock:   # the models: one frame at a time across all scans
                 newly_present = process_frame(model, tracker, crop, gallery, identity_map, state, args,
                                               frame_no, timings, log)
+            state.frame_stats[-1]["t"] = round(t, 2)
             for record, face in newly_present:
+                record["t"] = round(t, 2)
                 log(f"  frame {frame_no} (t={t:.1f}s): "
                     f"{record.get('name') or record['student_id']} present (score {record['best_score']:.2f})")
                 if debug_dir:
@@ -1437,12 +1434,6 @@ def run_attendance(model, video, identity_map, args, gallery_dir, cache_key, ann
                     snapshot_dir = None
 
             processed += 1
-            if target_ids and set(state.present) >= target_ids:
-                stop_reason = "everyone present"
-                break
-            if args.early_exit and all_visible_faces_resolved(tracker, state):
-                stop_reason = "every visible face resolved"
-                break
         if stop_reason is None:
             stop_reason = stop_note["reason"]
     finally:
@@ -1465,6 +1456,13 @@ def run_attendance(model, video, identity_map, args, gallery_dir, cache_key, ann
     faces = build_face_report(state, drawn, best_track_by_student, gallery, identity_map, args,
                               crops_dir=crops_dir, stamp=time.strftime("%Y%m%d%H%M%S"))
     result["faces"] = faces
+    result["frame_stats"] = state.frame_stats
+    result["track_summary"] = [{"track_id": tid, "student_id": state.track_identity.get(tid),
+                                "attempts": state.attempts_used.get(tid, 0),
+                                "sightings": state.track_sightings.get(tid, 0),
+                                "attempt_frames": state.track_attempt_frames.get(tid, []),
+                                "best_score": None if tid not in state.track_best_scores else round(state.track_best_scores[tid], 4)}
+                               for tid in sorted(state.track_sightings)]
     result["faces_detected"] = len(faces)
     result["face_counts"] = {status: sum(1 for face in faces if face["status"] == status)
                              for status in ("matched", "unmatched")}
@@ -1525,8 +1523,6 @@ def parse_args():
                         help="LIVE only: give up if the camera sends no frame within this many seconds")
     parser.add_argument("--stall-timeout", type=float, default=DEFAULT_SETTINGS["stall_timeout"],
                         help="LIVE only: stop the scan if no new frame arrives for this many seconds")
-    parser.add_argument("--no-early-exit", dest="early_exit", action="store_false",
-                        help="always scan the full --duration, even when every visible face is already resolved")
     parser.add_argument("--det-size", default="1920x1080")
     parser.add_argument("--det-thresh", type=float, default=0.3)
     parser.add_argument("--min-face", type=int, default=DEFAULT_SETTINGS["min_face"],

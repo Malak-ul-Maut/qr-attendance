@@ -58,6 +58,39 @@ def time_it(fn, repeats):
     return (time.perf_counter() - started) / repeats * 1000
 
 
+class TimedRun:
+    """Wraps the detector's session and adds up the time spent inside session.run() - the pure model time -
+    so detect() can be split into 'model' and 'everything else' (resize, blob, decoding boxes, NMS)."""
+
+    def __init__(self, session):
+        self._session = session
+        self.ms, self.calls = 0.0, 0
+
+    def run(self, *args, **kwargs):
+        started = time.perf_counter()
+        try:
+            return self._session.run(*args, **kwargs)
+        finally:
+            self.ms += (time.perf_counter() - started) * 1000
+            self.calls += 1
+
+    def __getattr__(self, name):
+        return getattr(self._session, name)
+
+
+def time_detect(model, frame, repeats):
+    """(total ms per detect() call, of which inside the model)."""
+    timed = TimedRun(model.detector.session)
+    model.detector.session = timed
+    model.detect(frame)                      # warm-up
+    timed.ms, timed.calls = 0.0, 0
+    started = time.perf_counter()
+    for _ in range(repeats):
+        model.detect(frame)
+    total = (time.perf_counter() - started) / repeats * 1000
+    return total, timed.ms / max(timed.calls, 1)
+
+
 def recognizer_batch(model, frame, faces, size):
     crops = [model.recognizer.align_face(frame, f.kps) for f in faces]
     crops = (crops * (size // max(len(crops), 1) + 1))[:size]   # repeat faces to fill a batch of `size`
@@ -112,11 +145,12 @@ def main():
     if batch is None:
         sys.exit("No face found in this frame - pick another frame (--at / --image).")
     base_emb, base_norm = embed(base, batch)
-    base_detect = time_it(lambda: base.detect(frame), args.repeats)
+    base_detect, base_detect_model = time_detect(base, frame, args.repeats)
     base_rec = time_it(lambda: embed(base, batch), args.repeats)
-    print(f"{len(base_faces)} faces | detect {base_detect:.0f} ms/frame | recognize {base_rec:.0f} ms per batch of 16")
+    print(f"{len(base_faces)} faces | detect {base_detect:.0f} ms/frame (model {base_detect_model:.0f} + "
+          f"resize/decode/NMS {base_detect - base_detect_model:.0f}) | recognize {base_rec:.0f} ms per batch of 16")
 
-    print(f"\n{'device':<14}{'detect ms':>10}{'x faster':>9}{'recog ms':>10}{'x faster':>9}{'faces':>7}{'found':>7}"
+    print(f"\n{'device':<14}{'detect ms':>10}{'(model)':>8}{'x faster':>9}{'recog ms':>10}{'x faster':>9}{'faces':>7}{'found':>7}"
           f"{'cos mean':>10}{'cos min':>9}{'norm diff':>10}  engine")
     for device in [d.strip() for d in args.devices.split(",") if d.strip()]:
         try:
@@ -127,11 +161,11 @@ def main():
                 continue
             faces, _ = model.detect(frame)
             emb, norm = embed(model, batch)
-            detect_ms = time_it(lambda: model.detect(frame), args.repeats)
+            detect_ms, detect_model_ms = time_detect(model, frame, args.repeats)
             rec_ms = time_it(lambda: embed(model, batch), args.repeats)
             cosine = (emb * base_emb).sum(axis=1)
             norm_diff = float(np.mean(np.abs(norm - base_norm) / np.maximum(base_norm, 1e-6)))
-            print(f"{device:<14}{detect_ms:>10.0f}{base_detect / detect_ms:>8.1f}x{rec_ms:>10.0f}{base_rec / rec_ms:>8.1f}x"
+            print(f"{device:<14}{detect_ms:>10.0f}{detect_model_ms:>8.0f}{base_detect / detect_ms:>8.1f}x{rec_ms:>10.0f}{base_rec / rec_ms:>8.1f}x"
                   f"{len(faces):>7}{match_boxes(base_faces, faces):>7.0%}{cosine.mean():>10.4f}{cosine.min():>9.4f}"
                   f"{norm_diff:>9.1%}  {model.backend_summary()}")
         except Exception as error:
