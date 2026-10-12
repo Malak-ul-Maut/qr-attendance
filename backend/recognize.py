@@ -3,7 +3,8 @@
 recognize.py - CCTV classroom attendance: given a video clip (or live stream), detect faces,
 track them across frames, and recognize each track (AdaFace ir101) only as often as needed.
 
-Setup:    pip install insightface onnxruntime opencv-python numpy gdown uvicorn
+Setup:    pip install openvino opencv-python numpy gdown uvicorn
+          pip install openvino        (optional: runs the models on the Intel iGPU / faster on the CPU - see accel.py)
 
 Usage:
     python recognize.py --video clip.mp4
@@ -111,6 +112,7 @@ try:
 except ImportError:
     sys.exit("InsightFace is missing. Run: pip install insightface onnxruntime opencv-python numpy")
 
+import accel
 from tracker import Tracker, iou
 from matching import TrackPool, rank_candidates, choose_faces_to_report
 from enroll_qa import sharpness_of
@@ -265,10 +267,11 @@ class AdaFaceRecognizer:
     module docstring).
     """
 
-    def __init__(self, onnx_path):
+    def __init__(self, onnx_path, session=None):
         self.align = face_align.norm_crop  # the same 112x112 face alignment InsightFace's own recognizers use
         self.model_file = str(onnx_path)
-        self.session = onnxruntime.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
+        # `session` = an already-built engine (accel.OpenVINOSession); without one, plain onnxruntime on the CPU
+        self.session = session or onnxruntime.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
         model_input = self.session.get_inputs()[0]
         self.input_name = model_input.name
         self.output_names = [output.name for output in self.session.get_outputs()]
@@ -351,31 +354,74 @@ class FaceModel:
     """Detector (SCRFD det_10g) + recognizer (AdaFace ir101), both loaded straight from local .onnx
     files."""
 
-    def __init__(self, models_dir, det_size, det_thresh, rec_filename=DEFAULT_REC_FILENAME):
+    def __init__(self, models_dir, det_size, det_thresh, rec_filename=DEFAULT_REC_FILENAME, log=print):
         models_dir = Path(models_dir)
         det_path = download_if_missing(models_dir / "det_10g.onnx", MODEL_URLS["det_10g.onnx"])
         rec_path = download_if_missing(models_dir / rec_filename, MODEL_URLS.get(rec_filename))
 
         self.det_size = det_size
+        # The detector object is always built the normal way (it reads its anchors/strides from the model); if
+        # OpenVINO is in use its onnxruntime session is swapped for the OpenVINO one right after prepare().
         self.detector = model_zoo.get_model(str(det_path), providers=["CPUExecutionProvider"])
         self.detector.prepare(ctx_id=-1, input_size=det_size, det_thresh=det_thresh)  # ctx_id=-1 = CPU
-        self.recognizer = AdaFaceRecognizer(rec_path)
+
+        det_session, rec_session = self._open_openvino(det_path, rec_path, det_size, log)
+        if det_session is not None:
+            self.detector.session = det_session
+        self.det_session, self.rec_session = det_session, rec_session   # None = onnxruntime
+        self.recognizer = AdaFaceRecognizer(rec_path, session=rec_session)
 
         self.det_name, self.rec_name = det_path.stem, rec_path.stem
         self.model_mb = (det_path.stat().st_size + rec_path.stat().st_size) / 1e6
+
+    @staticmethod
+    def _open_openvino(det_path, rec_path, det_size, log):
+        """(detector session, recognizer session) on OpenVINO, or (None, None) to stay on onnxruntime. In the
+        default 'auto' mode ANY problem (package missing, unsupported CPU, driver error) falls back quietly to
+        onnxruntime, so the service always starts; with CCTV_BACKEND=openvino the error is raised instead."""
+        if not accel.wants_openvino():
+            return None, None
+        try:
+            common = dict(device=accel.device_setting(), cache=accel.cache_dir(HERE), precision=accel.precision_setting(),
+                          log=log)
+            det_session = accel.OpenVINOSession(det_path, **common)
+            rec_session = accel.OpenVINOSession(rec_path, batches=accel.batch_buckets(), **common)
+            # compile the two shapes every scan needs RIGHT NOW, so a device problem shows up here (and falls back)
+            det_session.compile_shape((1, 3, det_size[1], det_size[0]))
+            rec_session.compile_shape((rec_session.bucket_for(1), 3, 112, 112))
+            return det_session, rec_session
+        except Exception as error:
+            if accel.backend_mode() == "openvino":
+                raise
+            log(f"  OpenVINO not used ({type(error).__name__}: {error}) - falling back to onnxruntime on the CPU")
+            return None, None
+
+    def backend_summary(self):
+        """'OpenVINO 2025.x on GPU.0 (Intel(R) Iris(R) Xe Graphics)' or 'onnxruntime (CPU)'."""
+        if self.rec_session is None:
+            return "onnxruntime (CPU)"
+        devices = self.rec_session.device_names() or [accel.device_setting()]
+        return f"OpenVINO {accel.openvino_version()} on {', '.join(devices)}"
 
     def describe(self):
         """One line for the startup log."""
         batching = "on" if self.recognizer.supports_batch else "OFF (model has a fixed batch size of 1)"
         return (f"detector {self.det_name} @ {self.det_size[0]}x{self.det_size[1]}, "
-                f"recognizer {self.rec_name}, batching {batching}, {self.model_mb:.0f} MB of models")
+                f"recognizer {self.rec_name}, batching {batching}, {self.model_mb:.0f} MB of models, "
+                f"engine: {self.backend_summary()}")
 
     def warm_up(self):
-        """Run each model once on blank data. The very first ONNX call is slower (memory is set up
-        lazily), so do it at startup instead of during the first real request."""
+        """Run each model once on blank data. The very first call is slower (memory is set up lazily; on OpenVINO
+        every input shape is compiled once), so do it at startup instead of during the first real request."""
         self.detect(np.zeros((self.det_size[1], self.det_size[0], 3), dtype=np.uint8))
-        blank_face = np.zeros((1, 3, 112, 112), dtype=np.float32)
-        self.recognizer.session.run(self.recognizer.output_names, {self.recognizer.input_name: blank_face})
+        recognizer = self.recognizer
+        sizes = self.rec_session.batches if self.rec_session is not None else (1,)
+        for size in sizes:   # OpenVINO: one compile per batch size; onnxruntime: just the one warm-up call
+            blank = np.zeros((size, 3, 112, 112), dtype=np.float32)
+            recognizer.session.run(recognizer.output_names, {recognizer.input_name: blank})
+        if self.det_session is not None and tuple(GALLERY_DET_SIZE) != tuple(self.det_size):
+            # gallery photos are detected at 640x640 - compile that shape now, not during the first gallery build
+            self.detect(np.zeros((GALLERY_DET_SIZE[1], GALLERY_DET_SIZE[0], 3), dtype=np.uint8), det_size=GALLERY_DET_SIZE)
 
     def detect(self, image, det_size=None):
         """Find faces only - no recognition yet, and much cheaper than recognizing every one of them."""

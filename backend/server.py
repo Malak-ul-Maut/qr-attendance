@@ -18,6 +18,9 @@ Settings (environment variables, all optional):
     CCTV_DET_SIZE          detector input size, default 1920x1080
     CCTV_DET_THRESH        detector confidence, default 0.3
     CCTV_MODELS_DIR / CCTV_GALLERY_DIR   override the models/ and gallery/ folders
+    CCTV_BACKEND           auto (default: OpenVINO if installed, else onnxruntime) | openvino | onnxruntime
+    CCTV_DEVICE            AUTO (default: the Intel iGPU if there is one, else the CPU) | GPU | CPU
+    CCTV_PRECISION / CCTV_OV_BATCHES / CCTV_OV_CACHE   OpenVINO details - see accel.py
     CCTV_EXIT_WITH_PARENT  set to 1 by Node: this service quits when the Node server stops
 
 Endpoints:
@@ -128,6 +131,7 @@ async def lifespan(app):
     try:
         model.warm_up()
         print(f"  warm-up run finished in {time.perf_counter() - started:.1f}s", flush=True)
+        print(f"  engine: {model.backend_summary()}", flush=True)
     except Exception as error:  # a failed warm-up only means the first request is a bit slower
         print(f"  warm-up skipped: {error}", flush=True)
 
@@ -193,6 +197,7 @@ def health():
     return {"ok": model is not None,
             "recognizer": model.rec_name if model else None,
             "batching": model.recognizer.supports_batch if model else None,
+            "engine": model.backend_summary() if model else None,
             "galleries_in_memory": len(gallery_memory_cache)}
 
 
@@ -227,7 +232,7 @@ def run(request: RunRequest):
     models.scan_started()
     try:
         log(f"[run] class {request.class_id}: {len(identity_map)} student(s) with photos; "
-            f"{models.active_scans - 1} other scan(s) in progress")
+            f"{models.active_scans - 1} other scan(s) in progress; engine: {state['model'].backend_summary()}")
         try:
             result = recognize.run_attendance(
                 state["model"], request.video, identity_map, settings, GALLERY_DIR, request.class_id,
