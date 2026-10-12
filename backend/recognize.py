@@ -112,6 +112,9 @@ except ImportError:
     sys.exit("InsightFace is missing. Run: pip install insightface onnxruntime opencv-python numpy")
 
 from tracker import Tracker, iou
+from matching import TrackPool, rank_candidates, choose_faces_to_report
+from enroll_qa import sharpness_of
+from gallery_extras import (EmbeddingFileCache, degrade_photo, is_cctv_crop, parse_widths)
 
 # ------------------------------------------------------------------ settings
 HERE = Path(__file__).resolve().parent
@@ -133,9 +136,9 @@ DEFAULT_SETTINGS = {
                             # If set above threshold: an attempt >= this is accepted at once, while one between
                             # threshold and this ("borderline") needs a 2nd agreeing attempt on the same track, and is
                             # rejected if another live track already holds that student with a clearly higher score.
-    "max_attempts": 5,      # recognition attempts allowed per track before giving up on it
+    "max_attempts": 10,      # recognition attempts allowed per track before giving up on it
     "every": 18,            # process every Nth frame
-    "duration": 5.0,        # seconds of video to scan; 0 = no limit
+    "duration": 10.0,        # seconds of video to scan; 0 = no limit
     "min_face": 0,          # skip faces shorter than this (px) - free, no attempt spent
     "min_sharpness": 0.0,   # skip blurry crops below this Laplacian variance - free
     "min_norm": 0.0,        # distrust an attempt whose AdaFace quality score is below this
@@ -145,6 +148,11 @@ DEFAULT_SETTINGS = {
     "stall_timeout": 5.0,   # LIVE only: stop the scan if no new frame arrives for this many seconds
     "early_exit": True,     # stop once every visible face is resolved
     "verbose": False,       # log one line per processed frame
+    "pool_attempts": True,  # also match the AVERAGE of a track's best looks (quality-weighted), not only each look alone
+    "pool_top_k": 5,        # how many of a track's best looks go into that average
+    "suggestions": 3,       # "who might this be" candidates listed for each unmatched face
+    "suggest_min_score": 0.12,  # ...but only students scoring at least this
+    "gallery_degrade_widths": (),  # e.g. (20, 28): also keep CCTV-quality copies of every gallery photo. Off until measured (bakeoff.py)
 }
 
 
@@ -272,12 +280,46 @@ class AdaFaceRecognizer:
         batch_dim = model_input.shape[0]
         self.supports_batch = not (isinstance(batch_dim, int) and batch_dim > 0)
 
-    def preprocess(self, image, face):
-        """Align one face to 112x112 and turn it into the 1x3x112x112 number array AdaFace expects."""
-        aligned = self.align(image, landmark=face.kps, image_size=112)
+    def align_face(self, image, kps):
+        """The 112x112 BGR crop the model sees: the face warped so eyes, nose and mouth sit in fixed places."""
+        return self.align(image, landmark=kps, image_size=112)
+
+    @staticmethod
+    def to_tensor(aligned):
+        """A 112x112 BGR crop -> the 1x3x112x112 number array AdaFace expects."""
         # AdaFace expects BGR pixels scaled to roughly [-1, 1]; cv2 images are already BGR
         pixels = (aligned.astype(np.float32) / 255.0 - 0.5) / 0.5
         return np.ascontiguousarray(pixels.transpose(2, 0, 1)[np.newaxis])  # HxWxC -> 1xCxHxW
+
+    def preprocess(self, image, face):
+        """Align one face to 112x112 and turn it into the 1x3x112x112 number array AdaFace expects."""
+        aligned = self.align_face(image, face.kps)
+        face.aligned_bgr = aligned   # kept so a confirmed match can be saved to the gallery as it was seen
+        return self.to_tensor(aligned)
+
+    def embed_aligned(self, aligned_crops):
+        """
+        Embeddings for crops that are ALREADY aligned 112x112 (e.g. saved CCTV crops). Returns
+        (unit embeddings, quality norms), one row per crop.
+        """
+        if not len(aligned_crops):
+            return np.zeros((0, 512), np.float32), np.zeros((0,), np.float32)
+        embeddings, norms = [], []
+        chunk_size = RECOGNIZE_BATCH_SIZE if self.supports_batch else 1
+        tensors = [self.to_tensor(crop) for crop in aligned_crops]
+        for start in range(0, len(tensors), chunk_size):
+            batch = np.concatenate(tensors[start:start + chunk_size])
+            chunk_embeddings, chunk_norms = self.session.run(self.output_names, {self.input_name: batch})
+            embeddings.append(np.asarray(chunk_embeddings, dtype=np.float32))
+            norms.append(np.asarray(chunk_norms, dtype=np.float32).reshape(-1))
+        embeddings = np.concatenate(embeddings)
+        embeddings = embeddings / np.maximum(np.linalg.norm(embeddings, axis=1, keepdims=True), 1e-9)
+        return embeddings, np.concatenate(norms)
+
+    def embed_with_kps(self, image, kps):
+        """Unit embedding + quality norm of the face with these five landmarks in `image`."""
+        embeddings, norms = self.embed_aligned([self.align_face(image, np.asarray(kps, dtype=np.float32))])
+        return embeddings[0], float(norms[0])
 
     def get_batch(self, image, faces, timings=None):
         """Align all the faces, run AdaFace on them in as few model calls as possible, and store
@@ -357,28 +399,68 @@ class FaceModel:
 
 
 # ------------------------------------------------------------------ gallery
-def build_gallery(model, gallery_dir, cache_key, only_folders=None, memory_cache=None, log=print):
-    """
-    Return (embeddings, names) with one row per gallery photo, scoped to `only_folders` when given
-    (the current class's roster) so a different class's students can never win the nearest-match
-    search. Cached per `cache_key` (use the class id) so classes never share or invalidate each
-    other's cache.
-
-    Three levels, fastest first: `memory_cache` (a dict the long-lived server keeps between
-    requests), then the .npz file in cache/, then computing from the photos. The fingerprint
-    includes the recognizer model's name, so switching models (e.g. fp32 -> int8) rebuilds the
-    embeddings instead of silently mixing two models' numbers.
-    """
+def gallery_photos(gallery_dir, only_folders=None):
+    """[(folder name, photo path)] for every student photo, scoped to `only_folders` when given."""
     gallery_dir = Path(gallery_dir)
     student_dirs = sorted(d for d in gallery_dir.iterdir() if d.is_dir()) if gallery_dir.is_dir() else []
     if only_folders is not None:
         student_dirs = [d for d in student_dirs if d.name in only_folders]
-    photos = [(d.name, p) for d in student_dirs for p in sorted(d.iterdir()) if p.suffix.lower() in IMAGE_TYPES]
+    return [(d.name, p) for d in student_dirs for p in sorted(d.iterdir()) if p.suffix.lower() in IMAGE_TYPES]
+
+
+def embed_gallery_photo(model, photo, degrade_widths=(), log=print):
+    """
+    The embeddings one gallery photo contributes: a (rows x 512) array, empty when no face was found.
+    A saved CCTV crop (cctv_*.png) is already aligned, so it is embedded directly. Any other photo is searched
+    for its largest face; with `degrade_widths`, smaller blurred copies of it are embedded too.
+    """
+    image = load_image(photo)
+    if is_cctv_crop(photo):
+        if image.shape[:2] != (112, 112):
+            image = cv2.resize(image, (112, 112), interpolation=cv2.INTER_AREA)
+        embeddings, _ = model.recognizer.embed_aligned([image])
+        return embeddings
+    faces, _, _ = model.find_faces(image, det_size=GALLERY_DET_SIZE)
+    if not faces:
+        log(f"    ! no face found in {photo.parent.name}/{photo.name}")
+        return np.zeros((0, 512), np.float32)
+    if len(faces) > 1:
+        log(f"    ! {len(faces)} faces in {photo.parent.name}/{photo.name}, using the largest")
+    biggest = max(faces, key=lambda f: np.prod(face_size(f)))
+    rows = [biggest.normed_embedding]
+    face_width = face_size(biggest)[0]
+    for width in degrade_widths:   # what this photo would look like from the CCTV camera
+        degraded = degrade_photo(image, biggest.kps, face_width, width)
+        if degraded is not None:
+            small_image, small_kps = degraded
+            rows.append(model.recognizer.embed_with_kps(small_image, small_kps)[0])
+    return np.stack(rows)
+
+
+def build_gallery(model, gallery_dir, cache_key, only_folders=None, memory_cache=None, log=print,
+                  degrade_widths=()):
+    """
+    Return (embeddings, names) with one row per gallery entry (a photo, plus its degraded copies when
+    `degrade_widths` is set), scoped to `only_folders` when given (the current class's roster) so a different
+    class's students can never win the nearest-match search. Cached per `cache_key` (use the class id) so
+    classes never share or invalidate each other's cache.
+
+    Four levels, fastest first: `memory_cache` (a dict the long-lived server keeps between requests), the class
+    .npz file in cache/, a per-PHOTO cache in cache/photos/ (so one new photo costs one embedding, not the whole
+    class again), and finally the model itself. The fingerprint includes the recognizer model's name and the
+    degrade widths, so switching models or settings rebuilds instead of silently mixing numbers.
+    """
+    degrade_widths = tuple(degrade_widths or ())
+    photos = gallery_photos(gallery_dir, only_folders)
     if not photos:
         return None, None
 
     # A "fingerprint" of the gallery (model, names, sizes, dates) tells us if the cache is still valid
-    fingerprint = str([model.rec_name] + [(name, p.name, p.stat().st_size, int(p.stat().st_mtime)) for name, p in photos])
+    photos = [(name, photo) for name, photo in photos if photo.exists()]   # one may be replaced while we list
+    if not photos:
+        return None, None
+    fingerprint = str([model.rec_name, degrade_widths]
+                      + [(name, p.name, p.stat().st_size, int(p.stat().st_mtime)) for name, p in photos if p.exists()])
 
     if memory_cache is not None:
         remembered = memory_cache.get(cache_key)
@@ -399,22 +481,29 @@ def build_gallery(model, gallery_dir, cache_key, only_folders=None, memory_cache
             remember(embeddings, names)
             return embeddings, names
 
-    log(f"  gallery: computing embeddings for {len(student_dirs)} student(s) ({cache_key}) ...")
-    embeddings, names = [], []
+    photo_cache = EmbeddingFileCache(HERE / "cache" / "photos")
+    folders = {name for name, _ in photos}
+    log(f"  gallery: preparing {len(photos)} photo(s) of {len(folders)} student(s) ({cache_key}) ...")
+    embeddings, names, computed = [], [], 0
     for name, photo in photos:
-        faces, _, _ = model.find_faces(load_image(photo), det_size=GALLERY_DET_SIZE)
-        if not faces:
-            log(f"    ! no face found in {name}/{photo.name}")
+        try:
+            key = photo_cache.key_for(photo, model.rec_name, degrade_widths)
+            rows = photo_cache.get(key, name)   # name = the student's folder: cache/photos/<student folder>/<key>.npy
+            if rows is None:
+                rows = embed_gallery_photo(model, photo, degrade_widths, log)
+                photo_cache.put(key, rows, name)
+                computed += 1
+        except Exception as error:   # a damaged or vanished picture is skipped, never fatal for the whole class
+            log(f"  gallery: skipped {photo.name} of {name} ({type(error).__name__}: {error})")
             continue
-        if len(faces) > 1:
-            log(f"    ! {len(faces)} faces in {name}/{photo.name}, using the largest")
-        biggest = max(faces, key=lambda f: np.prod(face_size(f)))
-        embeddings.append(biggest.normed_embedding)  # "normed" = scaled to length 1, so dot product = similarity
-        names.append(name)
+        for row in rows:
+            embeddings.append(row)
+            names.append(name)
+    log(f"  gallery: {computed} photo(s) embedded now, {len(photos) - computed} taken from the photo cache")
 
     if not embeddings:
         return None, None
-    embeddings = np.stack(embeddings)  # list of 512-number arrays -> one 2D array (photos x 512)
+    embeddings = np.stack(embeddings)  # list of 512-number arrays -> one 2D array (entries x 512)
     cache_file.parent.mkdir(exist_ok=True)
     np.savez(cache_file, embeddings=embeddings, names=np.array(names), fingerprint=np.array(fingerprint))
     remember(embeddings, names)
@@ -776,6 +865,24 @@ class RunState:
         self.track_last_seen = {}    # track_id -> frames_processed value at its latest sighting
         self.track_votes = {}        # track_id -> {student_id: borderline attempts that named that student}
         self.frame_faces = {}        # track_id -> what happened to that face on the frame just processed (for snapshots)
+        self.track_pools = {}        # track_id -> TrackPool: the best looks at that face (for pooled matching + saved crops)
+        self.track_thumbs = {}       # track_id -> (det score, small BGR picture of the face with some margin)
+        self.track_widths = {}       # track_id -> latest face width in pixels
+
+
+def remember_thumb(state, track_id, face, frame, size=80, margin=0.5):
+    """Keeps a small picture of the face (with some surroundings) from the frame where the detector was surest, so
+    the faculty can see WHO an unrecognised face is without hunting for it in the big picture."""
+    score = float(face.det_score)
+    if track_id in state.track_thumbs and state.track_thumbs[track_id][0] >= score:
+        return
+    x1, y1, x2, y2 = face.bbox
+    pad_x, pad_y = (x2 - x1) * margin, (y2 - y1) * margin
+    left, top = max(0, int(x1 - pad_x)), max(0, int(y1 - pad_y))
+    right, bottom = min(frame.shape[1], int(x2 + pad_x)), min(frame.shape[0], int(y2 + pad_y))
+    if right - left < 4 or bottom - top < 4:
+        return
+    state.track_thumbs[track_id] = (score, cv2.resize(frame[top:bottom, left:right], (size, size), interpolation=cv2.INTER_CUBIC))
 
 
 def process_frame(model, tracker, crop, gallery, identity_map, state, args, frame_index, timings, log):
@@ -802,6 +909,8 @@ def process_frame(model, tracker, crop, gallery, identity_map, state, args, fram
             state.track_boxes[track_id] = face.bbox  # keep the freshest sighting for the final annotated image
             state.track_sightings[track_id] = state.track_sightings.get(track_id, 0) + 1
             state.track_last_seen[track_id] = state.frames_processed
+            state.track_widths[track_id] = float(face.bbox[2] - face.bbox[0])
+            remember_thumb(state, track_id, face, crop)
             info = {"bbox": face.bbox, "det": float(face.det_score), "status": "queued", "score": None, "quality": None}
             state.frame_faces[track_id] = info
 
@@ -840,8 +949,18 @@ def process_frame(model, tracker, crop, gallery, identity_map, state, args, fram
             info["status"] = "tried (no match)"
             info["quality"] = float(face.quality)
 
+            pool = state.track_pools.setdefault(track_id, TrackPool(top_k=args.pool_top_k))
+            pool.add(face.normed_embedding, face.quality, getattr(face, "aligned_bgr", None))
             if face.quality >= args.min_norm:  # a low-norm crop is not trusted (its attempt still counted)
                 name, score = nearest_gallery_match(face.normed_embedding, gallery_embeddings, gallery_names)
+                single_look_score = score
+                if args.pool_attempts and pool.count >= 2:
+                    # Several looks at the same face: average the best of them. A genuine match that one noisy
+                    # frame scored too low often clears the bar when the noise is averaged out.
+                    pooled_name, pooled_score = nearest_gallery_match(pool.pooled(), gallery_embeddings, gallery_names)
+                    if pooled_score > score:
+                        name, score = pooled_name, pooled_score
+                        info["pooled"] = True
                 info["score"] = float(score)
                 state.track_best_scores[track_id] = max(state.track_best_scores.get(track_id, float("-inf")), score)
                 identity = identity_map.get(name)  # None = a gallery folder with no matching roster student
@@ -852,6 +971,10 @@ def process_frame(model, tracker, crop, gallery, identity_map, state, args, fram
                         holder = stronger_live_claim(state, track_id, student_id, score)
                         if holder is not None:
                             info["status"] = f"tried (T{holder} holds this student)"
+                        elif info.get("pooled") and single_look_score < args.threshold:
+                            # the average is borderline and this look alone is below the bar: the averaged looks are
+                            # not independent of the earlier vote, so this does not count as a second opinion
+                            info["status"] = "borderline (average only)"
                         else:
                             votes = state.track_votes.setdefault(track_id, {})
                             votes[student_id] = votes.get(student_id, 0) + 1
@@ -1012,13 +1135,22 @@ def _boxes_are_duplicates(box_a, box_b):
     return False
 
 
+def select_tracks(track_boxes, track_identity, track_best_scores, track_sightings, track_last_seen, frames_processed):
+    """Which tracks are drawn on the final picture and listed for review (see matching.choose_faces_to_report)."""
+    return choose_faces_to_report(
+        track_boxes, track_identity, track_best_scores, track_sightings, track_last_seen, frames_processed,
+        min_sightings=ANNOTATE_MIN_SIGHTINGS, amber_recent_frames=ANNOTATE_AMBER_RECENT_FRAMES,
+        recent_frames=ANNOTATE_RECENT_FRAMES, duplicate_test=_boxes_are_duplicates)
+
+
 def save_aggregate_annotation(out_path, canvas, track_boxes, track_identity, track_best_scores, present, identity_map,
-                              track_sightings=None, track_last_seen=None, frames_processed=0):
+                              track_sightings=None, track_last_seen=None, frames_processed=0, drawn=None,
+                              best_track_by_student=None):
     """
     One final image summarising the whole clip, drawn on `canvas` (the most recent frame read).
     Green + name + similarity for a track that resolved to a student; red + "unmatched" for a
-    track that used up its attempts without matching anyone; red + "unknown" for a track that was
-    still unresolved when the clip ended. When SEVERAL tracks resolved to the same student, only
+    track that used up its attempts without matching anyone, or was still unresolved when the clip ended (labelled
+    with its best similarity score only, to keep the picture readable); green and amber boxes carry the name too. When SEVERAL tracks resolved to the same student, only
     the best-scoring one is green; the others are drawn amber as "<name>? <score>" - one person
     cannot be in two seats, so an amber box is either a look-alike false match or a lost-and-found
     track of the same person. Either way it is a face that exists and must not silently vanish.
@@ -1040,55 +1172,18 @@ def save_aggregate_annotation(out_path, canvas, track_boxes, track_identity, tra
     gap = max(2, round(4 * scale))
     font = cv2.FONT_HERSHEY_SIMPLEX
     by_student_id = {v["student_id"]: v for v in present.values()}
-    best_track_by_student = {}
-    for track_id, student_id in track_identity.items():
-        if student_id is None or track_id not in track_boxes:
-            continue
-        box = track_boxes[track_id]
-        area = max(0, box[2] - box[0]) * max(0, box[3] - box[1])
-        # a track that is still alive beats a dead one (a student who moved leaves a stale old track behind);
-        # among live tracks the higher score wins
-        alive = (track_last_seen is None
-                 or track_last_seen.get(track_id, 0) > frames_processed - ANNOTATE_AMBER_RECENT_FRAMES)
-        rank = (alive, track_best_scores.get(track_id, float("-inf")), area)
-        if student_id not in best_track_by_student or rank > best_track_by_student[student_id][0]:
-            best_track_by_student[student_id] = (rank, track_id)
-
-    # Decide what to draw: resolved (green) tracks first, then the red ones, biggest face first.
-    candidates = []
-    for track_id, box in track_boxes.items():
-        student_id = track_identity.get(track_id)
-        if student_id is not None:
-            if best_track_by_student[student_id][1] == track_id:
-                priority = 0
-            else:  # 1 = amber "name?" duplicate claim; only worth showing while that track is still alive
-                if track_last_seen is not None and track_last_seen.get(track_id, 0) <= frames_processed - ANNOTATE_AMBER_RECENT_FRAMES:
-                    continue
-                priority = 1
-        else:
-            if track_sightings is not None and track_sightings.get(track_id, 0) < ANNOTATE_MIN_SIGHTINGS:
-                continue
-            if (ANNOTATE_RECENT_FRAMES > 0 and track_last_seen is not None
-                    and track_last_seen.get(track_id, 0) <= frames_processed - ANNOTATE_RECENT_FRAMES):
-                continue
-            priority = 2
-        area = max(0, box[2] - box[0]) * max(0, box[3] - box[1])
-        candidates.append((priority, -area, track_id, box))
-    candidates.sort(key=lambda c: (c[0], c[1]))
-    drawn = []
-    for priority, _, track_id, box in candidates:
-        if any(_boxes_are_duplicates(box, kept_box) for _, kept_box in drawn):
-            continue
-        drawn.append((track_id, box))
+    if drawn is None or best_track_by_student is None:   # normally run_attendance passes these in, to share them with the review list
+        drawn, best_track_by_student = select_tracks(track_boxes, track_identity, track_best_scores,
+                                                     track_sightings, track_last_seen, frames_processed)
 
     for track_id, box in reversed(drawn):  # reversed: green boxes are painted last, on top
         x1, y1, x2, y2 = (int(v) for v in box)
         if track_id not in track_identity:
             student_id = None
-            color, label = (0, 0, 220), "unknown"
+            color, label = (0, 0, 220), None
         elif track_identity[track_id] is None:
             student_id = None
-            color, label = (0, 0, 220), "unmatched"
+            color, label = (0, 0, 220), None
         else:
             student_id = track_identity[track_id]
             record = by_student_id.get(student_id)
@@ -1102,8 +1197,10 @@ def save_aggregate_annotation(out_path, canvas, track_boxes, track_identity, tra
                 own_score = track_best_scores.get(track_id)
                 label = f"{short_name}? {own_score:.3f}" if own_score is not None else f"{short_name}?"
         if student_id is None and track_id in track_best_scores:
-            label = f"{label} {track_best_scores[track_id]:.3f}"
+            label = f"{track_best_scores[track_id]:.3f}"   # red: just the best score it reached
         cv2.rectangle(annotated, (x1, y1), (x2, y2), color, box_thickness)
+        if label is None:
+            continue   # a face that never produced a score (e.g. no attempt yet) is only a red box
 
         label_padding = min(padding, max(0, (image_width - 1) // 2))
         label_font_size = font_size
@@ -1132,8 +1229,67 @@ def save_aggregate_annotation(out_path, canvas, track_boxes, track_identity, tra
     return out_path
 
 
+def thumb_data_url(picture):
+    """A small BGR picture -> a data: URL the page can show directly (JPEG, ~3 KB at 80x80)."""
+    import base64
+    ok, encoded = cv2.imencode(".jpg", picture, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    return "data:image/jpeg;base64," + base64.b64encode(encoded.tobytes()).decode("ascii") if ok else None
+
+
+def build_face_report(state, drawn, best_track_by_student, gallery, identity_map, args, crops_dir=None, stamp=""):
+    """
+    One entry per face worth showing to the faculty, in the same order and with the same filtering as the boxes on
+    the final picture:
+      status  "matched"      named a student (and is that student's best track)
+              "unmatched"    a face big enough to be recognised that nobody matched; `suggestions` lists who it
+                             most looks like among the students NOT already present
+    When `crops_dir` is given, the aligned 112x112 crop the recognizer saw is saved there as <stamp>_t<track>.png
+    (lossless) and named in `crop_file`: this is what is added to a student's gallery once the faculty confirms.
+    """
+    gallery_embeddings, gallery_names = gallery
+    present_ids = set(state.present)
+    faces = []
+    for track_id, box in drawn:
+        student_id = state.track_identity.get(track_id)
+        is_best = student_id is not None and best_track_by_student[student_id][1] == track_id
+        width = state.track_widths.get(track_id, float(box[2] - box[0]))
+        if is_best:
+            status = "matched"
+        else:
+            status = "unmatched"
+        pool = state.track_pools.get(track_id)
+        entry = {"track_id": track_id, "status": status, "width_px": round(width, 1),
+                 "bbox": [round(float(v), 1) for v in box],
+                 "student_id": student_id if is_best else None,
+                 "score": None if track_id not in state.track_best_scores else round(state.track_best_scores[track_id], 4),
+                 "quality": None if pool is None or pool.best_quality() is None else round(pool.best_quality(), 2),
+                 "crop_score": None,
+                 "suggestions": [], "crop_file": None, "thumb": None}
+        if status != "matched" and pool is not None and pool.pooled() is not None and args.suggestions > 0:
+            entry["suggestions"] = rank_candidates(pool.pooled(), gallery_embeddings, gallery_names, identity_map,
+                                                   exclude_student_ids=present_ids, top_n=args.suggestions,
+                                                   min_score=args.suggest_min_score)
+        # The crop kept for the gallery is the SHARPEST of the track's best looks, and it is ranked by face width x
+        # sharpness: more real pixels and a crisper picture, whatever the model's feature norm says (the norm was
+        # nearly flat across a whole classroom, so it could not tell a good look from a poor one).
+        aligned, sharpness = pool.sharpest_aligned(sharpness_of) if pool is not None else (None, None)
+        if aligned is not None:
+            entry["crop_score"] = round(width * sharpness, 1)
+        if crops_dir and aligned is not None:
+            crops_dir = Path(crops_dir)
+            crops_dir.mkdir(parents=True, exist_ok=True)
+            file_name = f"{stamp}_t{track_id}.png"
+            cv2.imwrite(str(crops_dir / file_name), aligned)
+            entry["crop_file"] = file_name
+        if track_id in state.track_thumbs:
+            entry["thumb"] = thumb_data_url(state.track_thumbs[track_id][1])
+        faces.append(entry)
+    return faces
+
+
 def run_attendance(model, video, identity_map, args, gallery_dir, cache_key, annotated_out=None,
-                   debug_dir=None, memory_cache=None, log=print, snapshot_dir=None, stream=None, infer_lock=None):
+                   debug_dir=None, memory_cache=None, log=print, snapshot_dir=None, stream=None, infer_lock=None,
+                   crops_dir=None):
     """
     Scan one video and return the result dict (present/absent students, timings, ...).
 
@@ -1144,6 +1300,7 @@ def run_attendance(model, video, identity_map, args, gallery_dir, cache_key, ann
     log          function that receives each progress line (print, or the server's collector)
     stream       optional LiveStream (server.py passes a shared, already-open one). Without it, an rtsp:// `video`
                  gets a private LiveStream that is closed when the scan ends.
+    crops_dir    optional folder: the aligned crop of every reported face is saved there (see build_face_report)
     infer_lock   optional context manager held while the models run (gallery build, one frame of detection +
                  recognition) - NOT while waiting for the camera. server.py shares one between all scans, so several
                  classes can be scanned at once: while one waits for its next frame, another uses the models.
@@ -1156,7 +1313,8 @@ def run_attendance(model, video, identity_map, args, gallery_dir, cache_key, ann
 
     with timings.measure("gallery (load/build)"), infer_lock:
         gallery = build_gallery(model, gallery_dir, cache_key, only_folders=set(identity_map),
-                                memory_cache=memory_cache, log=log)
+                                memory_cache=memory_cache, log=log,
+                                degrade_widths=tuple(args.gallery_degrade_widths or ()))
     if gallery[0] is None:
         raise RecognitionError(f"No gallery found for this roster in {gallery_dir} - see recognize.py's "
                                f"docstring for the expected layout.")
@@ -1255,13 +1413,24 @@ def run_attendance(model, video, identity_map, args, gallery_dir, cache_key, ann
     result = {"video": mask_url(video), "source": "live" if live else "file", "processed_frames": processed,
               "present_students": present_students, "absent_students": absent_students}
 
+    # Which faces to show: the same selection draws the boxes on the picture and fills the review list
+    drawn, best_track_by_student = select_tracks(state.track_boxes, state.track_identity, state.track_best_scores,
+                                                 state.track_sightings, state.track_last_seen, state.frames_processed)
+    faces = build_face_report(state, drawn, best_track_by_student, gallery, identity_map, args,
+                              crops_dir=crops_dir, stamp=time.strftime("%Y%m%d%H%M%S"))
+    result["faces"] = faces
+    result["faces_detected"] = len(faces)
+    result["face_counts"] = {status: sum(1 for face in faces if face["status"] == status)
+                             for status in ("matched", "unmatched")}
+
     if annotated_out and last_crop is not None:
         with timings.measure("save annotated image"):
             out_path = save_aggregate_annotation(annotated_out, last_crop, state.track_boxes, state.track_identity,
                                                  state.track_best_scores, state.present, identity_map,
                                                  track_sightings=state.track_sightings,
                                                  track_last_seen=state.track_last_seen,
-                                                 frames_processed=state.frames_processed)
+                                                 frames_processed=state.frames_processed,
+                                                 drawn=drawn, best_track_by_student=best_track_by_student)
         result["annotated_image"] = str(out_path)
         log(f"  annotated image: {out_path}")
 
@@ -1320,6 +1489,17 @@ def parse_args():
                         help="skip blurry crops below this Laplacian-variance score - free, no attempt spent; tune on your own footage")
     parser.add_argument("--min-norm", type=float, default=DEFAULT_SETTINGS["min_norm"],
                         help="ignore a recognition attempt if AdaFace's own quality score is below this (the attempt still counts against --max-attempts); 0 = disabled until calibrated. Re-calibrate after switching to an int8 model - its norms differ slightly")
+    parser.add_argument("--no-pool", dest="pool_attempts", action="store_false",
+                        help="match each look at a face on its own, instead of also matching the average of its best looks")
+    parser.add_argument("--pool-top-k", type=int, default=DEFAULT_SETTINGS["pool_top_k"],
+                        help="how many of a face's best looks are averaged")
+    parser.add_argument("--suggestions", type=int, default=DEFAULT_SETTINGS["suggestions"],
+                        help="how many 'might be' students to list for each unmatched face")
+    parser.add_argument("--suggest-min-score", type=float, default=DEFAULT_SETTINGS["suggest_min_score"])
+    parser.add_argument("--gallery-degrade", dest="gallery_degrade_widths", type=parse_widths,
+                        default=parse_widths(os.environ.get("CCTV_GALLERY_DEGRADE", "")),
+                        help="e.g. '20,28': also keep CCTV-quality copies of every gallery photo (measure with bakeoff.py first)")
+    parser.add_argument("--crops-dir", default=None, help="save the aligned crop of each reported face here")
     parser.add_argument("--start", type=float, default=DEFAULT_SETTINGS["start"], help="seconds into the clip to start at")
     parser.add_argument("--verbose", action="store_true", help="log one line per processed frame")
     parser.add_argument("--debug-dir", default=None, help="save a snapshot of each newly-confirmed match here")
@@ -1349,7 +1529,7 @@ def main():
     try:
         result = run_attendance(model, args.video, identity_map, settings, args.gallery, cache_key,
                                 annotated_out=args.annotated_out, debug_dir=args.debug_dir,
-                                snapshot_dir=args.snapshot_dir)
+                                snapshot_dir=args.snapshot_dir, crops_dir=args.crops_dir)
     except RecognitionError as error:
         sys.exit(mask_url(error))
 

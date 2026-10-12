@@ -126,12 +126,18 @@
   white-space: nowrap;
 }
 .sh-count b {
-  font-size: var(--text-2xl);
+  font-size: var(--text-4xl);
+  font-weight: 700;
+  line-height: 1;
   color: var(--ink-900);
+}
+#shTotal {
+  font-size: var(--text-2xl);
+  font-weight: 600;
 }
 .sh-count-label {
   display: block;
-  font-size: var(--text-sm);
+  font-size: var(--text-lg);
 }
 .sh-meta,
 .sh-class-list {
@@ -229,70 +235,6 @@
   font-size: 0.875rem;
 }
 
-/* ---- About this result: plain-language facts under the CCTV picture ---- */
-.cctv-details {
-  display: grid;
-  gap: var(--space-3);
-  margin-top: var(--space-4);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--line);
-}
-.cctv-details[hidden] {
-  display: none;
-}
-.cctv-details h3 {
-  margin: 0;
-  font-size: var(--text-base);
-}
-.cctv-facts,
-.cctv-legend {
-  display: grid;
-  gap: var(--space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: var(--text-sm);
-}
-.cctv-facts li {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-3);
-}
-.cf-label {
-  min-width: 8.5rem;
-  color: var(--ink-500);
-}
-.cf-value {
-  font-weight: 600;
-  color: var(--ink-900);
-}
-.cctv-legend li {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--ink-700);
-}
-.swatch {
-  flex: none;
-  width: 1rem;
-  height: 1rem;
-  border-radius: 3px;
-}
-/* Same colours the annotated picture uses */
-.swatch-orange {
-  background: #ffa500;
-}
-.swatch-green {
-  background: #00c800;
-}
-.swatch-red {
-  background: #dc0000;
-}
-.cctv-advice {
-  margin: 0;
-  font-size: var(--text-sm);
-  color: var(--ink-500);
-}
 .qr-panel {
   padding: var(--space-5);
 }
@@ -360,50 +302,61 @@
   font-size: var(--text-sm);
   color: var(--ink-500);
 }
+/* Full screen: the picture takes the whole screen; the toolbar and hint float over it on a see-through band */
 .cctv-viewer:fullscreen {
-  display: flex;
-  flex-direction: column;
-  padding: var(--space-4);
-  background: var(--canvas);
+  position: relative;
+  display: block;
+  padding: 0;
+  background: #000;
 }
 .cctv-viewer:fullscreen .cctv-stage {
-  flex: 1;
-  min-height: 0;
+  position: absolute;
+  inset: 0;
   border-radius: 0;
   background: #000;
 }
 .cctv-viewer:fullscreen #cctvResultImage {
+  width: 100%;
   height: 100%;
   object-fit: contain;
+}
+.cctv-viewer:fullscreen .zoom-bar,
+.cctv-viewer:fullscreen .zoom-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  color: #fff;
+  pointer-events: none; /* only the buttons catch clicks; the picture underneath stays draggable */
+}
+.cctv-viewer:fullscreen .zoom-bar {
+  top: 0;
+  background: linear-gradient(rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0));
+}
+.cctv-viewer:fullscreen .zoom-hint {
+  bottom: 0;
+  background: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.55));
+  text-align: center;
+}
+.cctv-viewer:fullscreen .zoom-bar > * {
+  pointer-events: auto;
+}
+.cctv-viewer:fullscreen .zoom-level {
+  color: #fff;
 }
 
 .roster-panel {
   padding: var(--space-5);
 }
-.roster-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--space-3);
-}
-.count {
-  font-size: var(--text-4xl);
-  font-weight: 700;
-  color: var(--ink-900);
-  line-height: 1;
-}
-.count-total {
-  font-size: var(--text-2xl);
-  font-weight: 600;
-  color: var(--ink-500);
-}
-.count-label {
-  font-size: var(--text-lg);
-  color: var(--ink-500);
-}
 #liveStatus {
   font-size: var(--text-sm);
   color: var(--ink-500);
+  margin: 0;
+}
+#liveStatus:empty {
+  display: none;
 }
 .roster-actions {
   display: flex;
@@ -418,7 +371,7 @@
   padding: 0;
   display: grid;
   gap: var(--space-2);
-  max-height: calc(100vh - 26rem);
+  max-height: calc(100vh - 17rem);
   min-height: 8rem;
   overflow-y: auto;
 }
@@ -525,9 +478,6 @@
   }
   .roster-name {
     font-size: var(--text-base);
-  }
-  .count {
-    font-size: var(--text-3xl);
   }
 }
 /* Projectors are usually wide but short: keep the QR square and fully visible without scrolling */
@@ -667,10 +617,15 @@
   font-weight: 600;
 }
 
-/* A student marked absent stays in the Present list, outlined in red */
+/* A student the teacher took off stays in the list, outlined in red with the name struck through (Undo brings them back) */
 .roster-row[data-mode='absent'] {
   border: 2px solid var(--danger-600);
   background: var(--danger-50);
+}
+.roster-row[data-mode='absent'] .roster-name {
+  /* text-decoration: line-through; */
+  text-decoration-thickness: 2px;
+  color: var(--ink-500);
 }
 .roster-row[data-mode='absent'] .roster-meta {
   color: var(--danger-600);
@@ -778,4 +733,13 @@
 }
 #submitWarn {
   margin-top: var(--space-3);
+}
+/* CCTV scan progress line */
+.cctv-countdown {
+  margin: 0 0 var(--space-2);
+  font-weight: 600;
+  color: var(--ink-700);
+}
+.cctv-countdown[hidden] {
+  display: none;
 }

@@ -3,7 +3,7 @@ import { randomBytes } from 'crypto';
 import utils from '../utils/in-memory-db.js';
 import { dbAll, dbGet, dbRun, withTransaction } from '../utils/db.js';
 import { getIO } from '../utils/socket-io.js';
-import { warmSessionCamera, releaseSessionCamera } from './cctv.routes.js';
+import { warmSessionCamera, releaseSessionCamera, growGalleryFromSession } from './cctv.routes.js';
 import { isValidDate, weekdayName } from '../utils/dates.js';
 import {
   resolveFacultyId,
@@ -380,6 +380,10 @@ router.post('/finalize', async (req, res) => {
     getIO().to(sessionCode).emit('session_finalized', { sessionCode });
     // The class is over: close its camera connection (no-op for QR sessions).
     void releaseSessionCamera(sessionCode);
+    // CCTV only: crops of the students the faculty confirmed join their galleries (no-op for QR sessions).
+    void growGalleryFromSession(sessionCode, checkedStudentIds).catch(error =>
+      console.warn(`[cctv] could not add face crops to galleries: ${error.message}`),
+    );
     return res.json({ ok: true, message: 'Finalized' });
   } catch (err) {
     console.error(err);

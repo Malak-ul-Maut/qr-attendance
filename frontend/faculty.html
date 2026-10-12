@@ -214,6 +214,7 @@
                     stay marked.
                   </p>
                 </div>
+                <p id="cctvCountdown" class="cctv-countdown" role="status" hidden></p>
                 <div id="cctvSkeleton" class="skeleton"></div>
                 <div
                   id="cctvError"
@@ -298,45 +299,10 @@
                     to zoom in.
                   </p>
                 </div>
-
-                <!-- Plain-language facts about the picture above -->
-                <section
-                  id="cctvDetails"
-                  class="cctv-details"
-                  aria-labelledby="cctvDetailsTitle"
-                  hidden>
-                  <h3 id="cctvDetailsTitle">About this result</h3>
-                  <ul id="cctvFacts" class="cctv-facts"></ul>
-                  <ul
-                    class="cctv-legend"
-                    aria-label="What the box colours mean">
-                    <li>
-                      <span
-                        class="swatch swatch-green"
-                        aria-hidden="true"></span>
-                      Green box: a student the system recognised (name and match
-                      score shown)
-                    </li>
-                    <li>
-                      <span class="swatch swatch-red" aria-hidden="true"></span>
-                      Red box: a face the camera found but could not match to
-                      this class
-                    </li>
-                  </ul>
-                  <p id="cctvAdvice" class="cctv-advice"></p>
-                </section>
               </div>
             </div>
 
             <div class="card roster-panel">
-              <div class="roster-head">
-                <div>
-                  <span id="studentCount" class="count">0</span
-                  ><span id="studentTotal" class="count-total"></span
-                  ><span class="count-label"> present</span>
-                </div>
-                <p id="liveStatus" role="status"></p>
-              </div>
               <div class="roster-actions">
                 <button
                   id="add-manually-btn"
@@ -352,29 +318,8 @@
                 </button>
               </div>
 
+              <p id="liveStatus" class="live-status" role="status"></p>
               <div class="roster-filter">
-                <div
-                  class="segmented roster-tabs"
-                  role="radiogroup"
-                  aria-label="Show students who are">
-                  <label
-                    ><input
-                      type="radio"
-                      name="roster-filter"
-                      value="present"
-                      checked /><span
-                      >Present <b id="tabPresent">0</b></span
-                    ></label
-                  >
-                  <label
-                    ><input
-                      type="radio"
-                      name="roster-filter"
-                      value="absent" /><span
-                      >Absent <b id="tabAbsent">0</b></span
-                    ></label
-                  >
-                </div>
                 <input
                   id="rosterSearch"
                   class="input"

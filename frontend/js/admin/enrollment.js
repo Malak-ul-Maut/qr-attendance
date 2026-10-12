@@ -24,21 +24,36 @@ const table = createDataTable({
     { key: 'roll', label: 'Roll no.', sortable: true, num: true, get: s => s.roll_number },
     { key: 'class', label: 'Classroom', sortable: true, get: s => s.classroomLabel },
     { key: 'status', label: 'Photos', sortable: true, get: s => (s.faceStatus === 'pending' ? 'A' : s.faceStatus === 'rejected' ? 'B' : s.faceStatus === 'none' ? 'C' : 'D'),
-      render: (s, td) => td.append(h('span', { class: `badge ${STATUS[s.faceStatus][1]}`, text: STATUS[s.faceStatus][0] }),
-        ...(s.faceStatus === 'rejected' && s.rejectReason ? [h('small', { class: 'adm-help', text: ` ${s.rejectReason}` })] : [])) },
+      render: (s, td) => {
+        // Photos placed in the folder by hand count as enrolled for the CCTV camera.
+        const gallery = s.galleryOnly;
+        td.append(h('span', { class: `badge ${gallery ? 'badge-success' : STATUS[s.faceStatus][1]}`, text: gallery ? '✓ In gallery (CCTV)' : STATUS[s.faceStatus][0] }),
+          ...(s.faceStatus === 'rejected' && s.rejectReason ? [h('small', { class: 'adm-help', text: ` ${s.rejectReason}` })] : []));
+        // The server's check of the photos with the same models that read the CCTV.
+        if (s.qa) td.append(' ', h('span', { class: `badge ${s.qa.status === 'ok' ? 'badge-success' : 'badge-warning'}`,
+          text: s.qa.status === 'ok' ? 'Photos look good' : 'Check photos',
+          title: s.qa.status === 'ok' ? '' : s.qa.reasons.join('\n') }));
+      } },
     { key: 'photos', label: 'Photo files', help: 'Images saved for this student', num: true, get: s => s.photos,
       render: (s, td) => td.append(
         h('span', { text: String(s.photos) }), ' ',
         s.photos ? h('button', { class: 'link-btn', type: 'button', text: s.faceStatus === 'pending' ? 'Review' : 'Preview', 'aria-label': `Preview ${s.photos} photo${s.photos === 1 ? '' : 's'} of ${s.name}`, onclick: () => openPhotos(s) }) : null) },
     { key: 'actions', label: 'Actions',
-      render: (s, td) => s.enrolled && s.faceStatus !== 'pending' && td.append(h('button', { class: 'btn btn-danger btn-sm', type: 'button', text: 'Reset', 'aria-label': `Reset face data of ${s.name}`,
-        onclick: () => askConfirm({ title: `Reset ${s.name}'s face data?`, text: 'The saved face template is removed and the student will need to upload photos again. The photo files are kept.',
+      render: (s, td) => {
+        if (s.photos) td.append(h('button', { class: 'btn btn-secondary btn-sm', type: 'button', text: 'Check', 'aria-label': `Check photo quality of ${s.name}`,
+          onclick: async () => {
+            try { await api(`/api/admin/enrollment/${s.id}/check`, { method: 'POST' }); showToast('Photos checked.', 'success'); load(); }
+            catch (error) { showToast(errorText(error), 'error'); }
+          } }), ' ');
+        return s.enrolled && s.faceStatus !== 'pending' && td.append(h('button', { class: 'btn btn-danger btn-sm', type: 'button', text: 'Reset', 'aria-label': `Reset face data of ${s.name}`,
+        onclick: () => askConfirm({ title: `Reset ${s.name}'s face data?`, text: 'The saved face template and the photos the student took are removed, and they will need to upload photos again. Photos you added by hand stay.',
           confirmLabel: 'Reset', cancelLabel: 'Keep', reasons: RESET_REASONS, failText: 'Could not reset. Try again.',
           run: async reason => {
             try { await api(`/api/admin/enrollment/${s.id}/reset`, { method: 'POST', body: { reason } }); } catch (error) { throw Object.assign(error, { message: errorText(error) }); }
             showToast('Face data reset.', 'success');
             load();
-          } }) })) },
+          } }) }));
+      } },
   ],
 });
 

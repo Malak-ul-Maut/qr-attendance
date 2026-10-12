@@ -13,7 +13,9 @@ function signOut() {
   window.location.replace('/login-page.html?role=student');
 }
 
-export async function api(path, { method = 'GET', body } = {}) {
+// timeoutMs: give up on a request that has not finished after this long (0 = wait for ever). A stalled upload on a weak
+// mobile connection would otherwise leave the spinner turning for ever.
+export async function api(path, { method = 'GET', body, timeoutMs = 0 } = {}) {
   const token = getCurrentUser()?.token;
   if (!token) {
     signOut();
@@ -28,10 +30,11 @@ export async function api(path, { method = 'GET', body } = {}) {
         ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : undefined,
     });
   } catch (error) {
     console.error('API request failed', error);
-    return { ok: false, status: 0, error: 'network' };
+    return { ok: false, status: 0, error: error?.name === 'TimeoutError' ? 'timeout' : 'network' };
   }
 
   let data = null;
@@ -56,4 +59,4 @@ export async function api(path, { method = 'GET', body } = {}) {
 }
 
 export const apiGet = path => api(path);
-export const apiPost = (path, body) => api(path, { method: 'POST', body });
+export const apiPost = (path, body, options = {}) => api(path, { method: 'POST', body, ...options });

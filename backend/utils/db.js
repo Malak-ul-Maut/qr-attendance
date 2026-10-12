@@ -34,6 +34,9 @@ db.serialize(() => {
   for (const [column, type] of [
     ['face_embedding_model', 'TEXT'],
     ['face_enrolled_at', 'DATETIME'],
+    // Photo check made by the CCTV models after the photos are saved (see enroll_qa.py): JSON text, and when.
+    ['face_qa', 'TEXT'],
+    ['face_qa_at', 'DATETIME'],
   ]) {
     db.run(`ALTER TABLE students ADD COLUMN ${column} ${type}`, err => {
       if (err && !/duplicate column/i.test(err.message))

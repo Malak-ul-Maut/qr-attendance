@@ -11,3 +11,4 @@ backend/models
 backend/cache/
 backend/results/
 backend/*.avi
+backend/crop-staging

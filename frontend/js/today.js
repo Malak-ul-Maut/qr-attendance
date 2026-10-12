@@ -123,16 +123,18 @@ function alerts(data) {
   const out = [];
   if (stale)
     out.push(h('p', { class: 'note note-warning', role: 'status', text: `Couldn't refresh. Showing the last update from ${fmtTime(stale.at)}.` }));
-  if (me.mustChangePassword || !me.faceEnrolled) {
+  // A student whose photos were added by hand is already known to the CCTV camera, so is not nagged to enrol.
+  const needsFace = !me.faceEnrolled && !me.galleryEnrolled;
+  if (me.mustChangePassword || needsFace) {
     const items = [];
     if (me.mustChangePassword) items.push(['Change your password', 'You are still using the default one.']);
-    if (!me.faceEnrolled) items.push(me.faceStatus === 'pending' ? ['Face photos waiting for approval', 'The admin office is checking them. Until then, ask your teacher to mark you.']
+    if (needsFace) items.push(me.faceStatus === 'pending' ? ['Face photos waiting for approval', 'The admin office is checking them. Until then, ask your teacher to mark you.']
       : me.faceStatus === 'rejected' ? ['Face photos were rejected', `${me.faceRejectReason || 'Please take them again.'} Take new photos in Profile.`]
       : ['Add your face photos', "You can't mark attendance until your face is enrolled."]);
     out.push(h('section', { class: 'card checklist', 'aria-labelledby': 'setupTitle' },
       h('h2', { id: 'setupTitle', text: 'Finish setting up' }),
       h('ul', {}, items.map(([title, why]) => h('li', {}, h('strong', { text: title }), h('span', { text: why })))),
-      h('button', { class: 'btn btn-secondary', type: 'button', 'data-focus-key': 'goto-profile', onclick: () => window.dispatchEvent(new CustomEvent('student:goto', { detail: 'profile' })), text: me.mustChangePassword ? 'Change password' : me.faceStatus === 'pending' ? 'View status' : 'Add face photos' })));
+      h('button', { class: 'btn btn-secondary', type: 'button', 'data-focus-key': 'goto-profile', onclick: () => window.dispatchEvent(new CustomEvent('student:goto', { detail: 'profile' })), text: needsFace ? (me.faceStatus === 'pending' ? 'View status' : 'Add face photos') : 'Change password' })));
   }
   if (data.timetableChange)
     out.push(h('p', { class: 'note note-info', text: `Your timetable changes on ${formatDay(data.timetableChange.startsOn)}.` }));

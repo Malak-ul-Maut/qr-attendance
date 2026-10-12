@@ -4,8 +4,8 @@ import { apiGet, apiPost } from './api.js';
 import { h } from './dom.js';
 import { engine } from './face/engine.js';
 import { openCamera, nextFrame, stopCamera as stopVideo } from './face/camera.js';
-import { assessFrame, snapshotFrame, embedSnapshot, runFaceCheck, clearOverlay, drawDetection, HINT_TEXT, FACE_TIPS } from './face-verify.js';
-import { averageTemplate, checkPose, cosine, estimatePose, plausibleFace, shotsFor } from './pose.js';
+import { assessFrame, snapshotFrame, embedSnapshot, runFaceCheck, clearOverlay, drawDetection, HINT_TEXT, FACE_TIPS, FACE_SETTINGS } from './face-verify.js';
+import { averageTemplate, checkPose, cosine, estimatePose, plausibleFace, shotsFor, targetNose } from './pose.js';
 import { getCurrentUser } from '../utils/storage.js';
 
 const FACE_MODEL = 'w600k_mbf'; // must match the server
@@ -15,12 +15,29 @@ const SETTINGS = {
   intervalMs: 110,
   shotBudgetMs: 40000, // per photo
   samePersonMin: 0.3, // a new photo must look like the earlier ones (loose: poses differ)
-  stillSize: 1280, // longest side of the saved photo
-  jpegQuality: 0.92,
+  stillSize: 960, // longest side of the saved photo (the recognizer sees 112 px; bigger only slows the upload on mobile data)
+  jpegQuality: 0.85,
+  uploadTimeoutMs: 90000, // give up on a stalled upload and offer "Try again"
   maxMismatches: 3,
   graceFrames: 2, // frames in a row that may fall outside the pose window before the hold-still count restarts (landmarks jitter)
+  candidateFrames: 4, // the last this-many good frames of a pose are kept; the sharpest two are saved (best + runner-up)
   noticeMs: 2200, // how long a failure message stays readable before 'Hold still' replaces it
 };
+
+// Short two-language messages for the guided flow (the long English ones in face-verify.js stay for the QR check).
+const ENROL_HINTS = {
+  ...HINT_TEXT,
+  noface: 'चेहरा फ्रेम में लाएँ · Face in the frame',
+  multiple: 'सिर्फ़ आप · Only you in view',
+  far: 'पास आएँ · Move closer',
+  close: 'थोड़ा दूर · Move back a little',
+  dark: 'रोशनी में जाएँ · More light',
+  blurry: 'स्थिर रहें · Hold still',
+  backlit: 'रोशनी सामने से · Light in front, not behind',
+  sidelit: 'रोशनी की ओर मुँह करें · Face the light',
+  glare: 'तेज़ चमक · Too bright on your face',
+};
+const ENROL_ASSESS = { ...FACE_SETTINGS, lightChecks: true };
 
 const $ = sel => document.querySelector(sel);
 const dialog = $('#capture-section');
@@ -140,6 +157,7 @@ async function prepare(id) {
   try {
     camera = await openCamera(video, {
       facingMode: 'user',
+      ideal: { width: 1920, height: 1440 }, // sharper frames to choose from; the phone falls back if it cannot
       onWaiting: text => { if (isRunning(id) && !cameraLive) showLoading(text, null, ''); },
     });
   } catch (error) {
@@ -196,8 +214,8 @@ async function enrol(id, shots) {
   for (let i = 0; i < shots.length; i++) {
     markDots(i, taken.length);
     const shot = shots[i];
-    instruction.textContent = shot.title;
-    hint.textContent = `${shot.hint}  (Photo ${i + 1} of ${shots.length})`;
+    instruction.textContent = shot.short; // big, two languages, nearly all the guidance; the ring on the picture does the rest
+    hint.textContent = `${i + 1} / ${shots.length}`;
     $('#captureCamera').hidden = false;
 
     let result;
@@ -232,7 +250,7 @@ async function enrol(id, shots) {
       });
     }
     if (i === 0) baseline = result.baseline;
-    taken.push({ shot, dataUrl: result.dataUrl, embedding: result.embedding });
+    taken.push({ shot, dataUrl: result.photos[0].dataUrl, photos: result.photos, embedding: result.embedding });
     if (navigator.vibrate) navigator.vibrate(40);
     setStatus('Got it.');
     await sleep(500);
@@ -260,6 +278,7 @@ async function captureShot({ id, engine: eng, shot, baseline, taken, onMismatch 
   let noticeUntil = 0; // while now < noticeUntil a failure message stays on screen
   const say = (text, bad = false) => { if (performance.now() >= noticeUntil) setStatus(text, bad); };
   const notice = (text, bad = true) => { setStatus(text, bad); noticeUntil = performance.now() + SETTINGS.noticeMs; };
+  const candidates = []; // the last few good frames of this pose, each a full-size snapshot
   const templateSoFar = taken.filter(t => t.shot.template).map(t => t.embedding);
 
   while (isRunning(id)) {
@@ -267,7 +286,7 @@ async function captureShot({ id, engine: eng, shot, baseline, taken, onMismatch 
       const top = Object.entries(problems).sort((a, b) => b[1] - a[1])[0]?.[0] || 'noface';
       // The tip for the most common problem, plus the raw counts so a failure can be understood
       const tip = top === 'pose' ? `Follow the instruction on screen: ${shot.title.toLowerCase()}, and hold still.` : FACE_TIPS[top] || 'Make sure your face is well lit and fully in view.';
-      const names = { noface: 'no face', multiple: 'more than one face', far: 'too far', dark: 'too dark', blurry: 'blurry', pose: 'head position', };
+      const names = { noface: 'no face', multiple: 'more than one face', far: 'too far', close: 'too close', dark: 'too dark', blurry: 'blurry', backlit: 'light behind you', sidelit: 'light on one side', glare: 'too bright', pose: 'head position' };
       const detail = Object.entries(problems).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${names[k] || k}: ${n}`).join(', ');
       console.warn('[enrol] photo timed out', { shot: shot.id, problems });
       return { status: 'timeout', tip, detail };
@@ -280,30 +299,33 @@ async function captureShot({ id, engine: eng, shot, baseline, taken, onMismatch 
 
     if (faces.length !== 1) {
       const key = faces.length ? 'multiple' : 'noface';
-      note(key); stable = 0; misses = 0; if (faces[0]) drawBox(faces[0], null); else clearOverlay(overlay); say(HINT_TEXT[key]);
+      note(key); stable = 0; misses = 0; candidates.length = 0; if (faces[0]) drawBox(faces[0], null); else clearOverlay(overlay); say(ENROL_HINTS[key]);
     } else if (!plausibleFace(faces[0])) {
-      note('noface'); stable = 0; misses = 0; drawBox(faces[0], null); say(HINT_TEXT.noface);
+      note('noface'); stable = 0; misses = 0; candidates.length = 0; drawBox(faces[0], null); say(ENROL_HINTS.noface);
     } else {
       const face = faces[0];
-      const gate = assessFrame(video, face);
+      const gate = assessFrame(video, face, ENROL_ASSESS);
       if (!gate.ok) {
-        note(gate.hint); stable = 0; misses = 0; drawBox(face, null); say(HINT_TEXT[gate.hint]);
+        note(gate.hint); stable = 0; misses = 0; candidates.length = 0; drawBox(face, null); say(ENROL_HINTS[gate.hint]);
       } else {
         const pose = estimatePose(face.landmarks, baseline ? baseline.roll : null);
         const check = checkPose(shot, pose, baseline ? { pitch: baseline.pitch } : null);
-        drawBox(face, check.ok);
+        drawBox(face, check.ok, targetNose(face.landmarks, shot, baseline));
         if (!check.ok && ++misses <= SETTINGS.graceFrames && stable > 0) {
           // one or two jittery frames while holding still: keep the count instead of starting again
         } else if (!check.ok) {
-          note('pose'); stable = 0; say(check.hint);
+          note('pose'); stable = 0; candidates.length = 0; say(check.hint);
         } else {
           misses = 0;
           stable++;
           // Everything below uses THIS frame (frames are not kept between loops).
           const current = { face, quality: gate.quality, pose };
-          say(`Hold still (${Math.min(stable, SETTINGS.stableFrames)}/${SETTINGS.stableFrames})`);
+          // keep this frame (full size) as a candidate; only the last few are remembered
+          candidates.push({ snapshot: snapshotFrame(video, face, gate.quality, SETTINGS.stillSize), sharpness: gate.sharpness, light: gate.brightness, facePx: gate.facePx, pose });
+          if (candidates.length > SETTINGS.candidateFrames) candidates.shift();
+          say(`स्थिर रहें · Hold still (${Math.min(stable, SETTINGS.stableFrames)}/${SETTINGS.stableFrames})`);
           if (stable >= SETTINGS.stableFrames) {
-            const taken1 = await takePhoto({ engine, current, templateSoFar });
+            const taken1 = await takePhoto({ engine, shot, candidates, templateSoFar });
             if (!isRunning(id)) break;
             if (taken1.status === 'ok') return { ...taken1, baseline: shot.id === 'front' ? { pitch: current.pose.pitch, roll: current.pose.roll } : null };
             if (taken1.status === 'mismatch') {
@@ -311,6 +333,7 @@ async function captureShot({ id, engine: eng, shot, baseline, taken, onMismatch 
               notice('That does not look like the earlier photos. Face the camera and try again.');
             }
             stable = 0;
+            candidates.length = 0;
           }
         }
       }
@@ -321,21 +344,44 @@ async function captureShot({ id, engine: eng, shot, baseline, taken, onMismatch 
   return { status: 'cancelled' };
 }
 
-// The embedding and the saved photo, from the same instant.
-async function takePhoto({ engine, current, templateSoFar }) {
-  const small = snapshotFrame(video, current.face, current.quality, 640);
-  const embedding = await embedSnapshot(engine, small);
+// Picks the sharpest two of the last few good frames (motion blur is the usual flaw), embeds both and averages the
+// two embeddings: steadier than one frame. The sharpest is the main photo; the runner-up is saved too, as extra
+// raw material (the server can use it later without asking the student again).
+async function takePhoto({ engine, shot, candidates, templateSoFar }) {
+  const ranked = [...candidates].sort((a, b) => b.sharpness - a.sharpness).slice(0, 2);
+  const embeddings = [];
+  for (const candidate of ranked) embeddings.push(await embedSnapshot(engine, candidate.snapshot));
+  const embedding = embeddings.length > 1 ? averageTemplate(embeddings) : embeddings[0];
   if (templateSoFar.length) {
     const mean = averageTemplate(templateSoFar);
     if (cosine(embedding, mean) < SETTINGS.samePersonMin) return { status: 'mismatch' };
   }
-  const still = snapshotFrame(video, current.face, current.quality, SETTINGS.stillSize);
-  return { status: 'ok', embedding: Array.from(embedding), dataUrl: still.canvas.toDataURL('image/jpeg', SETTINGS.jpegQuality) };
+  const photos = ranked.map((candidate, index) => ({
+    dataUrl: candidate.snapshot.canvas.toDataURL('image/jpeg', SETTINGS.jpegQuality),
+    meta: { shot: shot.id, rank: index + 1, sharpness: candidate.sharpness, yaw: candidate.pose.yaw, pitch: candidate.pose.pitch, light: candidate.light, facePx: candidate.facePx },
+  }));
+  return { status: 'ok', embedding: Array.from(embedding), photos };
 }
 
-// good: true = green (right pose), false = red (wrong pose), null = amber (frame not usable yet, see the hint)
-function drawBox(face, good) {
-  drawDetection(overlay, video, face, '', good === null ? '#f59f00' : good ? '#2f9e44' : '#e5484d');
+// good: true = green (right pose), false = red (wrong pose), null = amber (frame not usable yet, see the hint).
+// target: where the nose should be ({x, y, rx, ry, angle}); drawn as a ring, with a dot on the real nose. Moving the
+// dot into the ring is the whole instruction, so it works without reading.
+function drawBox(face, good, target = null) {
+  const color = good === null ? '#f59f00' : good ? '#2f9e44' : '#e5484d';
+  drawDetection(overlay, video, face, '', color);
+  if (!target) return;
+  const context = overlay.getContext('2d');
+  const nose = face.landmarks[2];
+  const lineWidth = Math.max(4, overlay.width / 160);
+  context.lineWidth = lineWidth;
+  context.strokeStyle = '#ffffff';
+  context.beginPath();
+  context.ellipse(target.x, target.y, target.rx, target.ry, target.angle, 0, Math.PI * 2);
+  context.stroke();
+  context.fillStyle = color;
+  context.beginPath();
+  context.arc(nose.x, nose.y, lineWidth * 1.6, 0, Math.PI * 2);
+  context.fill();
 }
 
 // ---- review and save ----
@@ -348,7 +394,7 @@ function review(taken) {
     thumbs,
     buttons: [
       { label: 'Save my photos', primary: true, onclick: () => save(taken) },
-      { label: 'Start over', onclick: () => { const wears = taken.length > 7; open('Add your face photos'); enrol(run, shotsFor(wears)); } },
+      { label: 'Start over', onclick: () => { const wears = taken.some(t => t.shot.id === 'no-glasses'); open('Add your face photos'); enrol(run, shotsFor(wears)); } },
     ],
   });
 }
@@ -359,6 +405,7 @@ const SAVE_ERRORS = {
   password_change_required: ['Change your password first.', 'You can do it in Profile.'],
   too_many_attempts: ['Too many tries.', 'Wait an hour, or ask the admin office.'],
   network: ['No connection to the server.', 'Check your Wi-Fi or mobile data, then try again.'],
+  timeout: ['The upload is taking too long.', 'Your connection is slow. Move to better Wi-Fi or mobile signal and try again. Nothing was lost.'],
   wrong_face_model: ['This version of the app is out of date.', 'Reload the page and try again.'],
 };
 
@@ -369,11 +416,10 @@ async function save(taken) {
   const buttons = panel.querySelectorAll('button');
   buttons.forEach(b => (b.disabled = true));
   panel.querySelector('button').setAttribute('aria-busy', 'true');
-  const res = await apiPost('/api/student/face', {
-    images: taken.map(t => ({ dataUrl: t.dataUrl })),
-    descriptor,
-    model: FACE_MODEL,
-  });
+  const images = taken.flatMap(t => t.photos.map(photo => ({ dataUrl: photo.dataUrl, meta: photo.meta })));
+  const megabytes = images.reduce((sum, image) => sum + image.dataUrl.length, 0) / 1e6;
+  panel.append(h('p', { role: 'status', text: `Uploading ${megabytes.toFixed(1)} MB. Please keep this page open.` }));
+  const res = await apiPost('/api/student/face', { images, descriptor, model: FACE_MODEL }, { timeoutMs: SETTINGS.uploadTimeoutMs });
   if (run !== id) return;
   if (!res.ok) {
     const [title, text] = SAVE_ERRORS[res.error] || ["Couldn't save your photos.", 'Please try again.'];
@@ -381,7 +427,7 @@ async function save(taken) {
       title, text,
       thumbs: taken.map((t, i) => ({ src: t.dataUrl, alt: `Photo ${i + 1}` })),
       buttons: [
-        ...(res.error === 'network' || !SAVE_ERRORS[res.error] ? [{ label: 'Try again', primary: true, onclick: () => review(taken) }] : []),
+        ...(res.error === 'network' || res.error === 'timeout' || !SAVE_ERRORS[res.error] ? [{ label: 'Try again', primary: true, onclick: () => review(taken) }] : []),
         { label: 'Close', onclick: close },
       ],
     });

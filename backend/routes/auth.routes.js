@@ -3,6 +3,7 @@ import { dbGet } from '../utils/db.js';
 import { issueAdminToken } from '../utils/admin-auth.js';
 import { issueStudentToken } from '../utils/student-auth.js';
 import { todayLocal } from '../utils/dates.js';
+import { hasGalleryPhotos } from '../utils/gallery.js';
 
 const router = express.Router();
 
@@ -34,7 +35,7 @@ router.post('/login', async (req, res) => {
     } else if (role === 'student') {
       // Inactive (soft-deleted) students cannot log in.
       account = await dbGet(
-        `SELECT name, username, password_hash, face_status = 'approved' AS has_face, face_status
+        `SELECT id, name, roll_number, username, password_hash, face_status = 'approved' AS has_face, face_status
          FROM students
          WHERE username = ? AND password_hash = ? AND active = 1`,
         [username, password],
@@ -61,6 +62,8 @@ router.post('/login', async (req, res) => {
       result.mustChangePassword = account.password_hash === DEFAULT_PASSWORD;
       result.faceEnrolled = Boolean(account.has_face); // approved by an admin
       result.faceStatus = account.face_status || 'none';
+      // Photos put in the student's gallery folder by hand count for the CCTV camera (see /api/student/me).
+      result.galleryEnrolled = result.faceStatus === 'none' && hasGalleryPhotos(account);
     }
     return res.json(result);
   } catch (err) {

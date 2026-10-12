@@ -3,7 +3,8 @@ import { dbAll, dbGet, dbRun } from '../utils/db.js';
 import { requireStudent } from '../utils/student-auth.js';
 import { decodeEmbedding, encodeEmbedding } from '../utils/embedding.js';
 import { decodeUploadedImage } from '../utils/images.js';
-import { galleryFolderName } from '../utils/gallery.js';
+import { GALLERY_DIR, SELF_PHOTO, galleryFolderName, hasGalleryPhotos } from '../utils/gallery.js';
+import { refreshEnrolmentQa } from './cctv.routes.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -27,13 +28,11 @@ export const clock = { now: () => new Date() };
 // ---- face enrolment settings ----
 export const FACE_MODEL = 'w600k_mbf'; // the browser model; the CCTV service makes its own embeddings from the photos
 const MIN_PHOTOS = 6;
-const MAX_PHOTOS = 10;
+const MAX_PHOTOS = 24; // the app sends the best and the runner-up photo of each pose (7-8 poses)
 // A new template this close to ANOTHER student's is treated as the same face enrolled twice.
 // Starting value: tune it on real data (the log line below shows near misses).
 const DUPLICATE_THRESHOLD = Number(process.env.FACE_DUPLICATE_THRESHOLD) || 0.6;
 const ENROL_ATTEMPTS_PER_HOUR = 6;
-const GALLERY_DIR = process.env.GALLERY_DIR || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../gallery');
-const SELF_PHOTO = /^self_\d+\.(jpg|png|webp)$/;
 const enrolAttempts = new Map(); // student id -> [timestamps]
 const enrolling = new Set(); // student ids with a save in progress
 
@@ -92,6 +91,11 @@ router.get('/me', async (req, res) => {
       // faceEnrolled means "approved by an admin": that is what unlocks QR attendance
       faceEnrolled: faceStatus === 'approved',
       faceStatus,
+      // Photos an admin put in this student's folder (taken by hand, from the I-Card ...). The CCTV camera
+      // uses them, so such a student does not have to enrol in the app unless they want QR attendance.
+      galleryEnrolled:
+        faceStatus === 'none' &&
+        hasGalleryPhotos({ id: req.student.id, name: row.name, roll_number: row.rollNumber }),
       faceRejectReason: faceStatus === 'rejected' ? row.faceRejectReason : null,
       mustChangePassword: row.password === DEFAULT_PASSWORD,
     });
@@ -468,8 +472,6 @@ router.post('/face', async (req, res) => {
       `SELECT face_embedding IS NOT NULL AS enrolled, password_hash AS password FROM students WHERE id = ?`,
       [id],
     );
-    if (row.password === DEFAULT_PASSWORD)
-      return res.status(403).json({ ok: false, error: 'password_change_required' });
     if (row.enrolled) return res.status(409).json({ ok: false, error: 'already_enrolled' });
 
     const { images, descriptor, model } = req.body || {};
@@ -477,6 +479,7 @@ router.post('/face', async (req, res) => {
     if (!Array.isArray(images) || images.length < MIN_PHOTOS || images.length > MAX_PHOTOS)
       return res.status(400).json({ ok: false, error: 'wrong_photo_count' });
     const decoded = images.map(decodeUploadedImage);
+    const metas = images.map(image => cleanPhotoMeta(image?.meta));
     if (decoded.includes(null)) return res.status(400).json({ ok: false, error: 'invalid_image' });
 
     const vector = normalizedDescriptor(descriptor);
@@ -520,6 +523,10 @@ router.post('/face', async (req, res) => {
     for (const name of await fs.readdir(folder)) if (SELF_PHOTO.test(name)) await fs.rm(path.join(folder, name));
     written = [];
     for (const [part, final] of parts) { await fs.rename(part, final); written.push(final); }
+    // How each photo was taken (pose, sharpness ...), for the admin and for later tuning. Not needed for matching.
+    const metaFiles = {};
+    parts.forEach(([, final], i) => { if (metas[i]) metaFiles[path.basename(final)] = metas[i]; });
+    await fs.writeFile(path.join(folder, 'self_meta.dat'), JSON.stringify({ version: 2, savedAt: new Date().toISOString(), files: metaFiles })).catch(() => {});
 
     await dbRun(
       `UPDATE students SET face_embedding = ?, face_embedding_model = ?, face_enrolled_at = datetime('now'),
@@ -527,6 +534,9 @@ router.post('/face', async (req, res) => {
       [encodeEmbedding(Array.from(vector)), FACE_MODEL, id],
     );
     written = [];
+    // Check the photos with the CCTV models in the background (several seconds); the admin sees the result.
+    const forCheck = await dbGet(`SELECT id, name, roll_number FROM students WHERE id = ?`, [id]);
+    void refreshEnrolmentQa(forCheck).catch(error => console.warn(`[enrol] photo check for student ${id} failed: ${error.message}`));
     return res.json({ ok: true, photoCount: decoded.length });
   } catch (err) {
     for (const file of written) await fs.rm(file, { force: true }).catch(() => {});
@@ -543,6 +553,18 @@ async function selfPhotos(student) {
   } catch {
     return [];
   }
+}
+
+// The few numbers the app sends about each photo, cleaned: anything else is dropped.
+function cleanPhotoMeta(meta) {
+  if (!meta || typeof meta !== 'object') return null;
+  const out = {};
+  if (typeof meta.shot === 'string') out.shot = meta.shot.slice(0, 24);
+  for (const key of ['rank', 'sharpness', 'yaw', 'pitch', 'light', 'facePx']) {
+    const value = Number(meta[key]);
+    if (Number.isFinite(value)) out[key] = Math.round(value * 1000) / 1000;
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 // 512 finite numbers that are (close to) unit length; returned as a unit-length Float64Array.

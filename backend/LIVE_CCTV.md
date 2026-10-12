@@ -32,4 +32,4 @@ The models still run one frame at a time, but the lock is taken per **frame**, n
 The page also has a **Scan again** button after a result. Students already marked stay marked; a new scan adds the ones the camera sees now.
 
 ## Check a camera before using it
-`python live_probe.py "<rtsp url>"` - time to first frame, real fps, resolution, decode speed, and a saved frame.
+`python scripts/live_probe.py "<rtsp url>"` - time to first frame, real fps, resolution, decode speed, and a saved frame.

@@ -6,7 +6,6 @@ import { classLabel } from './today-logic.js';
 import { getCurrentUser, logout } from '../utils/storage.js';
 import { showToast } from './ui.js';
 import { session } from './state.js';
-import { shotsFor } from './pose.js';
 
 const root = document.querySelector('#profileRoot');
 let me = null;
@@ -54,8 +53,7 @@ function render() {
     h('section', { class: 'card profile-card' },
       h('h2', { text: 'Your class' }),
       k ? h('dl', { class: 'facts' },
-        row('Class', classLabel(k)), row('Course', k.courseName), row('Branch', k.branchName),
-        row('Semester', k.semester), row('Section', k.section), row('Academic session', k.academicSession),
+        row('Class', classLabel(k)), row('Course', k.courseName), row('Academic session', k.academicSession),
         row('Batch', k.batch), row('Home room', k.homeRoom), row('Class counsellor', k.counsellor))
         : h('p', { class: 'meta', text: "You're not assigned to a class yet. Contact the admin office." })),
     faceCard(),
@@ -68,28 +66,23 @@ function render() {
 function faceCard() {
   const body = [];
   if (me.faceStatus === 'pending') {
-    body.push(
-      h('p', {}, h('span', { class: 'chip chip-warning', text: 'Waiting for approval' }), ' Your photos are saved. The admin office will check them soon.'),
-      h('p', { class: 'meta', text: 'QR attendance starts working once they are approved. Until then, ask your teacher to mark you present.' }));
+    body.push(h('p', {}, h('span', { class: 'chip chip-warning', text: 'Waiting for approval' }), ' Your photos are saved. Until the admin office approves them, ask your teacher to mark you present.'));
   } else if (me.faceEnrolled) {
     const when = face?.enrolledAt ? new Date(face.enrolledAt).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : null;
     body.push(
-      h('p', {}, h('span', { class: 'chip chip-success', text: '✓ Enrolled' }), ` Your face is set up for QR attendance${when ? `, saved on ${when}` : ''}${face?.photoCount ? ` (${face.photoCount} photos)` : ''}.`),
-      h('p', { class: 'meta', text: 'Your photos are locked. If something changed, such as a new look, ask the admin office to reset them.' }),
+      h('p', {}, h('span', { class: 'chip chip-success', text: '✓ Enrolled' }), when ? ` Saved on ${when}. To change your photos, ask the admin office to reset them.` : ' To change your photos, ask the admin office to reset them.'),
       h('button', { class: 'btn btn-secondary', type: 'button', onclick: () => window.dispatchEvent(new CustomEvent('student:selftest')), text: 'Test my camera and lighting' }));
   } else {
     const glasses = h('input', { type: 'checkbox', id: 'wearsGlasses' });
-    const blocked = me.mustChangePassword;
     body.push(
-      me.faceStatus === 'rejected'
-        ? h('p', { class: 'note note-warning', role: 'status', text: `Your last photos were rejected: ${me.faceRejectReason || 'please take them again'}. Take new ones below.` })
-        : h('p', {}, h('span', { class: 'chip chip-warning', text: '! Not added yet' }), " You can't mark attendance until your face photos are added."),
-      h('p', { class: 'meta', text: 'You will take 7 photos with the front camera, each from a slightly different angle, like the way a classroom camera sees you. It takes about two minutes.' }),
-      h('ul', { class: 'photo-plan' }, shotsFor(false).map(s => h('li', { text: s.title }))),
-      h('p', { class: 'meta', text: 'Sit somewhere well lit, facing the light. Take off any cap or mask. Do this by yourself, one person in view.' }),
-      h('label', { class: 'check-row', for: 'wearsGlasses' }, glasses, 'I usually wear glasses (one extra photo without them)'),
-      blocked && h('p', { class: 'note note-warning', text: 'Change your password first, then come back here.' }),
-      h('button', { class: 'btn btn-primary', type: 'button', disabled: blocked, onclick: () => window.dispatchEvent(new CustomEvent('student:enrol', { detail: { wearsGlasses: glasses.checked } })), text: 'Start taking photos' }));
+      me.galleryEnrolled
+        ? h('p', {}, h('span', { class: 'chip chip-success', text: '✓ Set up for classroom camera' }), ' Add photos below only if you also want QR attendance.')
+        : me.faceStatus === 'rejected'
+          ? h('p', { class: 'note note-warning', role: 'status', text: `Your last photos were rejected: ${me.faceRejectReason || 'please take them again'}.` })
+          : h('p', {}, h('span', { class: 'chip chip-warning', text: '! Not added yet' }), ' Add your face photos to mark attendance.'),
+      h('p', { class: 'meta', text: 'About two minutes. Good light on your face, nothing covering it, only you in view.' }),
+      h('label', { class: 'check-row', for: 'wearsGlasses' }, glasses, 'I usually wear glasses'),
+      h('button', { class: 'btn btn-primary', type: 'button', onclick: () => window.dispatchEvent(new CustomEvent('student:enrol', { detail: { wearsGlasses: glasses.checked } })), text: 'Start taking photos' }));
   }
   return h('section', { class: 'card profile-card' }, h('h2', { text: 'Face photos' }), ...body);
 }

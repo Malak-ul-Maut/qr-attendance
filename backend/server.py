@@ -22,6 +22,7 @@ Settings (environment variables, all optional):
 
 Endpoints:
     GET  /health   -> {"ok": true, ...} once the models are loaded
+    POST /enroll/check -> body {"folder"}: quality report for a student's enrolment photos (enroll_qa.py)
     POST /run      -> body {"video", "roster": [{student_id, name, gallery_folder}], "class_id",
                             "annotated_out"?, "options"?}; returns the same result as recognize.py
                       plus "log" (the progress lines) and "queue_wait_ms".
@@ -39,10 +40,13 @@ import traceback
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 
+import logging
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+import enroll_qa
+import gallery_extras
 import recognize
 
 MODELS_DIR = os.environ.get("CCTV_MODELS_DIR", str(recognize.HERE / "models"))
@@ -51,6 +55,8 @@ REC_MODEL = os.environ.get("CCTV_REC_MODEL", recognize.DEFAULT_REC_FILENAME)
 DET_SIZE = recognize.parse_det_size(os.environ.get("CCTV_DET_SIZE", "1920x1080"))
 DET_THRESH = float(os.environ.get("CCTV_DET_THRESH", "0.3"))
 PORT = int(os.environ.get("CCTV_SERVICE_PORT", "8765"))
+# e.g. CCTV_GALLERY_DEGRADE=20,28 keeps CCTV-quality copies of every gallery photo (off by default; see bakeoff.py)
+GALLERY_DEGRADE = gallery_extras.parse_widths(os.environ.get("CCTV_GALLERY_DEGRADE", ""))
 
 state = {"model": None}      # filled in at startup
 gallery_memory_cache = {}    # cache_key -> gallery embeddings kept in memory between requests
@@ -141,6 +147,11 @@ class RunRequest(BaseModel):
     class_id: str                                 # keys the gallery cache (we use "<block>_<room>")
     annotated_out: Optional[str] = None           # where to save the annotated image
     options: Dict[str, Any] = Field(default_factory=dict)  # overrides for recognize.DEFAULT_SETTINGS
+    crops_dir: Optional[str] = None               # where to save the aligned crop of every reported face
+
+
+class EnrolCheckRequest(BaseModel):
+    folder: str                                   # a student's gallery folder NAME (not a path)
 
 
 class StreamRequest(BaseModel):
@@ -190,7 +201,10 @@ def health():
 @app.post("/run")
 def run(request: RunRequest):
     try:
-        settings = recognize.make_settings(**request.options)
+        options = dict(request.options)
+        if GALLERY_DEGRADE:
+            options.setdefault("gallery_degrade_widths", GALLERY_DEGRADE)
+        settings = recognize.make_settings(**options)
     except (ValueError, TypeError) as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -218,7 +232,7 @@ def run(request: RunRequest):
             result = recognize.run_attendance(
                 state["model"], request.video, identity_map, settings, GALLERY_DIR, request.class_id,
                 annotated_out=request.annotated_out, memory_cache=gallery_memory_cache, log=log, stream=stream,
-                infer_lock=turn)
+                infer_lock=turn, crops_dir=request.crops_dir)
         except recognize.CameraError as error:      # camera offline / wrong login / no frames
             raise HTTPException(status_code=502, detail=recognize.mask_url(error))
         except recognize.RecognitionError as error:
@@ -234,6 +248,25 @@ def run(request: RunRequest):
     return result
 
 
+# Checks a student's enrolment photos with the CCTV models (see enroll_qa.py). A plain `def`, so it runs in a worker
+# thread; the models are taken one photo at a time, so a scan in progress is delayed by under a second.
+@app.post("/enroll/check")
+def enroll_check(request: EnrolCheckRequest):
+    folder_name = request.folder.strip()
+    if not folder_name or folder_name != os.path.basename(folder_name) or folder_name in (".", ".."):
+        raise HTTPException(status_code=400, detail="folder must be a plain folder name")
+    folder = os.path.join(GALLERY_DIR, folder_name)
+    if not os.path.isdir(folder):
+        raise HTTPException(status_code=404, detail="no gallery folder with that name")
+    if state["model"] is None:
+        raise HTTPException(status_code=503, detail="models are still loading")
+    try:
+        return enroll_qa.check_enrolment(state["model"], folder, lock=models.turn())
+    except Exception as error:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"{type(error).__name__}: {error}")
+
+
 def exit_when_parent_goes_away():
     """Node keeps our stdin pipe open. When Node exits (even if it crashes) the pipe closes, the
     read below returns, and we shut down too - so no orphaned python.exe is left running."""
@@ -245,4 +278,10 @@ def exit_when_parent_goes_away():
 if __name__ == "__main__":
     if os.environ.get("CCTV_EXIT_WITH_PARENT") == "1":
         threading.Thread(target=exit_when_parent_goes_away, daemon=True).start()
+    class QuietPolling(logging.Filter):
+        """The page asks /queue every 2 s while a scan runs (and Node asks /health while starting): not worth a log line each."""
+        def filter(self, record):
+            message = record.getMessage()
+            return "GET /queue " not in message and "GET /health " not in message
+    logging.getLogger("uvicorn.access").addFilter(QuietPolling())
     uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="info")

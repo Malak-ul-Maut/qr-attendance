@@ -15,6 +15,12 @@ export const FACE_SETTINGS = {
   budgetMs: 25000, // whole check
   maxAttempts: 3, // full streaks that failed recognition
   frameStallMs: 3000, // no new camera frame for this long: the camera froze
+  lightChecks: false, // enrolment turns this on: backlight, side light, glare and "too close" warnings
+  backlitRatio: 0.55, // face brighter than this share of the whole picture is fine; darker than that against a bright background = backlit
+  backlitBackground: 110, // ...but only when the picture as a whole is this bright (0-255)
+  sideLightGap: 0.45, // left and right halves of the face differ by more than this share of the brighter half
+  glareShare: 0.12, // share of face pixels that are pure white
+  maxFaceFraction: 0.8, // face width as a share of the shorter side of the picture; wider = too close
 };
 
 // What each kind of problem tells the student to do.
@@ -24,6 +30,10 @@ export const FACE_TIPS = {
   far: 'Move closer to the camera.',
   dark: 'Move to a brighter place, with light on your face.',
   blurry: 'Hold the phone steady so the camera can focus.',
+  close: 'Move the phone a little further away.',
+  backlit: 'Turn so the light (a window or lamp) is in front of you, not behind you.',
+  sidelit: 'Light is coming from one side. Face the light.',
+  glare: 'Part of your face is too bright. Step out of direct light.',
   mismatch: 'Take off glasses or a mask if you can, face the camera straight on, and try again.',
 };
 
@@ -33,6 +43,10 @@ export const HINT_TEXT = {
   far: 'Move closer to the camera.',
   dark: 'Move to a brighter area.',
   blurry: 'Hold still so the camera can focus.',
+  close: 'Move back a little.',
+  backlit: 'Light is behind you. Turn around.',
+  sidelit: 'Light on one side only. Face the light.',
+  glare: 'Too bright on your face.',
 };
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -61,10 +75,13 @@ function measureImageQuality(source, box) {
   const pixels = context.getImageData(0, 0, size, size).data;
   const gray = new Float32Array(size * size);
   let brightness = 0;
+  let leftSum = 0, rightSum = 0, clipped = 0;
   for (let i = 0; i < gray.length; i++) {
     const p = i * 4;
     gray[i] = 0.299 * pixels[p] + 0.587 * pixels[p + 1] + 0.114 * pixels[p + 2];
     brightness += gray[i];
+    if (i % size < size / 2) leftSum += gray[i]; else rightSum += gray[i];
+    if (gray[i] >= 250) clipped++;
   }
   let sum = 0, sumSquares = 0, count = 0;
   for (let y = 1; y < size - 1; y++) {
@@ -76,7 +93,26 @@ function measureImageQuality(source, box) {
       count++;
     }
   }
-  return { sharpness: sumSquares / count - (sum / count) ** 2, brightness: brightness / gray.length };
+  const half = gray.length / 2;
+  return {
+    sharpness: sumSquares / count - (sum / count) ** 2,
+    brightness: brightness / gray.length,
+    leftBrightness: leftSum / half,
+    rightBrightness: rightSum / half,
+    clippedShare: clipped / gray.length,
+  };
+}
+
+// Average brightness (0-255) of the whole picture, from a tiny 32x24 copy.
+let frameScratch = null;
+function frameBrightness(source) {
+  frameScratch ||= createAnalysisCanvas(32, 24);
+  const { context } = frameScratch;
+  context.drawImage(source, 0, 0, 32, 24);
+  const pixels = context.getImageData(0, 0, 32, 24).data;
+  let total = 0;
+  for (let p = 0; p < pixels.length; p += 4) total += 0.299 * pixels[p] + 0.587 * pixels[p + 1] + 0.114 * pixels[p + 2];
+  return total / (32 * 24);
 }
 
 // { ok:true, quality } or { ok:false, hint } where hint is a key of HINT_TEXT.
@@ -89,12 +125,28 @@ export function assessFrame(video, face, settings = FACE_SETTINGS) {
   const imageQuality = measureImageQuality(video, face.box);
   if (imageQuality.brightness < s.minBrightness) return { ok: false, hint: 'dark' };
   if (imageQuality.sharpness < s.hardBlur) return { ok: false, hint: 'blurry' };
+  if (s.lightChecks) {
+    const shorter = Math.min(video.videoWidth, video.videoHeight);
+    const touchesEdge = face.box.x1 < 2 || face.box.y1 < 2 || face.box.x2 > video.videoWidth - 2 || face.box.y2 > video.videoHeight - 2;
+    if (boxWidth > shorter * s.maxFaceFraction || touchesEdge) return { ok: false, hint: 'close' };
+    const background = frameBrightness(video);
+    if (background > s.backlitBackground && imageQuality.brightness < background * s.backlitRatio) return { ok: false, hint: 'backlit' };
+    const brighter = Math.max(imageQuality.leftBrightness, imageQuality.rightBrightness, 1);
+    if (Math.abs(imageQuality.leftBrightness - imageQuality.rightBrightness) / brighter > s.sideLightGap) return { ok: false, hint: 'sidelit' };
+    if (imageQuality.clippedShare > s.glareShare) return { ok: false, hint: 'glare' };
+  }
 
   const [leftEye, rightEye, nose] = face.landmarks;
   const eyeAngle = Math.abs(Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x));
   const eyeCenterX = (leftEye.x + rightEye.x) / 2;
   const frontalScore = 1 - Math.min(1, Math.abs(nose.x - eyeCenterX) / Math.max(boxWidth * 0.14, 1) + eyeAngle / ((18 * Math.PI) / 180));
-  return { ok: true, quality: Math.min(imageQuality.sharpness / 200, 1) * 0.65 + frontalScore * 0.35 };
+  return {
+    ok: true,
+    quality: Math.min(imageQuality.sharpness / 200, 1) * 0.65 + frontalScore * 0.35,
+    sharpness: imageQuality.sharpness, // used to pick the sharpest of several frames
+    brightness: imageQuality.brightness,
+    facePx: boxWidth,
+  };
 }
 
 // A copy of the current frame (shrunk to maxSize) with the face coordinates scaled to match.

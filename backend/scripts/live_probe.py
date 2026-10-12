@@ -1,7 +1,7 @@
 """
 Phase-0 check for a live camera: run this FIRST, on the machine that will run the recognizer.
 
-    python live_probe.py "rtsp://USER:PASS@NVR_IP:554/cam/realmonitor?channel=1&subtype=0"
+    python scripts/live_probe.py "rtsp://USER:PASS@NVR_IP:554/cam/realmonitor?channel=1&subtype=0"
 
 Prints how long the camera takes to give its first frame, the real frame rate and resolution,
 whether this machine can decode the stream faster than real time, and saves one frame
