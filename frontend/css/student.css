@@ -161,9 +161,14 @@
 #capture-section[hidden] { display: none; }
 #captureCancel { min-height: var(--touch-target); }
 .mirrored video, .mirrored canvas { transform: scaleX(-1); } /* like a selfie, so "your left" is on the left of the screen */
+
+/* ---- Head-turn guide: a canvas over the preview, drawn by a worker (js/face/guide-renderer.js). It is flipped like the video by the .mirrored rule above. ---- */
+.turn-guide { border-radius: var(--radius-lg); }
 .dots { display: flex; gap: var(--space-2); padding: 0; margin: 0; list-style: none; }
 .dots li { flex: 1; height: 6px; border-radius: 3px; background: var(--line-strong); }
-.dots li.done { background: var(--success-600); }
+.dots li.done { background: var(--success-600); animation: dot-pop 0.5s cubic-bezier(0.3, 1.5, 0.5, 1); } /* a little pop when a photo is saved */
+@keyframes dot-pop { 0% { transform: scaleY(1); } 40% { transform: scaleY(2.4); } 100% { transform: scaleY(1); } }
+@media (prefers-reduced-motion: reduce) { .dots li.done { animation: none; } }
 .dots li.current { background: var(--red-600); }
 #captureInstruction { margin: 0; text-align: center; font-size: var(--text-xl); }
 #captureHint { margin: 0; text-align: center; color: var(--ink-500); font-size: var(--text-sm); }
