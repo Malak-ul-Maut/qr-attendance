@@ -5,7 +5,8 @@ import { h } from './dom.js';
 import { engine } from './face/engine.js';
 import { openCamera, nextFrame, stopCamera as stopVideo } from './face/camera.js';
 import { assessFrame, canvasToDataUrl, snapshotFrame, embedSnapshot, runFaceCheck, clearOverlay, drawDetection, HINT_TEXT, FACE_TIPS, FACE_SETTINGS } from './face-verify.js';
-import { averageTemplate, checkPose, cosine, estimatePose, plausibleFace, poseCoach, poseGuidance, poseMeters, shotsFor } from './pose.js';
+import { averageTemplate, cosine, estimatePose, plausibleFace, shotsFor } from './pose.js';
+import { createPoseGuide } from './pose-guide.js'; // smoothing + speed-aware coaching + steady arrow
 import { createTurnGuide } from './face/turn-guide.js';
 import { cameraSize } from './face/perf.js';
 import { getCurrentUser } from '../utils/storage.js';
@@ -282,6 +283,7 @@ async function captureShot({ id, engine: eng, shot, baseline, taken, onMismatch 
   const startedAt = performance.now();
   const problems = {};
   const note = key => (problems[key] = (problems[key] || 0) + 1);
+  const poseGuide = createPoseGuide(); // one per photo: smoothing starts fresh
   let stable = 0;
   let misses = 0; // frames in a row outside the pose window
   let noticeUntil = 0; // while now < noticeUntil a failure message stays on screen
@@ -308,29 +310,37 @@ async function captureShot({ id, engine: eng, shot, baseline, taken, onMismatch 
 
     if (faces.length !== 1) {
       const key = faces.length ? 'multiple' : 'noface';
-      note(key); stable = 0; misses = 0; candidates.length = 0; if (faces[0]) drawBox(faces[0], null); else clearAll(); guide.hide(); say(ENROL_HINTS[key]);
+      poseGuide.reset(); note(key); stable = 0; misses = 0; candidates.length = 0; if (faces[0]) drawBox(faces[0], null); else clearAll(); guide.hide(); say(ENROL_HINTS[key]);
     } else if (!plausibleFace(faces[0])) {
-      note('noface'); stable = 0; misses = 0; candidates.length = 0; drawBox(faces[0], null); guide.hide(); say(ENROL_HINTS.noface);
+      poseGuide.reset(); note('noface'); stable = 0; misses = 0; candidates.length = 0; drawBox(faces[0], null); guide.hide(); say(ENROL_HINTS.noface);
     } else {
       const face = faces[0];
       const gate = assessFrame(video, face, ENROL_ASSESS);
       if (!gate.ok) {
-        note(gate.hint); stable = 0; misses = 0; candidates.length = 0; drawBox(face, null); guide.hide(); say(ENROL_HINTS[gate.hint]);
+        poseGuide.reset(); note(gate.hint); stable = 0; misses = 0; candidates.length = 0; drawBox(face, null); guide.hide(); say(ENROL_HINTS[gate.hint]);
       } else {
-        const pose = estimatePose(face.landmarks, baseline ? baseline.roll : null);
-        const check = checkPose(shot, pose, baseline ? { pitch: baseline.pitch } : null);
-        drawBox(face, check.ok);
+        const rawPose = estimatePose(face.landmarks, baseline ? baseline.roll : null);
         const poseBaseline = baseline ? { pitch: baseline.pitch } : null;
+        // The pose is smoothed first, so the box colour, the arrow, the gauge, the message and the acceptance all
+        // use the same steady numbers (same windows as before, see pose.js).
+        const r = poseGuide.step(shot, rawPose, poseBaseline, performance.now());
+        const { pose, check } = r;
+        drawBox(face, check.ok);
         const showGuide = (state, fraction = 0) => guide.update({
           face, video, state, fraction,
-          need: state === 'guide' ? poseGuidance(shot, pose, poseBaseline) : null,
-          meters: state === 'guide' ? poseMeters(shot, pose, poseBaseline) : null, // how much the head has turned, as a gauge
+          need: state === 'guide' ? r.need : null, // steady 8-way arrow, calm while the student should slow down
+          meters: state === 'guide' ? r.meters : null, // how much the head has turned, as a gauge
         });
         if (!check.ok && ++misses <= SETTINGS.graceFrames && stable > 0) {
           // one or two jittery frames while holding still: keep the count instead of starting again
           showGuide('ok', stable / SETTINGS.stableFrames);
         } else if (!check.ok) {
-          note('pose'); stable = 0; candidates.length = 0; showGuide('guide'); say(poseCoach(shot, pose, poseBaseline)?.text ?? check.hint); // "a bit more" / "too far", in two languages
+          note('pose'); stable = 0; candidates.length = 0; showGuide('guide'); say(r.text ?? check.hint); // graded: "turn more" / "a little more" / "slowly" / "stop there" / "a touch back", in two languages
+        } else if (r.moving) {
+          // inside the window but the head is still moving: wait for it to settle (this also avoids blurry photos)
+          misses = 0;
+          showGuide('ok', stable / SETTINGS.stableFrames);
+          say('Hold still · स्थिर रहें');
         } else {
           misses = 0;
           stable++;

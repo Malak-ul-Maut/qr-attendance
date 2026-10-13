@@ -252,7 +252,7 @@ export function createRenderer(canvas, opts = {}) {
     cur.x = e(cur.x, tgt.x, 0.07);
     cur.y = e(cur.y, tgt.y, 0.07);
     cur.scale = e(cur.scale, tgt.scale, 0.09);
-    cur.angle = e(cur.angle, tgt.angle, 0.1);
+    cur.angle = e(cur.angle, tgt.angle, 0.16); // the arrow only swings when its direction really changes (see pose-guide.js)
     cur.badgeR = e(cur.badgeR, tgt.badgeR, 0.12);
     cur.strength = e(cur.strength, tgt.strength, 0.15);
     cur.alpha = e(cur.alpha, tgt.visible ? 1 : 0, tgt.visible ? 0.1 : 0.16);
@@ -380,7 +380,7 @@ export function createRenderer(canvas, opts = {}) {
     ctx.save();
     ctx.globalAlpha = cur.alpha * cur.guideMix * (0.6 + 0.4 * cur.strength);
     ctx.rotate(cur.angle);
-    ctx.translate(cur.badgeR + (opts.reduced ? 0 : -4 + 14 * wave), 0);
+    ctx.translate(cur.badgeR + (opts.reduced ? 0 : -3 + 10 * wave * (0.35 + 0.65 * cur.strength)), 0); // a calm nudge when close, a bigger one when far
     if (tier.ripple && !opts.reduced) {
       ctx.beginPath(); ctx.arc(0, 0, 28 * (1 + 0.7 * phase), 0, TAU);
       ctx.lineWidth = 3; ctx.strokeStyle = `rgba(255,176,32,${(0.8 * (1 - phase)).toFixed(3)})`; ctx.stroke();
