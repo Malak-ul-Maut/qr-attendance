@@ -5,7 +5,7 @@
 // cannot do that (no OffscreenCanvas, no module workers, or the worker fails), the same renderer runs on the page.
 //
 //   const guide = createTurnGuide(wrapper);
-//   guide.update({ face, video, state, need, fraction });   // state 'guide' | 'ok'
+//   guide.update({ face, video, state, need, fraction, meters });   // state 'guide' | 'ok'; meters from poseMeters()
 //   guide.hide();  guide.destroy();
 import { createRenderer } from './guide-renderer.js';
 import { deviceTier } from './perf.js';
@@ -14,6 +14,7 @@ const WORKER_READY_MS = 4000; // no 'ready' from the worker by then: use the pag
 
 export function createTurnGuide(wrapper, { debug = false } = {}) {
   const reduced = !!matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const mirrored = wrapper.classList.contains('mirrored'); // the selfie preview is flipped by CSS
   const maxDpr = deviceTier() === 'low' ? 1.25 : 2;
   let canvas = null;
   let worker = null;
@@ -41,7 +42,7 @@ export function createTurnGuide(wrapper, { debug = false } = {}) {
     worker?.terminate();
     worker = null;
     newCanvas(); // a canvas that was handed to a worker cannot be drawn on here, so use a fresh one
-    local = createRenderer(canvas, { reduced, maxDpr, onStats: debug ? s => { stats = { ...s, where: 'page' }; } : null });
+    local = createRenderer(canvas, { reduced, mirrored, maxDpr, onStats: debug ? s => { stats = { ...s, where: 'page' }; } : null });
     const { cssW, cssH, dpr } = size();
     local.resize(cssW, cssH, dpr);
     if (lastTarget) local.setTarget(lastTarget);
@@ -61,7 +62,7 @@ export function createTurnGuide(wrapper, { debug = false } = {}) {
       worker.onerror = () => mountLocal(); // the script did not load or crashed
       readyTimer = setTimeout(mountLocal, WORKER_READY_MS);
       const { cssW, cssH, dpr } = size();
-      worker.postMessage({ type: 'init', canvas: offscreen, cssW, cssH, dpr, reduced, maxDpr, debug }, [offscreen]);
+      worker.postMessage({ type: 'init', canvas: offscreen, cssW, cssH, dpr, reduced, mirrored, maxDpr, debug }, [offscreen]);
     } catch {
       mountLocal();
     }
@@ -91,14 +92,20 @@ export function createTurnGuide(wrapper, { debug = false } = {}) {
   mountWorker();
 
   return {
-    update({ face, video, state, need = null, fraction = 0 }) {
+    update({ face, video, state, need = null, fraction = 0, meters = null }) {
       if (!video.videoWidth || !video.videoHeight) return;
       const { x1, y1, x2, y2 } = face.box;
-      const target = { type: 'target', box: { x1, y1, x2, y2 }, vw: video.videoWidth, vh: video.videoHeight, state, need, fraction };
+      const target = { type: 'target', box: { x1, y1, x2, y2 }, vw: video.videoWidth, vh: video.videoHeight, state, need, fraction, meters };
       lastTarget = target;
       if (worker) worker.postMessage(target); else local?.setTarget(target);
       if (state === 'ok' && lastState !== 'ok') navigator.vibrate?.(10); // a small tap: "that's the pose" (not available in a worker)
       lastState = state === 'ok' ? 'ok' : 'guide';
+    },
+    // The photo was taken: ring completes, ripple, a check pops in the middle, one soft flash.
+    captured() {
+      lastTarget = null;
+      lastState = 'captured';
+      if (worker) send({ type: 'captured' }); else local?.markCaptured();
     },
     hide() {
       lastTarget = null;

@@ -66,16 +66,16 @@ export function plausibleFace(face) {
 // Most CCTV faces are seen from slightly above and nearly front-on, so most shots are close to frontal; 'high'
 // (phone raised above the eyes, looking up at it) gives the camera's own downward view.
 export const SHOTS = [
-  { id: 'front', title: 'Look straight at the camera', hint: 'Phone at eye level, light on your face.', short: 'सीधे देखें · Look straight', yaw: [-0.07, 0.07], dPitch: [-0.07, 0.07], template: true },
-  { id: 'left', title: 'Turn your head slightly to your left', hint: 'About a quarter turn. Keep looking at the screen.', short: '← थोड़ा बाएँ · A little left', yaw: [0.12, 0.32], dPitch: [-0.08, 0.08], template: true },
-  { id: 'right', title: 'Turn your head slightly to your right', hint: 'About a quarter turn. Keep looking at the screen.', short: 'थोड़ा दाएँ · A little right →', yaw: [-0.32, -0.12], dPitch: [-0.08, 0.08], template: true },
-  { id: 'down', title: 'Lower your chin a little', hint: 'Like glancing down at your notes.', short: '↓ ठुड्डी नीचे · Chin down', yaw: [-0.08, 0.08], dPitch: [0.06, 0.2], template: true },
-  { id: 'high', title: 'Raise the phone above your eyes and look up at it', hint: 'Like the classroom camera, which looks down on you. Keep your eyes open.', short: '↑ फ़ोन ऊपर · Phone up high', yaw: [-0.08, 0.08], dPitch: [-0.2, -0.06], template: false },
-  { id: 'down-left', title: 'Chin down, and turn slightly to your left', hint: 'Like looking at your desk from the right side of the room.', short: '↙ नीचे + बाएँ · Down and left', yaw: [0.1, 0.3], dPitch: [0.06, 0.2], template: false },
-  { id: 'down-right', title: 'Chin down, and turn slightly to your right', hint: 'Like looking at your desk from the left side of the room.', short: 'नीचे + दाएँ · Down and right ↘', yaw: [-0.3, -0.1], dPitch: [0.06, 0.2], template: false },
-  { id: 'front2', title: 'Look straight again, relaxed', hint: 'Natural face, one more time.', short: 'फिर सीधे · Straight again', yaw: [-0.07, 0.07], dPitch: [-0.07, 0.07], template: true },
+  { id: 'front', title: 'Look straight at the camera', hint: 'Phone at eye level, light on your face.', short: 'Look straight · सीधे देखें', yaw: [-0.07, 0.07], dPitch: [-0.07, 0.07], template: true },
+  { id: 'left', title: 'Turn your head slightly to your left', hint: 'About a quarter turn. Keep looking at the screen.', short: '← A little left · थोड़ा बाएँ', yaw: [0.12, 0.32], dPitch: [-0.08, 0.08], template: true },
+  { id: 'right', title: 'Turn your head slightly to your right', hint: 'About a quarter turn. Keep looking at the screen.', short: 'A little right · थोड़ा दाएँ →', yaw: [-0.32, -0.12], dPitch: [-0.08, 0.08], template: true },
+  { id: 'down', title: 'Lower your chin a little', hint: 'Like glancing down at your notes.', short: '↓ Chin down · ठुड्डी नीचे', yaw: [-0.08, 0.08], dPitch: [0.06, 0.2], template: true },
+  { id: 'high', title: 'Raise the phone above your eyes and look up at it', hint: 'Like the classroom camera, which looks down on you. Keep your eyes open.', short: '↑ Phone up high · फ़ोन ऊपर', yaw: [-0.08, 0.08], dPitch: [-0.2, -0.06], template: false },
+  { id: 'down-left', title: 'Chin down, and turn slightly to your left', hint: 'Like looking at your desk from the right side of the room.', short: '↙ Down and left · नीचे + बाएँ', yaw: [0.1, 0.3], dPitch: [0.06, 0.2], template: false },
+  { id: 'down-right', title: 'Chin down, and turn slightly to your right', hint: 'Like looking at your desk from the left side of the room.', short: 'Down and right · नीचे + दाएँ ↘', yaw: [-0.3, -0.1], dPitch: [0.06, 0.2], template: false },
+  { id: 'front2', title: 'Look straight again, relaxed', hint: 'Natural face, one more time.', short: 'Straight again · फिर सीधे', yaw: [-0.07, 0.07], dPitch: [-0.07, 0.07], template: true },
 ];
-export const GLASSES_OFF_SHOT = { id: 'no-glasses', title: 'Take your glasses off and look straight', hint: 'Just this one photo without them.', short: 'चश्मा हटाएँ · Glasses off', yaw: [-0.07, 0.07], dPitch: [-0.07, 0.07], template: true };
+export const GLASSES_OFF_SHOT = { id: 'no-glasses', title: 'Take your glasses off and look straight', hint: 'Just this one photo without them.', short: 'Glasses off · चश्मा हटाएँ', yaw: [-0.07, 0.07], dPitch: [-0.07, 0.07], template: true };
 export const shotsFor = wearsGlasses => (wearsGlasses ? [...SHOTS, GLASSES_OFF_SHOT] : SHOTS);
 
 // Sanity range for the very first photo, when the student's own front pitch is not known yet.
@@ -149,6 +149,67 @@ export function poseGuidance(shot, pose, baseline) {
   const strength = Math.min(1, Math.hypot(dx, dy));
   if (strength === 0) return null;
   return { dx, dy, strength };
+}
+
+// How far the head has turned, as a small gauge per axis, so the student sees "how much", not just "which way".
+// Each axis is { pos, from, to, status } on a 0..1 scale where [from, to] is the target band (always in the middle
+// third, so the band is easy to hit) and pos is where the head is now (it can go a little outside 0..1).
+//   status: 'ok'     inside the band
+//           'little' not turned enough yet
+//           'much'   turned past the band
+//           'off'    this pose is "straight" (or the first photo) and the head is to one side of it
+// pos grows towards the image's right for yaw and downwards for pitch, like poseGuidance, so on the mirrored
+// preview the dot moves the way the head moves.
+// An axis is null when it has nothing to say: the pose is "straight" on that axis and the head is straight.
+function meterAxis(value, [lo, hi], directional) {
+  const width = Math.max(hi - lo, 0.1);
+  const min = lo - 1.2 * width;
+  const span = hi + 1.2 * width - min;
+  let status = 'ok';
+  if (value < lo || value > hi) {
+    if (!directional || (lo <= 0 && hi >= 0)) status = 'off'; // a "straight" pose: being to either side is simply off
+    else if (lo > 0) status = value < lo ? 'little' : 'much'; // the pose is on the positive side: below the band is not enough
+    else status = value > hi ? 'little' : 'much'; // the pose is on the negative side: above the band is not enough
+  }
+  const wantsOffCentre = directional && (lo > 0 || hi < 0);
+  if (status === 'ok' && !wantsOffCentre) return null;
+  return { pos: (value - min) / span, from: (lo - min) / span, to: (hi - min) / span, status };
+}
+
+export function poseMeters(shot, pose, baseline) {
+  if (!pose) return null;
+  const yaw = meterAxis(pose.yaw, shot.yaw, true);
+  const pitch = baseline
+    ? meterAxis(pose.pitch - baseline.pitch, shot.dPitch, true)
+    : meterAxis(pose.pitch, FIRST_PITCH, false); // the first photo has no "straight" yet, only a sane range
+  return { yaw, pitch };
+}
+
+// One short, kind sentence saying how much to move (two languages, like the rest of the guided flow).
+// { text, tone } where tone is 'little' | 'much' | 'off'. Null when the pose is right or there is no pose.
+export function poseCoach(shot, pose, baseline) {
+  const meters = poseMeters(shot, pose, baseline);
+  if (!meters) return null;
+  // how far each axis is from the middle of its band, so the axis that is further off is the one to talk about
+  const miss = axis => (axis && axis.status !== 'ok' ? Math.abs(axis.pos - (axis.from + axis.to) / 2) : 0);
+  const yawMiss = miss(meters.yaw);
+  const pitchMiss = miss(meters.pitch);
+  if (yawMiss === 0 && pitchMiss === 0) return null;
+
+  if (yawMiss >= pitchMiss) {
+    const { status } = meters.yaw;
+    const left = shot.yaw[0] > 0;
+    if (status === 'little') return { tone: 'little', text: left ? 'A bit more to the left · थोड़ा और बाएँ' : 'A bit more to the right · थोड़ा और दाएँ' };
+    if (status === 'much') return { tone: 'much', text: 'Too far, turn back a little · ज़्यादा हो गया, थोड़ा वापस' };
+    // a "straight" pose and the head is to one side: which side is it on?
+    return { tone: 'off', text: pose.yaw < shot.yaw[0] ? 'Turn a little to your left · थोड़ा बाएँ आएँ' : 'Turn a little to your right · थोड़ा दाएँ आएँ' };
+  }
+  const { status } = meters.pitch;
+  const up = baseline && shot.dPitch[1] < 0; // the "phone up high" pose
+  if (!baseline) return { tone: 'off', text: 'Phone at eye level, look straight · फ़ोन आँखों के सामने' };
+  if (status === 'little') return { tone: 'little', text: up ? 'Raise the phone a bit more · फ़ोन थोड़ा और ऊपर' : 'Chin down a little more · ठुड्डी थोड़ी और नीचे' };
+  if (status === 'much') return { tone: 'much', text: up ? 'Too high, lower it a little · ज़्यादा ऊपर, थोड़ा नीचे' : 'Too low, lift your chin a little · ज़्यादा नीचे, थोड़ा ऊपर' };
+  return { tone: 'off', text: pose.pitch - baseline.pitch < shot.dPitch[0] ? 'Lower your chin a little · ठुड्डी थोड़ी नीचे' : 'Raise your chin a little · ठुड्डी थोड़ी ऊपर' };
 }
 
 // Where the nose should be on screen for this shot: an ellipse (centre x, y, radii rx, ry, tilt angle) in image

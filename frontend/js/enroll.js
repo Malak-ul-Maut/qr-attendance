@@ -5,7 +5,7 @@ import { h } from './dom.js';
 import { engine } from './face/engine.js';
 import { openCamera, nextFrame, stopCamera as stopVideo } from './face/camera.js';
 import { assessFrame, canvasToDataUrl, snapshotFrame, embedSnapshot, runFaceCheck, clearOverlay, drawDetection, HINT_TEXT, FACE_TIPS, FACE_SETTINGS } from './face-verify.js';
-import { averageTemplate, checkPose, cosine, estimatePose, plausibleFace, poseGuidance, shotsFor } from './pose.js';
+import { averageTemplate, checkPose, cosine, estimatePose, plausibleFace, poseCoach, poseGuidance, poseMeters, shotsFor } from './pose.js';
 import { createTurnGuide } from './face/turn-guide.js';
 import { cameraSize } from './face/perf.js';
 import { getCurrentUser } from '../utils/storage.js';
@@ -29,15 +29,15 @@ const SETTINGS = {
 // Short two-language messages for the guided flow (the long English ones in face-verify.js stay for the QR check).
 const ENROL_HINTS = {
   ...HINT_TEXT,
-  noface: 'चेहरा फ्रेम में लाएँ · Face in the frame',
-  multiple: 'सिर्फ़ आप · Only you in view',
-  far: 'पास आएँ · Move closer',
-  close: 'थोड़ा दूर · Move back a little',
-  dark: 'रोशनी में जाएँ · More light',
-  blurry: 'स्थिर रहें · Hold still',
-  backlit: 'रोशनी सामने से · Light in front, not behind',
-  sidelit: 'रोशनी की ओर मुँह करें · Face the light',
-  glare: 'तेज़ चमक · Too bright on your face',
+  noface: 'Face in the frame · चेहरा फ्रेम में लाएँ',
+  multiple: 'Only you in view · सिर्फ़ आप',
+  far: 'Move closer · पास आएँ',
+  close: 'Move back a little · थोड़ा दूर',
+  dark: 'More light · रोशनी में जाएँ',
+  blurry: 'Hold still · स्थिर रहें',
+  backlit: 'Light in front, not behind · रोशनी सामने से',
+  sidelit: 'Face the light · रोशनी की ओर मुँह करें',
+  glare: 'Too bright on your face · तेज़ चमक',
 };
 const ENROL_ASSESS = { ...FACE_SETTINGS, lightChecks: true };
 
@@ -259,8 +259,10 @@ async function enrol(id, shots) {
     if (i === 0) baseline = result.baseline;
     taken.push({ shot, dataUrl: result.photos[0].dataUrl, photos: result.photos, embedding: result.embedding });
     if (navigator.vibrate) navigator.vibrate(40);
-    setStatus('Got it.');
-    await sleep(500);
+    guide.captured(); // ring completes, ripple, a check pops in the middle, one soft flash
+    markDots(i + 1, taken.length); // the progress segment turns green right now (and pops)
+    setStatus(`Photo ${i + 1} of ${shots.length} saved · फ़ोटो ${i + 1} सेव हो गई`);
+    await sleep(900);
   }
   if (!isRunning(id)) return;
   markDots(shots.length, shots.length);
@@ -318,12 +320,17 @@ async function captureShot({ id, engine: eng, shot, baseline, taken, onMismatch 
         const pose = estimatePose(face.landmarks, baseline ? baseline.roll : null);
         const check = checkPose(shot, pose, baseline ? { pitch: baseline.pitch } : null);
         drawBox(face, check.ok);
-        const showGuide = (state, fraction = 0) => guide.update({ face, video, state, fraction, need: state === 'guide' ? poseGuidance(shot, pose, baseline ? { pitch: baseline.pitch } : null) : null });
+        const poseBaseline = baseline ? { pitch: baseline.pitch } : null;
+        const showGuide = (state, fraction = 0) => guide.update({
+          face, video, state, fraction,
+          need: state === 'guide' ? poseGuidance(shot, pose, poseBaseline) : null,
+          meters: state === 'guide' ? poseMeters(shot, pose, poseBaseline) : null, // how much the head has turned, as a gauge
+        });
         if (!check.ok && ++misses <= SETTINGS.graceFrames && stable > 0) {
           // one or two jittery frames while holding still: keep the count instead of starting again
           showGuide('ok', stable / SETTINGS.stableFrames);
         } else if (!check.ok) {
-          note('pose'); stable = 0; candidates.length = 0; showGuide('guide'); say(check.hint);
+          note('pose'); stable = 0; candidates.length = 0; showGuide('guide'); say(poseCoach(shot, pose, poseBaseline)?.text ?? check.hint); // "a bit more" / "too far", in two languages
         } else {
           misses = 0;
           stable++;
@@ -333,7 +340,7 @@ async function captureShot({ id, engine: eng, shot, baseline, taken, onMismatch 
           // keep this frame (full size) as a candidate; only the last few are remembered
           candidates.push({ snapshot: snapshotFrame(video, face, gate.quality, SETTINGS.stillSize), sharpness: gate.sharpness, light: gate.brightness, facePx: gate.facePx, pose });
           if (candidates.length > SETTINGS.candidateFrames) candidates.shift();
-          say(`स्थिर रहें · Hold still (${Math.min(stable, SETTINGS.stableFrames)}/${SETTINGS.stableFrames})`);
+          say(`Hold still (${Math.min(stable, SETTINGS.stableFrames)}/${SETTINGS.stableFrames}) · स्थिर रहें`);
           if (stable >= SETTINGS.stableFrames) {
             const taken1 = await takePhoto({ engine, shot, candidates, templateSoFar });
             if (!isRunning(id)) break;
