@@ -130,6 +130,27 @@ export function cosine(a, b) {
   return dot;
 }
 
+// Which way the student must move their head, in IMAGE coordinates (x to the image's right, y down), so the
+// on-screen guide can point the right way. The overlay is mirrored by CSS exactly like the video, so a vector
+// given here points the correct way on the student's screen without any flipping.
+//   dx: -1..1  (+ = nose has to move towards the image's right, i.e. turn to THEIR left)
+//   dy: -1..1  (+ = nose has to move down, i.e. lower the chin)
+//   strength: 0..1, how far off they are (0 = inside the window)
+// Returns null when there is nothing to say (no pose, or already inside the window).
+const GUIDE_YAW_SPAN = 0.22; // yaw error that counts as "far"
+const GUIDE_PITCH_SPAN = 0.14; // pitch error that counts as "far"
+export function poseGuidance(shot, pose, baseline) {
+  if (!pose) return null;
+  const toWindow = (value, [min, max]) => (value < min ? min - value : value > max ? max - value : 0);
+  const yawNeed = toWindow(pose.yaw, shot.yaw);
+  const pitchNeed = baseline ? toWindow(pose.pitch - baseline.pitch, shot.dPitch) : toWindow(pose.pitch, FIRST_PITCH);
+  const dx = Math.max(-1, Math.min(1, yawNeed / GUIDE_YAW_SPAN));
+  const dy = Math.max(-1, Math.min(1, pitchNeed / GUIDE_PITCH_SPAN));
+  const strength = Math.min(1, Math.hypot(dx, dy));
+  if (strength === 0) return null;
+  return { dx, dy, strength };
+}
+
 // Where the nose should be on screen for this shot: an ellipse (centre x, y, radii rx, ry, tilt angle) in image
 // coordinates. The student sees a ring and a dot (their nose) and just moves the dot into the ring - no reading.
 export function targetNose(landmarks, shot, baseline) {

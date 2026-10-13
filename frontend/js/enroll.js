@@ -4,8 +4,10 @@ import { apiGet, apiPost } from './api.js';
 import { h } from './dom.js';
 import { engine } from './face/engine.js';
 import { openCamera, nextFrame, stopCamera as stopVideo } from './face/camera.js';
-import { assessFrame, snapshotFrame, embedSnapshot, runFaceCheck, clearOverlay, drawDetection, HINT_TEXT, FACE_TIPS, FACE_SETTINGS } from './face-verify.js';
-import { averageTemplate, checkPose, cosine, estimatePose, plausibleFace, shotsFor, targetNose } from './pose.js';
+import { assessFrame, canvasToDataUrl, snapshotFrame, embedSnapshot, runFaceCheck, clearOverlay, drawDetection, HINT_TEXT, FACE_TIPS, FACE_SETTINGS } from './face-verify.js';
+import { averageTemplate, checkPose, cosine, estimatePose, plausibleFace, poseGuidance, shotsFor } from './pose.js';
+import { createTurnGuide } from './face/turn-guide.js';
+import { cameraSize } from './face/perf.js';
 import { getCurrentUser } from '../utils/storage.js';
 
 const FACE_MODEL = 'w600k_mbf'; // must match the server
@@ -52,6 +54,10 @@ const panel = $('#capturePanel');
 const loading = $('#captureLoading');
 const loadingText = $('#captureLoadingText');
 const progressBar = $('#captureProgress');
+const guide = createTurnGuide($('#captureCamera .camera-wrapper')); // animated arrows + ghost head + hold-still ring
+
+// The face box and the turn guide are cleared together.
+const clearAll = () => { clearOverlay(overlay); guide.hide(); };
 
 let run = 0; // bumps on every open and close, so old loops stop
 let opener = null;
@@ -75,14 +81,14 @@ function open(title) {
   panel.hidden = true;
   loading.hidden = true;
   cameraArea.hidden = false;
-  clearOverlay(overlay);
+  clearAll();
   $('#captureCancel').focus();
   return run;
 }
 function close() {
   run++;
   stopCamera();
-  clearOverlay(overlay);
+  clearAll();
   dialog.hidden = true;
   setInert(false);
   opener?.focus?.();
@@ -106,7 +112,7 @@ function cameraProblem(error) {
 // A result screen inside the dialog. buttons: [{label, primary, onclick}]
 function showPanel({ tone = 'warn', title, text, tip, thumbs, buttons }) {
   stopCamera();
-  clearOverlay(overlay);
+  clearAll();
   cameraArea.hidden = true;
   loading.hidden = true;
   dots.hidden = true; // the progress bars only belong with the live camera
@@ -157,7 +163,7 @@ async function prepare(id) {
   try {
     camera = await openCamera(video, {
       facingMode: 'user',
-      ideal: { width: 1920, height: 1440 }, // sharper frames to choose from; the phone falls back if it cannot
+      ideal: cameraSize(), // 1920x1440 on a laptop, 1280x960 on a phone: the saved photos are at most 960 px, so a phone gains nothing from more
       onWaiting: text => { if (isRunning(id) && !cameraLive) showLoading(text, null, ''); },
     });
   } catch (error) {
@@ -214,7 +220,8 @@ async function enrol(id, shots) {
   for (let i = 0; i < shots.length; i++) {
     markDots(i, taken.length);
     const shot = shots[i];
-    instruction.textContent = shot.short; // big, two languages, nearly all the guidance; the ring on the picture does the rest
+    instruction.textContent = shot.short; // big, two languages; the animated arrows on the picture show which way to turn
+    guide.hide();
     hint.textContent = `${i + 1} / ${shots.length}`;
     $('#captureCamera').hidden = false;
 
@@ -299,25 +306,28 @@ async function captureShot({ id, engine: eng, shot, baseline, taken, onMismatch 
 
     if (faces.length !== 1) {
       const key = faces.length ? 'multiple' : 'noface';
-      note(key); stable = 0; misses = 0; candidates.length = 0; if (faces[0]) drawBox(faces[0], null); else clearOverlay(overlay); say(ENROL_HINTS[key]);
+      note(key); stable = 0; misses = 0; candidates.length = 0; if (faces[0]) drawBox(faces[0], null); else clearAll(); guide.hide(); say(ENROL_HINTS[key]);
     } else if (!plausibleFace(faces[0])) {
-      note('noface'); stable = 0; misses = 0; candidates.length = 0; drawBox(faces[0], null); say(ENROL_HINTS.noface);
+      note('noface'); stable = 0; misses = 0; candidates.length = 0; drawBox(faces[0], null); guide.hide(); say(ENROL_HINTS.noface);
     } else {
       const face = faces[0];
       const gate = assessFrame(video, face, ENROL_ASSESS);
       if (!gate.ok) {
-        note(gate.hint); stable = 0; misses = 0; candidates.length = 0; drawBox(face, null); say(ENROL_HINTS[gate.hint]);
+        note(gate.hint); stable = 0; misses = 0; candidates.length = 0; drawBox(face, null); guide.hide(); say(ENROL_HINTS[gate.hint]);
       } else {
         const pose = estimatePose(face.landmarks, baseline ? baseline.roll : null);
         const check = checkPose(shot, pose, baseline ? { pitch: baseline.pitch } : null);
-        drawBox(face, check.ok, targetNose(face.landmarks, shot, baseline));
+        drawBox(face, check.ok);
+        const showGuide = (state, fraction = 0) => guide.update({ face, video, state, fraction, need: state === 'guide' ? poseGuidance(shot, pose, baseline ? { pitch: baseline.pitch } : null) : null });
         if (!check.ok && ++misses <= SETTINGS.graceFrames && stable > 0) {
           // one or two jittery frames while holding still: keep the count instead of starting again
+          showGuide('ok', stable / SETTINGS.stableFrames);
         } else if (!check.ok) {
-          note('pose'); stable = 0; candidates.length = 0; say(check.hint);
+          note('pose'); stable = 0; candidates.length = 0; showGuide('guide'); say(check.hint);
         } else {
           misses = 0;
           stable++;
+          showGuide('ok', stable / SETTINGS.stableFrames);
           // Everything below uses THIS frame (frames are not kept between loops).
           const current = { face, quality: gate.quality, pose };
           // keep this frame (full size) as a candidate; only the last few are remembered
@@ -356,32 +366,20 @@ async function takePhoto({ engine, shot, candidates, templateSoFar }) {
     const mean = averageTemplate(templateSoFar);
     if (cosine(embedding, mean) < SETTINGS.samePersonMin) return { status: 'mismatch' };
   }
+  // encode without blocking the page (two JPEGs of up to 960 px each, per photo)
+  const dataUrls = await Promise.all(ranked.map(candidate => canvasToDataUrl(candidate.snapshot.canvas, 'image/jpeg', SETTINGS.jpegQuality)));
   const photos = ranked.map((candidate, index) => ({
-    dataUrl: candidate.snapshot.canvas.toDataURL('image/jpeg', SETTINGS.jpegQuality),
+    dataUrl: dataUrls[index],
     meta: { shot: shot.id, rank: index + 1, sharpness: candidate.sharpness, yaw: candidate.pose.yaw, pitch: candidate.pose.pitch, light: candidate.light, facePx: candidate.facePx },
   }));
   return { status: 'ok', embedding: Array.from(embedding), photos };
 }
 
 // good: true = green (right pose), false = red (wrong pose), null = amber (frame not usable yet, see the hint).
-// target: where the nose should be ({x, y, rx, ry, angle}); drawn as a ring, with a dot on the real nose. Moving the
-// dot into the ring is the whole instruction, so it works without reading.
-function drawBox(face, good, target = null) {
+// Which way to turn is shown by the turn guide (js/face/turn-guide.js), not here.
+function drawBox(face, good) {
   const color = good === null ? '#f59f00' : good ? '#2f9e44' : '#e5484d';
   drawDetection(overlay, video, face, '', color);
-  if (!target) return;
-  const context = overlay.getContext('2d');
-  const nose = face.landmarks[2];
-  const lineWidth = Math.max(4, overlay.width / 160);
-  context.lineWidth = lineWidth;
-  context.strokeStyle = '#ffffff';
-  context.beginPath();
-  context.ellipse(target.x, target.y, target.rx, target.ry, target.angle, 0, Math.PI * 2);
-  context.stroke();
-  context.fillStyle = color;
-  context.beginPath();
-  context.arc(nose.x, nose.y, lineWidth * 1.6, 0, Math.PI * 2);
-  context.fill();
 }
 
 // ---- review and save ----

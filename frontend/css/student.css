@@ -161,6 +161,11 @@
 #capture-section[hidden] { display: none; }
 #captureCancel { min-height: var(--touch-target); }
 .mirrored video, .mirrored canvas { transform: scaleX(-1); } /* like a selfie, so "your left" is on the left of the screen */
+
+/* ---- Head-turn guide: a canvas over the preview, drawn by a worker (js/face/guide-renderer.js). It is flipped like the video by the .mirrored rule above. ---- */
+.turn-guide { border-radius: var(--radius-lg); }
+}
+}
 .dots { display: flex; gap: var(--space-2); padding: 0; margin: 0; list-style: none; }
 .dots li { flex: 1; height: 6px; border-radius: 3px; background: var(--line-strong); }
 .dots li.done { background: var(--success-600); }

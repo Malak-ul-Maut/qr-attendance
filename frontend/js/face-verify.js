@@ -264,3 +264,17 @@ export async function runFaceCheck({ video, canvas, engine, descriptor, isActive
   }
   return { status: 'cancelled' };
 }
+
+// A JPEG as a data URL, encoded without blocking the page (canvas.toDataURL stops everything while it encodes).
+export function canvasToDataUrl(canvas, type = 'image/jpeg', quality = 0.85) {
+  if (typeof canvas.toBlob !== 'function') return Promise.resolve(canvas.toDataURL(type, quality));
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(blob => {
+      if (!blob) return resolve(canvas.toDataURL(type, quality));
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    }, type, quality);
+  });
+}
