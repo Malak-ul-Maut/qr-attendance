@@ -3,8 +3,7 @@
 recognize.py - CCTV classroom attendance: given a video clip (or live stream), detect faces,
 track them across frames, and recognize each track (AdaFace ir101) only as often as needed.
 
-Setup:    pip install insightface onnxruntime opencv-python numpy gdown uvicorn
-          pip install openvino        (optional: runs the models on the Intel iGPU / faster on the CPU - see accel.py)
+Setup:    pip install insightface openvino opencv-python numpy gdown uvicorn
 
 Usage:
     python recognize.py --video clip.mp4

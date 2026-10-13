@@ -67,8 +67,13 @@ const STAGING_MAX_AGE_MS = 3 * 24 * 3600 * 1000; // sessions that were never sub
 const MAX_CCTV_CROPS = Number(process.env.CCTV_MAX_GALLERY_CROPS || 8); // per student; at the cap a better crop replaces the worst
 // A crop the camera matched on its own is only saved when the match was this strong. A crop the faculty named by
 // hand ("who is this?") is always saved: a person looked at it.
-const GROW_MIN_SCORE = Number(process.env.CCTV_GROW_MIN_SCORE || 0.33);
-const MIN_GROW_FACE_PX = 14;
+const GROW_MIN_SCORE = Number(process.env.CCTV_GROW_MIN_SCORE || 0.35);
+// A crop whose face is narrower than this many pixels (in the full camera frame) is never added: it would be a
+// tiny face blown up to 112x112, and such blurry crops make look-alikes score higher against each other.
+const MIN_GROW_FACE_PX = Number(process.env.CCTV_GROW_MIN_FACE_PX || 30);
+// CCTV_GROW_GALLERY=off stops submitted sessions from adding crops to galleries at all. (Crops already saved in the
+// galleries as cctv_*.png keep being used for matching: move them out of the student folders to stop that too.)
+const GROW_GALLERY = !['0', 'false', 'off', 'no'].includes(String(process.env.CCTV_GROW_GALLERY || 'on').toLowerCase());
 // A crop whose picture score (face width x sharpness) is below this is never added. 0 = off until you have seen the
 // numbers: the staging index (crop-staging/<session>/index.dat) lists them.
 const GROW_MIN_QUALITY = Number(process.env.CCTV_GROW_MIN_QUALITY || 0);
@@ -431,6 +436,10 @@ export async function growGalleryFromSession(sessionCode, finalStudentIds) {
     return { added: 0 }; // nothing was scanned, or another call already took it
   }
   indexQueues.delete(sessionCode);
+  if (!GROW_GALLERY) {
+    await fs.rm(dir, { recursive: true, force: true });
+    return { added: 0 };
+  }
   const index = await readIndex(sessionCode, dir);
   const finalIds = new Set(finalStudentIds.map(Number));
   const best = new Map(); // studentId -> { file, quality }: the clearest crop of this student in this session
