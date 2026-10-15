@@ -12,8 +12,9 @@ function checkAuthAndRedirect() {
   if (!user) return (window.location.href = '/homepage.html');
 
   // Each page is for one role. A student must also hold a student token that has not expired.
-  const path = window.location.pathname;
-  if (path.endsWith('/student.html')) {
+  // Hosts like Cloudflare Pages show /student.html as /student, so compare without the .html
+  const path = window.location.pathname.replace(/\.html$/, '');
+  if (path.endsWith('/student')) {
     if (user.role !== 'student') return window.location.replace('/homepage.html');
     const expiresAt = user.token ? tokenExpiry(user.token) : null;
     if (!expiresAt || expiresAt <= Date.now()) {
@@ -26,11 +27,11 @@ function checkAuthAndRedirect() {
       return window.location.replace('/login-page.html?role=student');
     }
   }
-  if (path.endsWith('/faculty.html') && user.role !== 'faculty')
+  if (path.endsWith('/faculty') && user.role !== 'faculty')
     return window.location.replace('/homepage.html');
 
   // The admin page also needs an admin token that has not expired yet
-  if (window.location.pathname.endsWith('/admin.html')) {
+  if (path.endsWith('/admin')) {
     const expiresAt = user.adminToken ? adminTokenExpiry(user.adminToken) : null;
     if (!expiresAt) return endSession('Please sign in as admin to open this page.');
     if (expiresAt <= Date.now()) return endSession('Your admin session expired. Please sign in again.');

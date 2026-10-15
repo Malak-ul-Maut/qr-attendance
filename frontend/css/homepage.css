@@ -45,7 +45,7 @@
       rgba(32, 35, 40, 0.1) 75%
     ),
     linear-gradient(to top, rgba(32, 35, 40, 0.7) 0%, rgba(32, 35, 40, 0) 55%),
-    url('../icons/mit-building.jpg');
+    url('../icons/mit-building.webp');
   background-size: cover;
   background-position: center bottom;
 }

@@ -6,13 +6,23 @@
 //   const faces = await engine.detect(video);      // [{ box, landmarks, score }] in video pixels
 //   const vector = await engine.embed(alignFace(canvas, face.landmarks));
 
+// Where the big files come from: '' = the same host as the page. Set in utils/runtime-config.js.
+const ASSET_BASE = window.ASSET_BASE || '';
+
 // Bump when a model file changes: the cached copies on phones are replaced.
+// `bytes` is the exact size of each file on disk. It drives the progress bar (a compressed download reports a
+// smaller Content-Length than the bytes we receive) and rejects a cut-short or wrong file.
+// If you replace a file, update its bytes here too. `npm run build` checks that they match.
 const VERSION = '2';
-const ASSETS = {
-  wasm: '/utils/ort/ort-wasm-simd-threaded.wasm',
-  det: '/utils/models/det_500m.onnx',
-  rec: '/utils/models/w600k_mbf.onnx',
+const FILES = {
+  wasm: { path: '/utils/ort/ort-wasm-simd-threaded.wasm', bytes: 11210254 },
+  det: { path: '/utils/models/det_500m.onnx', bytes: 2524817 },
+  rec: { path: '/utils/models/w600k_mbf.onnx', bytes: 13616099 },
 };
+// url: preferred address (the CDN when ASSET_BASE is set). fallback: the API server, which always has the files.
+const ASSETS = Object.fromEntries(
+  Object.entries(FILES).map(([name, f]) => [name, { url: ASSET_BASE + f.path, fallback: (window.API_BASE || '') + f.path, bytes: f.bytes }]),
+);
 const DETECT_LONG_SIDE = 320; // the detector sees the frame shrunk to this many pixels on its long side
 const CALL_TIMEOUT_MS = 10000; // a worker call that takes longer than this means the worker is stuck
 const NO_PROGRESS_MS = 45000; // no byte or stage update for this long while loading means it is stuck
@@ -29,6 +39,34 @@ class FaceEngine {
     this.lastUpdate = null;
     this.scratch = null;
     this.timings = { detectMs: 0, embedMs: 0 };
+    this.prefetching = null;
+  }
+
+  // Downloads the engine files into the browser's IndexedDB cache without starting the models.
+  // Call it while the student is doing something else; start() later finds the files already cached.
+  // Safe to call many times. Never rejects.
+  prefetch() {
+    if (this.readyPromise || this.prefetching) return this.prefetching || Promise.resolve();
+    let worker;
+    try {
+      worker = new Worker('/js/face/engine.worker.js');
+    } catch {
+      return Promise.resolve();
+    }
+    this.prefetching = new Promise(resolve => {
+      const end = () => {
+        worker.terminate();
+        this.prefetching = null;
+        resolve();
+      };
+      worker.onmessage = ({ data }) => {
+        if (data.type === 'progress') this.#emit({ phase: 'download', fraction: data.total ? Math.min(data.loaded / data.total, 1) : null });
+        else if (data.type === 'prefetched' || data.type === 'error') end();
+      };
+      worker.onerror = end;
+      worker.postMessage({ type: 'prefetch', version: VERSION, assets: ASSETS });
+    });
+    return this.prefetching;
   }
 
   // Starts loading (first call) and joins the load already running (later calls).
@@ -38,7 +76,8 @@ class FaceEngine {
       this.listeners.add(onProgress);
       if (this.lastUpdate) onProgress(this.lastUpdate);
     }
-    if (!this.readyPromise) this.readyPromise = this.#boot();
+    // A prefetch already downloading is joined, not repeated: boot after it, when the files are cached.
+    if (!this.readyPromise) this.readyPromise = (this.prefetching || Promise.resolve()).then(() => this.#boot());
     const done = () => onProgress && this.listeners.delete(onProgress);
     this.readyPromise.then(done, done);
     return this.readyPromise;

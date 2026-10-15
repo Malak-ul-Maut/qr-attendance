@@ -691,7 +691,7 @@ function announcePresent(name) {
 
 // ---------- Live updates ----------
 // Students scanning their QR arrive through the socket
-const socket = io(location.origin);
+const socket = io(window.API_BASE || location.origin);
 let socketWasDown = false;
 
 socket.on('attendance_update', data => {
@@ -1010,7 +1010,7 @@ async function runCCTV() {
     $('#cctvSkeleton').hidden = true;
     notify('The annotated CCTV image could not be loaded.', 'error');
   };
-  cctvResultImage.src = `/results/${sessionCode}.jpg?t=${Date.now()}`;
+  cctvResultImage.src = window.apiUrl(`/results/${sessionCode}.jpg?t=${Date.now()}`);
 }
 
 // "Try again" (after an error) and "Scan again" (after a result) run the same scan. Students already

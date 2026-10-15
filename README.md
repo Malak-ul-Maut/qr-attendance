@@ -48,6 +48,19 @@ cd qr-attendance
 
 ```bash
 npm install
+python -m venv venv
+pip install insightface openvino opencv-python numpy gdown uvicorn
+```
+
+### 4. Build frontend:
+
+```bash
+cd backend
+node scripts/build-frontend.mjs --proxy=https://scrimmage-unlucky-dispersed.ngrok-free.dev --assets=https://cdn.jsdelivr.net/gh/malak-ul-maut/qr-attendance@v1/frontend
+
+Deploy (optional):
+cd ../pages-worker
+npx wrangler@latest deploy
 ```
 
 ### 4. Start the server

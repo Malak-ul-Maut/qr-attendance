@@ -6,11 +6,16 @@
     <title>Sign in | Attendance System</title>
 
     <link rel="icon" href="icons/qr-code.png" />
+    <script src="/utils/runtime-config.js"></script>
     <script src="js/theme.js"></script>
     <link rel="stylesheet" href="css/tokens.css" />
     <link rel="stylesheet" href="css/components.css" />
     <link rel="stylesheet" href="css/loginpage.css" />
 
+    <link rel="modulepreload" href="js/login-page.js" />
+    <link rel="modulepreload" href="utils/fetch.js" />
+    <link rel="modulepreload" href="utils/storage.js" />
+    <link rel="modulepreload" href="js/ui.js" />
     <script defer src="js/login-page.js" type="module"></script>
   </head>
 
@@ -48,7 +53,7 @@
       </button>
       <a class="login-brand" href="homepage.html">
         <img
-          src="icons/mit-logo.png"
+          src="icons/mit-logo.webp"
           alt="Meerut Institute of Technology, back to home" />
       </a>
 

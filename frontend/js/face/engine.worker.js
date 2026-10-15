@@ -70,13 +70,15 @@ async function cacheDeleteOthers(keep) {
 }
 
 // Downloads one file with progress. Rejects with a readable message for the usual server mistakes.
-async function download(url, onBytes) {
+// expected: the exact size in bytes (0 = unknown). A compressed response reports a smaller Content-Length than
+// the bytes we read, so the expected size is what the progress bar and the cut-short check use.
+async function download(url, onBytes, expected) {
   const res = await fetch(url, { cache: 'no-cache' });
   if (!res.ok) throw new Error(`${url} -> HTTP ${res.status}`);
   const type = res.headers.get('content-type') || '';
   // A server that answers a missing file with its home page would otherwise give us HTML to parse as a model.
   if (/text\/html/i.test(type)) throw new Error(`${url} is missing on the server (got a web page instead)`);
-  const total = Number(res.headers.get('content-length')) || 0;
+  const total = expected || Number(res.headers.get('content-length')) || 0;
   onBytes(0, total);
   if (!res.body?.getReader) { const b = await res.arrayBuffer(); onBytes(b.byteLength, 0); return b; }
   const reader = res.body.getReader();
@@ -96,22 +98,45 @@ async function download(url, onBytes) {
   return out.buffer;
 }
 
-async function getAsset(name, url, version, onBytes) {
-  const key = `${version}:${name}:${url}`;
+// asset: { url, fallback, bytes }. The cache key ignores the host, so a copy fetched from the CDN or from this
+// server is the same cached file.
+async function getAsset(name, asset, version, onBytes) {
+  const key = `${version}:${name}:${new URL(asset.fallback || asset.url, self.location.href).pathname}`;
   const hit = await cacheGet(key);
-  if (hit && hit.byteLength > 0) { onBytes(hit.byteLength, hit.byteLength); return { key, buffer: hit }; }
+  if (hit && hit.byteLength > 0 && (!asset.bytes || hit.byteLength === asset.bytes)) { onBytes(hit.byteLength, hit.byteLength); return { key, buffer: hit }; }
+  // The preferred address first (two tries), then this server (two tries) if the CDN is blocked or down.
+  const sources = [asset.url, ...(asset.fallback && asset.fallback !== asset.url ? [asset.fallback] : [])];
   let lastError;
-  for (let attempt = 0; attempt < 3; attempt++) { // a flaky phone connection gets two more tries
-    try {
-      const buffer = await download(url, onBytes);
-      await cachePut(key, buffer);
-      return { key, buffer };
-    } catch (error) {
-      lastError = error;
-      await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
+  for (const url of sources) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const buffer = await download(url, onBytes, asset.bytes);
+        await cachePut(key, buffer);
+        return { key, buffer };
+      } catch (error) {
+        lastError = error;
+        await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
+      }
     }
   }
   throw lastError;
+}
+
+// Downloads and caches the files only, no models are created. Used to warm the cache while the student reads.
+async function prefetch({ version, assets }) {
+  let loaded = 0;
+  let total = 0;
+  const track = (n, fileTotal) => {
+    if (fileTotal) total += fileTotal;
+    loaded += n;
+    postMessage({ type: 'progress', loaded, total });
+  };
+  const [w, d, r] = await Promise.all([
+    getAsset('wasm', assets.wasm, version, track),
+    getAsset('det', assets.det, version, track),
+    getAsset('rec', assets.rec, version, track),
+  ]);
+  await cacheDeleteOthers(new Set([w.key, d.key, r.key]));
 }
 
 // ---------- init ----------
@@ -234,7 +259,10 @@ async function runRecognizer(rgba) {
 // ---------- message loop ----------
 self.onmessage = async ({ data }) => {
   try {
-    if (data.type === 'init') {
+    if (data.type === 'prefetch') {
+      await prefetch(data);
+      postMessage({ type: 'prefetched' });
+    } else if (data.type === 'init') {
       await init(data);
       postMessage({ type: 'ready' });
     } else if (data.type === 'detect') {

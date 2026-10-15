@@ -1,12 +1,15 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import cors from 'cors';
+import compression from 'compression';
 import https from 'https';
 import os from 'os';
 import selfsigned from 'selfsigned';
 import { fileURLToPath } from 'url';
 
 import hostTunnel from './utils/host-tunnel.js';
+import { precompressed, staticHeaders } from './utils/static-fast.js';
 import { initializeSocket } from './utils/socket-io.js';
 import authRouter from './routes/auth.routes.js';
 import sessionRouter from './routes/session.routes.js';
@@ -31,12 +34,21 @@ app.use((req, res, next) => {
   next();
 });
 
+// gzip for HTML, JS, CSS, SVG and API JSON. Images and the .onnx models are skipped automatically (already compressed).
+// Files that have a ready-made .br next to them are served by precompressed() below instead.
+app.use(compression());
+
 app.use(express.json({ limit: '35mb' }));
 app.use(
   cors({
     origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    // The two extra headers are sent by pages hosted elsewhere (utils/runtime-config.js) to skip the free
+    // ngrok / zrok warning pages.
+    allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning', 'skip_zrok_interstitial'],
+    // Lets the browser remember the permission check for a day (browsers cap it, Chrome at 2 hours), so a page
+    // on another address does not send an extra OPTIONS request before every API call.
+    maxAge: 86400,
   }),
 );
 
@@ -70,25 +82,22 @@ const __dirname = path.dirname(__filename);
 
 const FRONTEND_DIR = path.join(__dirname, '../frontend');
 
-// Face models: the folder is utils/models. Not "immutable": if a model file is ever replaced, bump VERSION in
-// js/face/engine.js and phones fetch the new file once.
-app.use(
-  '/utils/models',
-  express.static(path.join(FRONTEND_DIR, 'utils/models'), {
-    maxAge: '7d',
-  }),
-);
+// Which copy of the frontend to serve. `npm run build` makes ../frontend-dist (bundled, hashed, brotli files).
+// It is used only when you start the server with SERVE_DIST=1, so an old build can never hide your edits by accident.
+const SRC_DIR = FRONTEND_DIR;
+const DIST_DIR = path.join(__dirname, '../frontend-dist');
+const useDist = process.env.SERVE_DIST === '1' && fs.existsSync(path.join(DIST_DIR, 'student.html'));
+if (process.env.SERVE_DIST === '1' && !useDist)
+  console.warn('SERVE_DIST=1 but frontend-dist/ is missing. Run `npm run build`. Serving ../frontend instead.');
+const WEB_DIR = useDist ? DIST_DIR : SRC_DIR;
+console.log(`Serving the frontend from ${useDist ? 'frontend-dist (built)' : 'frontend (source)'}`);
 
-// Cache the self-hosted ONNX Runtime files (loader + WASM) in the browser for a year.
-app.use(
-  '/utils/ort',
-  express.static(path.join(FRONTEND_DIR, 'utils/ort'), {
-    maxAge: '365d',
-    immutable: true,
-  }),
-);
+// Ready-made brotli files, when the browser accepts them (the 11 MB .wasm drops to about 2.5 MB).
+app.use(precompressed(WEB_DIR));
 
-app.use(express.static(FRONTEND_DIR));
+// Face models: not "immutable": if a model file is ever replaced, bump VERSION in js/face/engine.js and
+// phones fetch the new file once. Cache rules for everything else live in utils/static-fast.js.
+app.use(express.static(WEB_DIR, { setHeaders: staticHeaders(WEB_DIR) }));
 
 app.use('/results', express.static(path.join(__dirname, 'results')));
 
@@ -100,7 +109,8 @@ app.get(/^\/[^?]*\.[A-Za-z0-9]+$/, (req, res) =>
 
 // If someone hits a route that's not an API (fallback)
 app.get(/^\/(?!api).*/, (req, res) => {
-  res.sendFile(path.join(FRONTEND_DIR, 'homepage.html'));
+  res.set('Cache-Control', 'no-cache');
+  res.sendFile(path.join(WEB_DIR, 'homepage.html'));
 });
 
 // --------------- Start server --------------

@@ -2,7 +2,6 @@
 # .env
 node_modules
 venv/
-.venv/
 __pycache__/
 
 # Face-recognition data and generated output
@@ -12,3 +11,7 @@ backend/cache/
 backend/results/
 backend/*.avi
 backend/crop-staging
+
+# Build
+frontend-dist
+pages-deploy

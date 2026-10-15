@@ -10,6 +10,40 @@
     <link rel="stylesheet" href="css/shell.css" />
     <link rel="stylesheet" href="css/student.css" />
 
+    <script src="/utils/runtime-config.js"></script>
+    <!-- Start the two requests the Today tab needs now, while the scripts below are still loading.
+         js/api.js picks up these answers (once). Skipped when nobody is signed in. -->
+    <script>
+      (function () {
+        try {
+          var u = JSON.parse(localStorage.getItem('user') || 'null');
+          if (!u || u.role !== 'student' || !u.token) return;
+          window.__early = {};
+          ['/api/student/me', '/api/student/schedule'].forEach(function (p) {
+            window.__early[p] = {
+              at: performance.now(),
+              promise: fetch(p, { headers: { Authorization: 'Bearer ' + u.token } }),
+            };
+          });
+        } catch (e) {}
+      })();
+    </script>
+
+    <!-- build:preload -->
+    <!-- Ask for every module at once instead of discovering them one import at a time. Replaced by the bundle in the build. -->
+    <link rel="modulepreload" href="utils/auth-guard.js" />
+    <link rel="modulepreload" href="utils/storage.js" />
+    <link rel="modulepreload" href="js/app.js" />
+    <link rel="modulepreload" href="js/today.js" />
+    <link rel="modulepreload" href="js/attendance.js" />
+    <link rel="modulepreload" href="js/profile.js" />
+    <link rel="modulepreload" href="js/api.js" />
+    <link rel="modulepreload" href="js/dom.js" />
+    <link rel="modulepreload" href="js/state.js" />
+    <link rel="modulepreload" href="js/today-logic.js" />
+    <link rel="modulepreload" href="js/ui.js" />
+    <!-- /build:preload -->
+
     <script src="js/theme.js"></script>
     <script src="utils/auth-guard.js" type="module"></script>
     <!-- The face models run in js/face/engine.worker.js, which loads its own copy of ONNX Runtime -->
@@ -21,7 +55,7 @@
 
     <header class="app-header">
       <a class="brand" href="student.html"
-        ><img src="icons/mit-logo.png" alt="MIT"
+        ><img src="icons/mit-logo.webp" alt="MIT"
       /></a>
       <span class="user-name">Hi, <b></b></span>
       <button

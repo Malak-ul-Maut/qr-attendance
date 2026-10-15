@@ -8,7 +8,14 @@ import {
   lunchBetween, minutesUntil, pickNow, toMin,
 } from './today-logic.js';
 
-const POLL_MS = 15000;
+// Polling is the biggest source of requests from an open tab, so it is slow and cheap:
+//  - only /schedule is polled; /me (rarely changes) is re-read after ME_MAX_AGE_MS, or when something edits it
+//  - once a minute, or every 20 s while a class is waiting for the teacher to open attendance
+//  - nothing while the tab is hidden, and a focus/tab switch is ignored if we fetched in the last 10 s
+const POLL_MS = 60000;
+const POLL_WAITING_MS = 20000;
+const ME_MAX_AGE_MS = 5 * 60000;
+const MIN_GAP_MS = 10000;
 const root = document.querySelector('#todayRoot');
 const greetingEl = document.querySelector('#todayGreeting');
 const subEl = document.querySelector('#todaySub');
@@ -17,6 +24,7 @@ let me = null;
 let schedule = null; // last good /schedule response (today)
 let week = null; // last good /schedule?week=1 response
 let mode = 'today'; // 'today' | 'week'
+let meFetchedAt = 0; // performance.now() of the last good /me
 let fetchedAt = 0; // performance.now() of the last good fetch, so countdowns keep moving
 let stale = null; // { at: 'HH:MM' } when the last refresh failed
 let loadError = null;
@@ -32,12 +40,13 @@ function forcePasswordChange() {
 }
 
 // ---------- loading ----------
-export async function refresh() {
+export async function refresh({ forceMe = false } = {}) {
   if (loading) return;
   loading = true;
+  const needMe = forceMe || !me || performance.now() - meFetchedAt > ME_MAX_AGE_MS;
   try {
     const [meRes, schedRes] = await Promise.all([
-      apiGet('/api/student/me'),
+      needMe ? apiGet('/api/student/me') : Promise.resolve({ ...me, ok: true }),
       mode === 'week'
         ? apiGet('/api/student/schedule?week=1')
         : apiGet('/api/student/schedule'),
@@ -45,6 +54,7 @@ export async function refresh() {
     if (meRes.ok && schedRes.ok) {
       me = meRes;
       session.me = meRes;
+      if (needMe) meFetchedAt = performance.now();
       forcePasswordChange();
       if (mode === 'week') week = schedRes;
       else schedule = schedRes;
@@ -288,13 +298,27 @@ function tick() {
 // ---------- when to refresh ----------
 const todayVisible = () => !document.hidden && !document.querySelector('#view-today')?.hidden;
 
-setInterval(() => { if (todayVisible()) refresh(); }, POLL_MS);
+function nextDelay() {
+  const rows = [...(schedule?.rows || []), ...(week?.days?.flatMap(d => d.rows) || [])];
+  return mode === 'today' && rows.some(r => r.state === 'waiting') ? POLL_WAITING_MS : POLL_MS;
+}
+// A timer chain (not setInterval) so the delay can change as the day goes on.
+function schedulePoll() {
+  setTimeout(() => {
+    if (todayVisible()) refresh();
+    schedulePoll();
+  }, nextDelay());
+}
+schedulePoll();
 setInterval(() => { if (todayVisible()) tick(); }, 30000);
-document.addEventListener('visibilitychange', () => { if (todayVisible()) refresh(); });
-window.addEventListener('focus', () => { if (todayVisible()) refresh(); });
-window.addEventListener('student:tab', ev => { if (ev.detail === 'today') refresh(); });
-window.addEventListener('student:changed', refresh); // after marking attendance or editing the profile
+
+// Coming back to the page: refresh, unless we only just did.
+const refreshIfStale = () => { if (todayVisible() && performance.now() - fetchedAt > MIN_GAP_MS) refresh(); };
+document.addEventListener('visibilitychange', refreshIfStale);
+window.addEventListener('focus', refreshIfStale);
+window.addEventListener('student:tab', ev => { if (ev.detail === 'today') refreshIfStale(); });
+window.addEventListener('student:changed', () => refresh({ forceMe: true })); // after marking attendance or editing the profile
 
 root.setAttribute('aria-busy', 'true');
 render();
-refresh();
+refresh().then(() => window.dispatchEvent(new CustomEvent('student:ready')));

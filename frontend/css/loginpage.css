@@ -31,7 +31,7 @@
 /* Campus photo strip at the top of the card */
 .login-banner {
   height: 7rem;
-  background-image: url('../icons/mit-building.jpg');
+  background-image: url('../icons/mit-building.webp');
   background-size: cover;
   background-position: center 70%;
 }
