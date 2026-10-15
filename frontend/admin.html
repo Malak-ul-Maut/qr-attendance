@@ -212,6 +212,7 @@
           <h1 id="enrollmentTitle" tabindex="-1">Face photos</h1>
           <span class="adm-actions">
             <button id="enrollClassExportBtn" class="btn btn-secondary" type="button" disabled title="Select a classroom below first">Export classroom list</button>
+            <button id="enrollApproveAllBtn" class="btn btn-primary" type="button" disabled>Approve all pending</button>
             <button id="enrollExportBtn" class="btn btn-secondary" type="button" disabled>Export pending list</button>
           </span>
         </div>
@@ -230,8 +231,10 @@
             <label for="enrollStatus">Status</label>
             <select class="input" id="enrollStatus">
               <option value="">All</option>
-              <option value="pending">Pending</option>
-              <option value="done">Uploaded</option>
+              <option value="review">Waiting for review</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+              <option value="none">Not uploaded</option>
             </select>
           </div>
         </div>
@@ -258,7 +261,9 @@
       <p id="photoSub" class="adm-help"></p>
       <div id="photoGrid" class="adm-photo-grid" aria-live="polite"></div>
       <div class="dialog-actions">
-        <button id="photoCloseBtn" class="btn btn-primary" type="button">Close</button>
+        <button id="photoRejectBtn" class="btn btn-danger" type="button" hidden>Reject…</button>
+        <button id="photoApproveBtn" class="btn btn-primary" type="button" hidden>Approve photos</button>
+        <button id="photoCloseBtn" class="btn btn-secondary" type="button">Close</button>
       </div>
     </dialog>
 

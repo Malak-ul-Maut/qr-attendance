@@ -55,8 +55,7 @@ const ERROR_TEXT = {
   faculty_not_found: 'Your faculty account could not be found. Sign in again.',
   subject_does_not_take_attendance:
     'This subject does not take attendance, so a session cannot be started.',
-  date_outside_timetable:
-    'This class is not in the timetable on that date.',
+  date_outside_timetable: 'This class is not in the timetable on that date.',
   session_already_ended:
     'Attendance for this class was already submitted today.',
   session_method_mismatch:
@@ -68,6 +67,14 @@ const ERROR_TEXT = {
   session_ended: 'This session has already ended.',
   missing_session_code: 'This session is not active any more.',
   class_has_no_students: 'This class has no students enrolled.',
+  camera_unreachable:
+    'The classroom camera did not respond. Check that it is online and try again, or add students manually.',
+  no_camera_configured:
+    'No camera is set up for this classroom yet. Ask the admin to add it.',
+  invalid_camera_url:
+    "This classroom's camera address is not valid. Ask the admin to fix it.",
+  cctv_service_unavailable:
+    'The face recognition service is not running. Ask the admin to start it, or add students manually.',
   cctv_processing_failed:
     'The CCTV image could not be processed. Try again, or add students manually.',
 };
@@ -197,14 +204,15 @@ let sessionMeta = null; // { date, slot, method } saved to History on submit
 let qrTimer = null;
 let renderTimer = null;
 let classIds = [];
+let classInfo = []; // full class records for the selected slot (merged classes have several)
+let headerInfo = null; // what the session header shows; fixed when the session starts
 let slotRequestId = 0;
 let classRequestId = 0;
-let rosterFilter = 'present'; // 'present' | 'absent'
 let rosterQuery = '';
 
 const slotInfo = new Map(); // slotId -> slot from the server
 const allStudents = new Map(); // studentId -> { id, name, username, roll_number }
-const roster = new Map(); // studentId -> { name, time, source: 'qr'|'cctv'|'manual', present }
+const roster = new Map(); // studentId -> { name, time, source: 'qr'|'cctv'|'manual', present, removed }. Anyone ever marked present stays here, struck through if the teacher takes them off.
 const rowEls = new Map(); // studentId -> <li> currently in the list
 
 const getMethod = () => $('input[name="method"]:checked').value;
@@ -323,6 +331,7 @@ async function loadSlots() {
 async function loadClasses() {
   const requestId = ++classRequestId; // a slow answer for an old slot must not win
   classIds = []; // reset every time so old ids never pile up
+  classInfo = [];
   updateSubjectHeader();
   if (!getSlotId()) return;
 
@@ -333,6 +342,7 @@ async function loadClasses() {
     if (!res.ok) throw new Error();
     const classes = await res.json();
     if (requestId !== classRequestId) return;
+    classInfo = classes;
     classes.forEach(item => {
       classIds.push(item.class_id);
     });
@@ -365,7 +375,9 @@ function markPresent(id, name, source, time = formatTime()) {
   id = String(id);
   const entry = roster.get(id);
   if (entry?.present) return false;
-  if (entry) Object.assign(entry, { present: true, source, time });
+  // Taken off the list by the teacher: a later scan or QR must not quietly put them back (only "Mark present" does)
+  if (entry?.removed && source !== 'manual') return false;
+  if (entry) Object.assign(entry, { present: true, removed: false, source, time });
   else roster.set(id, { name, time, source, present: true });
   return true;
 }
@@ -374,53 +386,133 @@ function markAbsent(id) {
   const entry = roster.get(String(id));
   if (!entry?.present) return false;
   entry.present = false;
+  entry.removed = true;
   return true;
 }
 
 function updateCounts() {
   const present = presentCount();
   const total = allStudents.size;
-  const absent = total
-    ? [...allStudents.keys()].filter(id => !isPresent(id)).length
-    : 0;
-  $('#studentCount').textContent = present;
-  $('#studentTotal').textContent = total ? ` / ${total}` : '';
-  $('#tabPresent').textContent = present;
-  $('#tabAbsent').textContent = total ? absent : '–';
   const shown = total ? `${present} / ${total}` : String(present);
   $('#fsCount').textContent = shown;
   // Handy when the tab is in the background behind the slides
   if (sessionCode) document.title = `(${shown}) ${baseTitle}`;
+  renderSessionHeader();
 }
 
+// ---------- Session header: which class (or merged classes) this session is for ----------
+const titleCase = text => (text ? text[0].toUpperCase() + text.slice(1) : '');
+
+// "CSE · Sem 5 · Sec A". Reads whichever name fields the server sends for a class.
+function classLabel(c) {
+  const branch = c.branch_abbr || c.branchAbbr || c.branch || '';
+  const sem = c.semester ?? c.sem ?? '';
+  const section = c.section ?? '';
+  const label = [
+    branch,
+    sem !== '' ? `Sem ${sem}` : '',
+    section !== '' ? `Sec ${section}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const base = label || c.label || c.name || `Class ${c.class_id ?? ''}`.trim();
+  return c.batch ? `${base} · ${c.batch}` : base;
+}
+
+// Present / total for one class. Needs students that say which class they belong to;
+// otherwise falls back to a headcount from the class record, if the server sent one.
+function classCounts(c, isIn = isPresent) {
+  const id = String(c.class_id);
+  const mine = [...allStudents.values()].filter(
+    s => String(s.class_id ?? s.classId) === id,
+  );
+  if (mine.length)
+    return { total: mine.length, present: mine.filter(s => isIn(s.id)).length };
+  const total = c.student_count ?? c.students ?? c.total_students ?? null;
+  return {
+    total:
+      Number.isFinite(Number(total)) && total !== null ? Number(total) : null,
+    present: null,
+  };
+}
+
+let headerKey = '';
+function renderSessionHeader() {
+  const header = $('#sessionHeader');
+  if (!headerInfo) {
+    header.hidden = true;
+    return;
+  }
+  header.hidden = false;
+  const { slot, classes, date, method, sessionType } = headerInfo;
+  const merged = classes.length > 1;
+  $('#shPresent').textContent = presentCount();
+  $('#shTotal').textContent = allStudents.size ? ` / ${allStudents.size}` : '';
+
+  const rows = classes.map(c => ({ name: classLabel(c), ...classCounts(c) }));
+  const meta = [
+    formatDate(date),
+    slot ? `${slot.start_time} - ${slot.end_time}` : '',
+    slot?.block && slot?.room_number
+      ? `Room ${slot.block}-${slot.room_number}`
+      : '',
+    method === 'qr' ? 'QR session' : 'CCTV session',
+    sessionType ? `${titleCase(sessionType)} class` : '',
+  ].filter(Boolean);
+  const key = JSON.stringify([meta, rows, merged, slot?.subject_label]);
+  if (key === headerKey) return; // nothing new: leave the DOM alone
+  headerKey = key;
+
+  $('#shKind').textContent = merged
+    ? `Merged class · ${classes.length} classes together`
+    : 'Single class';
+  header.dataset.merged = merged ? 'true' : 'false';
+  $('#shSubject').textContent =
+    slot?.subject_label || slot?.subject_abbr || defaultSubjectLabel || 'Class';
+  $('#shMeta').replaceChildren(
+    ...meta.map(text =>
+      Object.assign(document.createElement('li'), { textContent: text }),
+    ),
+  );
+
+  $('#shClassesWrap').hidden = rows.length === 0;
+  $('#shClassesLabel').textContent = merged ? 'Merged classes' : 'Class';
+  $('#shClasses').replaceChildren(
+    ...rows.map(row => {
+      const li = document.createElement('li');
+      li.className = 'sh-class';
+      const name = document.createElement('span');
+      name.className = 'sh-class-name';
+      name.textContent = row.name;
+      li.append(name);
+      if (row.total !== null) {
+        const count = document.createElement('span');
+        count.className = 'sh-class-count';
+        count.textContent =
+          row.present === null
+            ? `${row.total} students`
+            : `${row.present} / ${row.total}`;
+        li.append(count);
+      }
+      return li;
+    }),
+  );
+}
+
+// One list: everyone marked present in this session. A student the teacher takes off stays in place, struck through,
+// with an Undo button. Students who were never marked are found through "Add manually".
 function buildRows() {
   const q = rosterQuery.trim().toLowerCase();
-  let rows;
-  if (rosterFilter === 'present') {
-    const via = { qr: 'QR', cctv: 'CCTV', manual: 'Manual' };
-    rows = [...roster]
-      .filter(([, s]) => s.present)
-      .map(([id, s]) => {
-        const label = idLabel(allStudents.get(id) || {});
-        return {
-          id,
-          name: s.name,
-          label,
-          present: true,
-          meta: [via[s.source], s.time].filter(Boolean).join(' · '),
-        };
-      });
-  } else {
-    rows = [...allStudents.values()]
-      .filter(s => !isPresent(s.id))
-      .map(s => ({
-        id: s.id,
-        name: s.name,
-        label: idLabel(s),
-        present: false,
-        meta: 'Not marked yet',
-      }));
-  }
+  const via = { qr: 'QR', cctv: 'CCTV', manual: 'Manual' };
+  const rows = [...roster].map(([id, s]) => ({
+    id,
+    name: s.name,
+    label: idLabel(allStudents.get(id) || {}),
+    present: s.present,
+    meta: s.present
+      ? [via[s.source], s.time].filter(Boolean).join(' · ')
+      : 'Marked absent',
+  }));
   return q
     ? rows.filter(
         r =>
@@ -451,7 +543,7 @@ function fillRow(li, row) {
   li.dataset.mode = row.present ? 'present' : 'absent';
   setNameCell(li.querySelector('.roster-name'), row.name, row.label);
   li.querySelector('.roster-meta').textContent = row.meta;
-  const action = row.present ? 'Mark absent' : 'Mark present';
+  const action = row.present ? 'Mark absent' : 'Undo';
   const btn = li.querySelector('.row-action');
   btn.textContent = action;
   btn.setAttribute(
@@ -506,19 +598,15 @@ function renderRoster({ force = false } = {}) {
   if (rows.length === 0) {
     const q = rosterQuery.trim();
     if (q) empty.textContent = `No students match "${q}".`;
-    else if (rosterFilter === 'present')
+    else
       empty.textContent =
         sessionMethod === 'cctv'
-          ? 'Nobody was recognised.'
+          ? 'Nobody was recognised. Use Add manually for anyone who is in class.'
           : 'Waiting for students to scan...';
-    else
-      empty.textContent = allStudents.size
-        ? 'Everyone is marked present.'
-        : 'The class list is not available.';
   }
 }
 
-// Marks students present from the absent list or the dialog
+// Marks students present from the Add manually dialog
 async function addManually(students) {
   const response = await postData('/api/attendance/manual', {
     sessionCode,
@@ -545,27 +633,15 @@ studentList.addEventListener('click', async event => {
   const id = li.dataset.id;
 
   if (li.dataset.mode === 'present') {
-    const index = [...studentList.children].indexOf(li);
-    markAbsent(id);
-    renderRoster({ force: true });
-    // The row is gone, so keep keyboard users in the same place in the list
-    const buttons = studentList.querySelectorAll('.row-action');
-    buttons[Math.min(index, buttons.length - 1)]?.focus();
-    return;
+    markAbsent(id); // the row stays where it is, struck through
+  } else {
+    const entry = roster.get(id); // Undo: back to how it was, no server call (Submit sends the final list)
+    if (entry) Object.assign(entry, { present: true, removed: false });
   }
-  btn.setAttribute('aria-busy', 'true');
-  await addManually([{ id, name: allStudents.get(id)?.name || '' }]);
-  btn.removeAttribute('aria-busy');
+  renderRoster({ force: true });
+  studentList.querySelector(`[data-id="${CSS.escape(id)}"] .row-action`)?.focus();
 });
 
-document.querySelectorAll('input[name="roster-filter"]').forEach(radio =>
-  radio.addEventListener('change', () => {
-    rosterFilter = radio.value;
-    rowEls.clear();
-    studentList.replaceChildren();
-    renderRoster({ force: true });
-  }),
-);
 $('#rosterSearch').addEventListener('input', event => {
   rosterQuery = event.target.value;
   renderRoster({ force: true });
@@ -631,7 +707,7 @@ socket.on('attendance_update', data => {
     80;
   renderRoster();
   // Follow new arrivals only if the teacher has not scrolled up to read
-  if (rosterFilter === 'present' && nearBottom)
+  if (nearBottom)
     studentList.scrollTop = studentList.scrollHeight;
   announcePresent(data.studentName);
 });
@@ -651,7 +727,7 @@ socket.on('connect', () => {
   if (socketWasDown) {
     socketWasDown = false;
     notify(
-      'Live updates are back. Anyone who scanned while you were offline may be missing, so check the Absent tab.',
+      'Live updates are back. Anyone who scanned while you were offline may be missing, so use Add manually for anyone who is missing.',
       'info',
     );
   }
@@ -689,18 +765,25 @@ startBtn.addEventListener('click', async () => {
       slot: selectedSlot()?.label || 'Class',
       method,
     };
+    headerInfo = {
+      date: dateInput.value,
+      slot: selectedSlot() ? { ...selectedSlot() } : null,
+      classes: [...classInfo],
+      method,
+      sessionType: $('input[name="session-type"]:checked').value,
+    };
+    headerKey = '';
     roster.clear();
     allStudents.clear();
     rowEls.clear();
     studentList.replaceChildren();
-    rosterFilter = 'present';
     rosterQuery = '';
     $('#rosterSearch').value = '';
-    $('input[name="roster-filter"][value="present"]').checked = true;
     socket.emit('join_session', sessionCode);
 
     beforeStart.hidden = true;
     afterStart.hidden = false;
+    renderSessionHeader();
     const isQr = method === 'qr';
     qrCanvas.hidden = !isQr;
     $('#qrLive').hidden = !isQr;
@@ -792,14 +875,100 @@ function scheduleTokenRefresh(delay) {
 }
 
 // ---------- CCTV ----------
+// How many faces the camera found in the picture. If the server reports it, use that.
+// Without it the card still shows who was recognised, just not the number of faces seen.
+function reportedFaces(response, recognised) {
+  const sent = Number(
+    response.facesDetected ?? response.faces_detected ?? response.detected,
+  );
+  return Number.isFinite(sent) && sent >= recognised ? sent : null;
+}
+
+// "28 faces seen · 8 recognised · 20 not recognised" beside the CCTV result title
+function renderCctvSummary() {
+  const summary = $('#cctvSummary');
+  if (!cctvResult) {
+    summary.hidden = true;
+    return;
+  }
+  const recognised = cctvResult.recognisedIds.size;
+  const { detected } = cctvResult;
+  const chip = (className, count, text) => {
+    const el = document.createElement('span');
+    el.className = `badge ${className}`.trim();
+    const num = document.createElement('b');
+    num.textContent = count;
+    el.append(num, ` ${text}`);
+    return el;
+  };
+  const chips = [];
+  if (detected !== null)
+    chips.push(chip('', detected, detected === 1 ? 'face seen' : 'faces seen'));
+  chips.push(chip('badge-success', recognised, 'recognised'));
+  if (detected !== null)
+    chips.push(chip('badge-warning', detected - recognised, 'not recognised'));
+  summary.replaceChildren(...chips);
+  summary.hidden = false;
+}
+
+// ---- "About this result": plain-language details under the CCTV picture ----
+// A snapshot of what the camera found. Marking students by hand later does not change it.
+// cctvResult: { time, recognisedIds, detected (null = unknown), width, height }
+let cctvResult = null;
+
+// ---- scan progress: seconds so far, plus how long scans usually take (the server keeps the recent ones) ----
+// No countdown to zero: a scan can wait in a queue or stop early, so a promised end time would often be wrong.
+function startScanProgress(startedAt, getInfo) {
+  const line = $('#cctvCountdown');
+  const tick = () => {
+    const { typical, others } = getInfo();
+    const seconds = Math.round((Date.now() - startedAt) / 1000);
+    const parts = [`Scanning… ${seconds} s`];
+    if (typical) parts.push(seconds > typical * 1.5 ? 'taking longer than usual' : `usually about ${typical} s`);
+    if (others > 0) parts.push(`${others} other ${others === 1 ? 'class is' : 'classes are'} also being scanned`);
+    line.textContent = parts.join(' · ');
+    line.hidden = false;
+  };
+  tick();
+  const timer = setInterval(tick, 1000);
+  return () => { clearInterval(timer); line.hidden = true; };
+}
+
 async function runCCTV() {
   const status = $('#liveStatus');
+  cctvResult = null;
   $('#cctvError').hidden = true;
   $('#cctvSkeleton').hidden = false;
   cctvViewer.hidden = true;
-  status.textContent = 'Processing CCTV footage...';
+  status.textContent = '';
 
-  const response = await postData('/api/attendance/cctv/run', { sessionCode });
+  $('#cctvSummary').hidden = true;
+  $('#cctvRescan').hidden = true;
+  const scanInfo = { typical: null, others: 0 };
+  const stopCountdown = startScanProgress(Date.now(), () => scanInfo);
+
+  // While the scan runs, ask how busy the service is and how long scans usually take.
+  let scanning = true;
+  const askQueue = async () => {
+    try {
+      const queue = await (await fetch('/api/attendance/cctv/queue')).json();
+      if (!scanning || !sessionCode) return;
+      scanInfo.others = Math.max(0, (queue.activeScans || 0) - 1);
+      scanInfo.typical = queue.typicalSeconds || null;
+    } catch {
+      // the hint is optional; never let it disturb the scan
+    }
+  };
+  void askQueue();
+  const watchQueue = setInterval(askQueue, 3000);
+  let response;
+  try {
+    response = await postData('/api/attendance/cctv/run', { sessionCode });
+  } finally {
+    scanning = false;
+    clearInterval(watchQueue);
+    stopCountdown();
+  }
   if (!sessionCode) return; // session ended while we waited
   if (!response?.ok) {
     $('#cctvSkeleton').hidden = true;
@@ -813,7 +982,7 @@ async function runCCTV() {
   // The camera's class list doubles as the absent list
   addStudents(response.students);
 
-  // Only recognized CCTV students are marked present; everyone else shows in the Absent tab
+  // Only recognized CCTV students are marked present; everyone else can be added with Add manually
   const presentIds = new Set(
     response.presentStudents.map(s => String(s.student_id)),
   );
@@ -822,6 +991,15 @@ async function runCCTV() {
     .filter(s => presentIds.has(String(s.id)))
     .forEach(s => markPresent(s.id, s.name, 'cctv', time));
   renderRoster({ force: true });
+  const reported = reportedFaces(response, presentIds.size);
+  cctvResult = {
+    time,
+    recognisedIds: presentIds,
+    detected: reported, // null when the server does not say how many faces it found
+  };
+  renderCctvSummary();
+  $('#cctvRescan').hidden = false;
+  status.textContent = '';
 
   cctvResultImage.onload = () => {
     $('#cctvSkeleton').hidden = true;
@@ -833,15 +1011,20 @@ async function runCCTV() {
     notify('The annotated CCTV image could not be loaded.', 'error');
   };
   cctvResultImage.src = `/results/${sessionCode}.jpg?t=${Date.now()}`;
-  status.textContent = `${presentCount()} of ${allStudents.size} recognised. Check the Absent tab for anyone the camera missed.`;
 }
 
-$('#cctvRetryBtn').addEventListener('click', async event => {
-  const btn = event.currentTarget;
-  btn.setAttribute('aria-busy', 'true');
-  await runCCTV();
-  btn.removeAttribute('aria-busy');
-});
+// "Try again" (after an error) and "Scan again" (after a result) run the same scan. Students already
+// marked stay marked; a new scan only adds the ones the camera sees now (late arrivals).
+for (const id of ['#cctvRetryBtn', '#cctvRescanBtn']) {
+  $(id).addEventListener('click', async event => {
+    const btn = event.currentTarget;
+    btn.setAttribute('aria-busy', 'true');
+    btn.disabled = true;
+    await runCCTV();
+    btn.removeAttribute('aria-busy');
+    btn.disabled = false;
+  });
+}
 
 // ---------- CCTV image zoom ----------
 // Buttons, Ctrl + scroll or a pinch to zoom; drag to move; double-click to zoom in or fit.
@@ -1019,7 +1202,9 @@ fullscreenBtn.addEventListener('click', () => {
 });
 document.addEventListener('fullscreenchange', () => {
   fullscreenBtn.textContent =
-    document.fullscreenElement === liveGrid ? 'Exit full screen' : 'Full screen';
+    document.fullscreenElement === liveGrid
+      ? 'Exit full screen'
+      : 'Full screen';
   cctvFullscreenBtn.textContent =
     document.fullscreenElement === cctvViewer
       ? 'Exit full screen'
@@ -1044,7 +1229,8 @@ $('#add-manually-btn').addEventListener('click', async () => {
 
 function renderManualList() {
   const q = manualQuery.trim().toLowerCase();
-  const pending = [...allStudents.values()].filter(s => !isPresent(s.id));
+  // Students already in the list (present, or struck through) are handled there, not here
+  const pending = [...allStudents.values()].filter(s => !roster.has(s.id));
   const pendingIds = new Set(pending.map(s => s.id));
   for (const id of manualSelected)
     if (!pendingIds.has(id)) manualSelected.delete(id);
@@ -1202,17 +1388,19 @@ function endSessionUI() {
   sessionCode = null;
   sessionMethod = null;
   sessionMeta = null;
+  headerInfo = null;
+  renderSessionHeader();
   roster.clear();
   allStudents.clear();
   rowEls.clear();
   studentList.replaceChildren();
-  rosterFilter = 'present';
   rosterQuery = '';
   $('#rosterSearch').value = '';
-  $('input[name="roster-filter"][value="present"]').checked = true;
   document.title = baseTitle;
   if (document.fullscreenElement) document.exitFullscreen();
   cctvViewer.hidden = true;
+  $('#cctvSummary').hidden = true;
+  cctvResult = null;
   cctvResultImage.removeAttribute('src');
   resetView();
   $('#cctvSkeleton').hidden = false;

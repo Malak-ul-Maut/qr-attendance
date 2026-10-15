@@ -149,11 +149,41 @@
             it is back.
           </p>
 
+          <!-- Which class this session is for (and which classes are merged), shown once a session starts -->
+          <section
+            id="sessionHeader"
+            class="card session-header"
+            aria-labelledby="shSubject"
+            hidden>
+            <div class="sh-top">
+              <div class="sh-title">
+                <p id="shKind" class="sh-kicker"></p>
+                <h2 id="shSubject" class="sh-subject"></h2>
+              </div>
+              <p class="sh-count" aria-live="polite">
+                <b id="shPresent">0</b><span id="shTotal"></span>
+                <span class="sh-count-label">present</span>
+              </p>
+            </div>
+            <ul id="shMeta" class="sh-meta" aria-label="Session details"></ul>
+            <div id="shClassesWrap" class="sh-classes" hidden>
+              <p id="shClassesLabel" class="sh-label"></p>
+              <ul
+                id="shClasses"
+                class="sh-class-list"
+                aria-labelledby="shClassesLabel"></ul>
+            </div>
+          </section>
+
           <div class="live-grid">
             <!-- Full screen includes both the QR code and the live student roster -->
             <div id="qrPanel" class="card qr-panel">
               <div class="panel-head">
-                <h2 id="panelTitle" tabindex="-1">Scan to mark attendance</h2>
+                <div class="panel-title-wrap">
+                  <h2 id="panelTitle" tabindex="-1">Scan to mark attendance</h2>
+                  <!-- CCTV only: how many faces the camera found, and how many of them were recognised -->
+                  <p id="cctvSummary" class="cctv-summary" hidden></p>
+                </div>
                 <button
                   id="fullscreenBtn"
                   class="btn btn-secondary"
@@ -172,6 +202,19 @@
                 The QR library could not load. Check the network and reload.
               </p>
               <div id="cctvPanel" hidden>
+                <div id="cctvRescan" class="cctv-rescan" hidden>
+                  <button
+                    id="cctvRescanBtn"
+                    class="btn btn-secondary btn-sm"
+                    type="button">
+                    Scan again
+                  </button>
+                  <p>
+                    Finds students who arrived late. Students already marked
+                    stay marked.
+                  </p>
+                </div>
+                <p id="cctvCountdown" class="cctv-countdown" role="status" hidden></p>
                 <div id="cctvSkeleton" class="skeleton"></div>
                 <div
                   id="cctvError"
@@ -260,14 +303,6 @@
             </div>
 
             <div class="card roster-panel">
-              <div class="roster-head">
-                <div>
-                  <span id="studentCount" class="count">0</span
-                  ><span id="studentTotal" class="count-total"></span
-                  ><span class="count-label"> present</span>
-                </div>
-                <p id="liveStatus" role="status"></p>
-              </div>
               <div class="roster-actions">
                 <button
                   id="add-manually-btn"
@@ -283,29 +318,8 @@
                 </button>
               </div>
 
+              <p id="liveStatus" class="live-status" role="status"></p>
               <div class="roster-filter">
-                <div
-                  class="segmented roster-tabs"
-                  role="radiogroup"
-                  aria-label="Show students who are">
-                  <label
-                    ><input
-                      type="radio"
-                      name="roster-filter"
-                      value="present"
-                      checked /><span
-                      >Present <b id="tabPresent">0</b></span
-                    ></label
-                  >
-                  <label
-                    ><input
-                      type="radio"
-                      name="roster-filter"
-                      value="absent" /><span
-                      >Absent <b id="tabAbsent">0</b></span
-                    ></label
-                  >
-                </div>
                 <input
                   id="rosterSearch"
                   class="input"

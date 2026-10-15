@@ -83,6 +83,104 @@
   font-size: var(--text-lg);
 }
 
+/* ---- Session header: which class (or merged classes) this session is for ---- */
+.session-header {
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border-left: 4px solid var(--line-strong);
+}
+.session-header[hidden] {
+  display: none;
+}
+/* Merged classes get the brand accent, so a combined lecture is obvious at a glance */
+.session-header[data-merged='true'] {
+  border-left-color: var(--red-600);
+}
+.sh-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+.sh-kicker {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink-500);
+}
+.session-header[data-merged='true'] .sh-kicker {
+  color: var(--red-600);
+}
+.sh-subject {
+  margin: 0;
+  font-size: var(--text-xl);
+  line-height: 1.25;
+}
+.sh-count {
+  flex: none;
+  margin: 0;
+  text-align: right;
+  color: var(--ink-500);
+  white-space: nowrap;
+}
+.sh-count b {
+  font-size: var(--text-4xl);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--ink-900);
+}
+#shTotal {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+}
+.sh-count-label {
+  display: block;
+  font-size: var(--text-lg);
+}
+.sh-meta,
+.sh-class-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sh-meta li {
+  font-size: var(--text-sm);
+  color: var(--ink-700);
+}
+.sh-meta li + li::before {
+  content: '·';
+  margin-right: var(--space-2);
+  color: var(--ink-400);
+}
+.sh-label {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink-500);
+}
+.sh-class {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: var(--text-sm);
+}
+.sh-class-name {
+  font-weight: 600;
+  color: var(--ink-900);
+}
+.sh-class-count {
+  color: var(--ink-500);
+}
+
 /* ---- Live session ---- */
 .live-grid {
   display: grid;
@@ -105,6 +203,38 @@
 .panel-head h2 {
   font-size: var(--text-xl);
 }
+.panel-title-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
+}
+.cctv-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+}
+.cctv-summary[hidden] {
+  display: none;
+}
+.cctv-rescan {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.cctv-rescan[hidden] {
+  display: none;
+}
+.cctv-rescan p {
+  margin: 0;
+  color: var(--ink-500);
+  font-size: 0.875rem;
+}
+
 .qr-panel {
   padding: var(--space-5);
 }
@@ -172,50 +302,61 @@
   font-size: var(--text-sm);
   color: var(--ink-500);
 }
+/* Full screen: the picture takes the whole screen; the toolbar and hint float over it on a see-through band */
 .cctv-viewer:fullscreen {
-  display: flex;
-  flex-direction: column;
-  padding: var(--space-4);
-  background: var(--canvas);
+  position: relative;
+  display: block;
+  padding: 0;
+  background: #000;
 }
 .cctv-viewer:fullscreen .cctv-stage {
-  flex: 1;
-  min-height: 0;
+  position: absolute;
+  inset: 0;
   border-radius: 0;
   background: #000;
 }
 .cctv-viewer:fullscreen #cctvResultImage {
+  width: 100%;
   height: 100%;
   object-fit: contain;
+}
+.cctv-viewer:fullscreen .zoom-bar,
+.cctv-viewer:fullscreen .zoom-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  color: #fff;
+  pointer-events: none; /* only the buttons catch clicks; the picture underneath stays draggable */
+}
+.cctv-viewer:fullscreen .zoom-bar {
+  top: 0;
+  background: linear-gradient(rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0));
+}
+.cctv-viewer:fullscreen .zoom-hint {
+  bottom: 0;
+  background: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.55));
+  text-align: center;
+}
+.cctv-viewer:fullscreen .zoom-bar > * {
+  pointer-events: auto;
+}
+.cctv-viewer:fullscreen .zoom-level {
+  color: #fff;
 }
 
 .roster-panel {
   padding: var(--space-5);
 }
-.roster-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--space-3);
-}
-.count {
-  font-size: var(--text-4xl);
-  font-weight: 700;
-  color: var(--ink-900);
-  line-height: 1;
-}
-.count-total {
-  font-size: var(--text-2xl);
-  font-weight: 600;
-  color: var(--ink-500);
-}
-.count-label {
-  font-size: var(--text-lg);
-  color: var(--ink-500);
-}
 #liveStatus {
   font-size: var(--text-sm);
   color: var(--ink-500);
+  margin: 0;
+}
+#liveStatus:empty {
+  display: none;
 }
 .roster-actions {
   display: flex;
@@ -230,7 +371,7 @@
   padding: 0;
   display: grid;
   gap: var(--space-2);
-  max-height: calc(100vh - 26rem);
+  max-height: calc(100vh - 17rem);
   min-height: 8rem;
   overflow-y: auto;
 }
@@ -338,9 +479,6 @@
   .roster-name {
     font-size: var(--text-base);
   }
-  .count {
-    font-size: var(--text-3xl);
-  }
 }
 /* Projectors are usually wide but short: keep the QR square and fully visible without scrolling */
 @media (min-width: 900px) and (max-height: 760px) {
@@ -419,17 +557,79 @@
   gap: var(--space-3);
   margin-bottom: var(--space-3);
 }
-@media (min-width: 600px) {
-  .roster-filter {
-    grid-template-columns: minmax(12rem, 16rem) 1fr;
-  }
+/* ---- Please verify: students the camera was not sure about ---- */
+.cctv-verify {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding: var(--space-3);
+  border: 2px solid var(--warning-600);
+  border-radius: var(--radius-md);
+  background: var(--warning-50);
 }
-/* .segmented spans are grids; keep the label and its count on one line */
-.roster-tabs span {
+.cctv-verify[hidden] {
+  display: none;
+}
+.cctv-verify h3 {
+  margin: 0;
+  font-size: var(--text-base);
+  color: var(--warning-600);
+}
+.cctv-verify-note {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-700);
+}
+.verify-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.verify-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--surface, #fff);
+  border: 1px solid var(--line);
+}
+.verify-score {
+  display: block;
+  font-size: var(--text-sm);
+  color: var(--ink-500);
+}
+.verify-actions {
   display: flex;
   gap: var(--space-2);
-  align-items: center;
-  justify-content: center;
+}
+/* In the Present list, an unconfirmed student has a yellow edge */
+.roster-row[data-verify='true'] {
+  border: 2px solid var(--warning-600);
+  background: var(--warning-50);
+}
+.roster-row[data-verify='true'] .roster-meta {
+  color: var(--warning-600);
+  font-weight: 600;
+}
+
+/* A student the teacher took off stays in the list, outlined in red with the name struck through (Undo brings them back) */
+.roster-row[data-mode='absent'] {
+  border: 2px solid var(--danger-600);
+  background: var(--danger-50);
+}
+.roster-row[data-mode='absent'] .roster-name {
+  /* text-decoration: line-through; */
+  text-decoration-thickness: 2px;
+  color: var(--ink-500);
+}
+.roster-row[data-mode='absent'] .roster-meta {
+  color: var(--danger-600);
+  font-weight: 600;
 }
 
 /* ---- Projector full screen (QR panel and roster) ---- */
@@ -533,4 +733,13 @@
 }
 #submitWarn {
   margin-top: var(--space-3);
+}
+/* CCTV scan progress line */
+.cctv-countdown {
+  margin: 0 0 var(--space-2);
+  font-weight: 600;
+  color: var(--ink-700);
+}
+.cctv-countdown[hidden] {
+  display: none;
 }
