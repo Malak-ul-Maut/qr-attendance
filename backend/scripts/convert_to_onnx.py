@@ -23,6 +23,20 @@ What the original model is, and what this script changes so recognize.py can use
                                                       use --keypoints input to expose them as a second input instead)
       * splits the output into a unit-length embedding and the feature norm (AdaFace's quality hint, same meaning as before)
 
+Which exporter:
+    Default is the classic TorchScript-based exporter (--exporter legacy). This model's relative-position-embedding layers
+    (attn.rpe_k) cache a tensor on themselves (`_ctx_rp_bucket_flatten`) during forward(). Under the new dynamo exporter that
+    tensor is created in "fake tensor" mode, so it ends up in the ONNX file as an initializer with no data and saving fails with
+    "Cannot take content out from the FakeTensor". The legacy exporter traces with real tensors, so it does not hit this.
+    --exporter dynamo is still available, but is expected to fail on this model.
+
+Dynamic batch (why the model needs a patch):
+    CVLface's iRPE.forward_rpe_transpose (models/vit_kprpe/RPE/KPRPE/kprpe_shared.py) does `B = len(x)` and then
+    `.view(B, -1, L_query, L_key)`. While tracing, len(x) is frozen to the dummy batch size (1), so at batch 4 the view
+    folds the batch into the head axis ([1, 64, L, L] instead of [4, 16, L, L]) and the Add in blocks.0/attn fails with
+    "broadcast an axis ... 16 by 64". patch_rpe_for_dynamic_batch() swaps in `.view(-1, x.shape[1], L_query, L_key)`,
+    which gives identical results and keeps the batch dimension dynamic. The repo files on disk are not modified.
+
 Model contract of the .onnx written here:
     input     : 'input'     float32 [N, 3, 112, 112]  aligned face, BGR order, pixels (x / 255 - 0.5) / 0.5
     (optional): 'keypoints' float32 [N, 5, 2]         only with --keypoints input: landmarks in the 112x112 crop, (x, y) / 112
@@ -32,6 +46,8 @@ Model contract of the .onnx written here:
 import argparse
 import os
 import sys
+import warnings
+from itertools import chain
 from pathlib import Path
 
 import numpy as np
@@ -67,7 +83,16 @@ def load_model(repo_dir, weights_path):
         # CVLFace's wrapper predates Transformers' tied-weight bookkeeping and has no tied weights.
         if not hasattr(model_class, "all_tied_weights_keys"):
             model_class.all_tied_weights_keys = {}
-        model = model_class.from_pretrained(str(repo_dir))
+
+        # Newer transformers builds the model on the "meta" device first. The wrapper's own attempt to load
+        # pretrained_model/model.pt during __init__ then silently does nothing (that is what the long wall of
+        # "copying from a non-meta parameter ... is a no-op" warnings is). The real weights are filled in afterwards by
+        # transformers ("Loading weights 283/283"), and ensure_real_weights() below double-checks that.
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message=".*copying from a non-meta parameter.*")
+            model = model_class.from_pretrained(str(repo_dir), low_cpu_mem_usage=False)
+        model = model.to("cpu")
+        ensure_real_weights(model, repo_dir)
     except Exception as error:
         sys.exit(f"Could not build the model from {repo_dir}: {type(error).__name__}: {error}\n"
                  f"Check that the repo download is complete (models/, pretrained_model/, wrapper.py, config.json) "
@@ -78,6 +103,27 @@ def load_model(repo_dir, weights_path):
     if weights_path:
         load_weights(model, weights_path)
     return model.eval().requires_grad_(False)
+
+
+def ensure_real_weights(model, repo_dir):
+    """Make sure no parameter/buffer is still a meta tensor, and (re)load the repo's pretrained_model/model.pt into the net."""
+    inner = getattr(model, "model", model)       # the wrapper keeps the real network at .model; model.pt keys look like 'net.blocks...'
+    ckpt = Path(repo_dir) / "pretrained_model" / "model.pt"
+    if ckpt.exists():
+        try:
+            try:
+                state = torch.load(ckpt, map_location="cpu", weights_only=True)
+            except Exception:
+                state = torch.load(ckpt, map_location="cpu", weights_only=False)
+            state = state.get("state_dict", state) if isinstance(state, dict) else state
+            inner.load_state_dict(state, strict=True, assign=True)   # assign=True: replaces meta/placeholder tensors with the real ones
+            print(f"Loaded weights from {ckpt}")
+        except Exception as error:
+            print(f"Note: could not load {ckpt} directly ({type(error).__name__}); keeping the weights transformers loaded.")
+    meta = [name for name, t in chain(model.named_parameters(), model.named_buffers()) if t.is_meta]
+    if meta:
+        raise RuntimeError(f"{len(meta)} tensors are still on the meta device (e.g. {meta[:3]}) - the weights did not load. "
+                           f"Check that {ckpt} / model.safetensors exist in the repo folder.")
 
 
 def load_weights(model, weights_path):
@@ -109,6 +155,84 @@ def load_weights(model, weights_path):
     sys.exit(f"{weights_path} does not match this model's layers:\n{last_error}")
 
 
+def scrub_fake_tensors(network):
+    """Reset plain tensor attributes that a previous (failed) dynamo export left behind as FakeTensors."""
+    from torch._subclasses.fake_tensor import FakeTensor
+    for module in network.modules():
+        for key, value in list(vars(module).items()):
+            if isinstance(value, FakeTensor):
+                setattr(module, key, None)
+
+
+def patch_rpe_for_dynamic_batch(network):
+    """Replace iRPE.forward_rpe_transpose's `view(len(x), ...)` (batch frozen at trace time) with a batch-agnostic view."""
+    patched = set()
+    for module in network.modules():
+        cls = type(module)
+        if cls in patched or not hasattr(cls, "forward_rpe_transpose"):
+            continue
+        original = cls.forward_rpe_transpose
+
+        def forward_rpe_transpose(self, x, rp_bucket, _original=original):
+            # only the pure-PyTorch contextual path (no compiled RPEIndexFunction) has the frozen-batch view
+            if self.mode == "contextual" and getattr(self, "_ctx_rp_bucket_flatten", None) is not None:
+                l_query, l_key = rp_bucket.shape
+                return x.flatten(2)[:, :, self._ctx_rp_bucket_flatten].view(-1, x.shape[1], l_query, l_key)
+            return _original(self, x, rp_bucket)
+
+        cls.forward_rpe_transpose = forward_rpe_transpose
+        patched.add(cls)
+    return len(patched)
+
+
+def apply_batch_patch(network):
+    """Patch, and prove in plain PyTorch that the patched network gives the same output as the original on a batch of 3."""
+    probe = torch.from_numpy(np.random.default_rng(3).uniform(-1, 1, size=(3, 3, 112, 112)).astype(np.float32))
+    wrapper = EmbedderFixedKeypoints(network, False).eval()
+    with torch.no_grad():
+        before = wrapper(probe)[0]
+        count = patch_rpe_for_dynamic_batch(network)
+        after = wrapper(probe)[0]
+    diff = float((before - after).abs().max())
+    print(f"Patched {count} RPE class(es) for dynamic batch; max |output change| in PyTorch = {diff:.2e}")
+    if count == 0:
+        print("Note: no iRPE class with forward_rpe_transpose found - nothing patched.")
+    if diff > 1e-5:
+        sys.exit("The batch patch changed the model output - refusing to export.")
+
+
+def check_openvino(out_path, batches=(1, 4, 8, 16)):
+    """Mimic accel.OpenVINOSession: read the .onnx, reshape to each batch bucket, compile on the CPU, compare with onnxruntime."""
+    try:
+        import openvino as ov
+    except ImportError:
+        print("openvino is not installed - skipped the OpenVINO bucket check (pip install openvino to run it).")
+        return True
+    import onnxruntime as ort
+    session = ort.InferenceSession(str(out_path), providers=["CPUExecutionProvider"])
+    core = ov.Core()
+    rng = np.random.default_rng(1)
+    ok = True
+    for n in batches:
+        x = rng.uniform(-1, 1, size=(n, 3, 112, 112)).astype(np.float32)
+        try:
+            model = core.read_model(str(out_path))
+            model.reshape(ov.PartialShape([n, 3, 112, 112]))
+            request = core.compile_model(model, "CPU", {"PERFORMANCE_HINT": "LATENCY"}).create_infer_request()
+            request.infer({0: x})
+            got = request.get_output_tensor(0).data.copy()
+        except Exception as error:
+            print(f"  OpenVINO batch {n}: FAILED ({type(error).__name__}: {str(error).splitlines()[0][:200]})")
+            ok = False
+            continue
+        expected = session.run(None, {"input": x})[0]
+        diff = float(np.abs(got - expected).max())
+        print(f"  OpenVINO batch {n}: max |embedding diff| vs onnxruntime = {diff:.2e}")
+        ok = ok and diff <= 1e-3
+    print("OpenVINO bucket check: " + ("OK" if ok else "PROBLEM - see above"))
+    return ok
+
+
 class Embedder(nn.Module):
     """BGR image in -> (unit embedding, feature norm) out. Keypoints are a baked-in constant, or a second input."""
 
@@ -116,10 +240,11 @@ class Embedder(nn.Module):
         super().__init__()
         self.network = network
         self.keypoints_as_input = keypoints_as_input
-        self.register_buffer("template", torch.from_numpy(TEMPLATE_KEYPOINTS))   # [5, 2]
+        self.register_buffer("template", torch.from_numpy(TEMPLATE_KEYPOINTS), persistent=False)    # [5, 2]
+        self.register_buffer("rgb_index", torch.tensor([2, 1, 0], dtype=torch.long), persistent=False)
 
     def forward(self, x, keypoints=None):
-        x = x.flip(1)                                            # BGR -> RGB (the model was trained on RGB)
+        x = x.index_select(1, self.rgb_index)                    # BGR -> RGB (the model was trained on RGB)
         if keypoints is None:
             keypoints = self.template.unsqueeze(0).expand(x.shape[0], -1, -1)   # same landmarks for every face in the batch
         feature = self.network(x, keypoints)
@@ -136,8 +261,9 @@ class EmbedderFixedKeypoints(Embedder):
         return super().forward(x, None)
 
 
-def export(network, out_path, opset=17, static_batch=0, keypoints_as_input=False, simplify=False):
+def export(network, out_path, opset=17, static_batch=0, keypoints_as_input=False, simplify=False, exporter="legacy"):
     """Write `out_path` and return (wrapper module, input names). Separate from main() so it can be tested on its own."""
+    scrub_fake_tensors(network)
     model = (Embedder(network, True) if keypoints_as_input else EmbedderFixedKeypoints(network, False)).eval()
     batch = max(static_batch, 1)
     dummy = [torch.randn(batch, 3, 112, 112)]
@@ -147,18 +273,25 @@ def export(network, out_path, opset=17, static_batch=0, keypoints_as_input=False
         input_names.append("keypoints")
     output_names = ["embedding", "norm"]
 
-    dynamic_axes = None
-    if not static_batch:
-        dynamic_axes = {name: {0: "batch"} for name in input_names + output_names}
-
-    export_kwargs = dict(input_names=input_names, output_names=output_names, dynamic_axes=dynamic_axes,
-                         opset_version=opset, do_constant_folding=True)
     with torch.no_grad():
-        try:
-            # Newer torch defaults to the "dynamo" exporter; the classic exporter is the well-trodden path.
-            torch.onnx.export(model, tuple(dummy), str(out_path), dynamo=False, **export_kwargs)
-        except TypeError:
-            torch.onnx.export(model, tuple(dummy), str(out_path), **export_kwargs)
+        model(*dummy)     # one real forward pass first: lazily-built RPE caches get created with real data, not fake tensors
+
+        if exporter == "dynamo":
+            batch_dim = torch.export.Dim("batch", min=1)
+            dynamic_shapes = None if static_batch else tuple({0: batch_dim} for _ in dummy)
+            torch.onnx.export(model, tuple(dummy), str(out_path), dynamo=True, input_names=input_names,
+                              output_names=output_names, dynamic_shapes=dynamic_shapes, opset_version=opset,
+                              do_constant_folding=True)
+        else:
+            dynamic_axes = None if static_batch else {name: {0: "batch"} for name in input_names + output_names}
+            legacy_kwargs = dict(input_names=input_names, output_names=output_names, dynamic_axes=dynamic_axes,
+                                 opset_version=opset, do_constant_folding=True)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")      # the legacy exporter is deprecated in new torch and warns loudly
+                try:
+                    torch.onnx.export(model, tuple(dummy), str(out_path), dynamo=False, **legacy_kwargs)
+                except TypeError:                    # old torch without the `dynamo` argument: it only has the legacy exporter
+                    torch.onnx.export(model, tuple(dummy), str(out_path), **legacy_kwargs)
 
     import onnx
     onnx.checker.check_model(str(out_path))   # by path: also works when the weights are stored as external data
@@ -216,24 +349,48 @@ def main():
                     help="template (default): bake in the ArcFace landmark template - works with recognize.py's aligned crops as is. "
                          "input: expose a second 'keypoints' [N,5,2] input")
     ap.add_argument("--opset", type=int, default=17)
+    ap.add_argument("--exporter", choices=["legacy", "dynamo"], default="legacy",
+                    help="legacy (default): classic TorchScript exporter, works with this model. "
+                         "dynamo: new exporter, fails on this model's RPE cache (FakeTensor error)")
     ap.add_argument("--static-batch", type=int, default=0,
-                    help="fix the batch size to N (some GPU runtimes compile faster for a fixed shape). Default: dynamic batch")
+                    help="fix the batch size to N. Default: dynamic batch (needed for recognize.py's OpenVINO batch buckets)")
     ap.add_argument("--simplify", action="store_true", help="run onnxsim afterwards if it is installed")
     args = ap.parse_args()
 
     network = load_model(args.repo_dir, args.weights)
+    apply_batch_patch(network)
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     keypoints_as_input = args.keypoints == "input"
-    model, input_names = export(network, args.out, args.opset, args.static_batch, keypoints_as_input, args.simplify)
 
-    out_dir = os.path.dirname(os.path.abspath(args.out))
-    size_mb = sum(os.path.getsize(os.path.join(out_dir, f)) for f in os.listdir(out_dir)
-                  if f.startswith(os.path.basename(args.out))) / 1048576
-    print(f"Wrote {args.out}  ({size_mb:.0f} MB, batch {'fixed ' + str(args.static_batch) if args.static_batch else 'dynamic'}, "
-          f"inputs {input_names})")
-    if not verify(model, input_names, args.out, args.static_batch):
+    def build(static_batch):
+        """Export + verify once. Returns (ok, input_names)."""
+        model, input_names = export(network, args.out, args.opset, static_batch, keypoints_as_input, args.simplify,
+                                    args.exporter)
+        out_dir = os.path.dirname(os.path.abspath(args.out))
+        size_mb = sum(os.path.getsize(os.path.join(out_dir, f)) for f in os.listdir(out_dir)
+                      if f.startswith(os.path.basename(args.out))) / 1048576
+        print(f"Wrote {args.out}  ({size_mb:.0f} MB, batch {'fixed ' + str(static_batch) if static_batch else 'dynamic'}, "
+              f"inputs {input_names})")
+        try:
+            return verify(model, input_names, args.out, static_batch), input_names
+        except Exception as error:      # e.g. onnxruntime refusing to run the graph at a batch size it was not traced with
+            print(f"ONNX Runtime could not run the exported model: {type(error).__name__}: {str(error).splitlines()[0][:300]}")
+            return False, input_names
+
+    static_batch = args.static_batch
+    ok, input_names = build(static_batch)
+    if not ok and not static_batch:
+        # Safety net: if something else in the model still freezes the batch size, fall back to a fixed batch of 1,
+        # which recognize.py handles natively (one face per model call; note OpenVINO buckets then cannot be used).
+        print("\nDynamic batch still does not work. Re-exporting with a fixed batch of 1 "
+              "(recognize.py sends one face per call for such a model).\n")
+        static_batch = 1
+        ok, input_names = build(static_batch)
+    if not ok:
         sys.exit("MISMATCH: the exported model does not reproduce the PyTorch output. Do not use it.")
-    print("OK. Input: float32 [N,3,112,112], BGR, (pixel/255 - 0.5)/0.5"
+    if not static_batch and len(input_names) == 1:
+        check_openvino(args.out)      # informational: recognize.py's accel.py reshapes the model to batch buckets 1/4/8/16
+    print("OK. Input: float32 [%s,3,112,112], BGR, (pixel/255 - 0.5)/0.5" % (static_batch or "N")
           + (" + keypoints [N,5,2]" if keypoints_as_input else "") + ". Outputs: 512-d L2-normalised embedding, norm [N,1].")
 
 
