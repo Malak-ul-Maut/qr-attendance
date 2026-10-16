@@ -3,10 +3,10 @@
 then check the ONNX output matches PyTorch.
 
 Setup:
-    pip install torch onnx onnxruntime numpy safetensors transformers omegaconf huggingface_hub
+    pip install torch onnx onnxruntime numpy safetensors transformers omegaconf huggingface_hub timm easydict
     pip install onnxsim                                  # optional, only for --simplify
     # download the whole model repo (code + weights) - the model code lives in the repo, so a bare .safetensors is not enough:
-    huggingface-cli download minchul/cvlface_adaface_vit_base_kprpe_webface12m --local-dir ./kprpe_repo
+    hf download minchul/cvlface_adaface_vit_base_kprpe_webface12m --local-dir ./kprpe_repo
     #   (the card says the repo may need your Hugging Face token: set HF_TOKEN or run `huggingface-cli login`)
 
 Usage:
@@ -52,7 +52,7 @@ def load_model(repo_dir, weights_path):
         sys.exit(f"{repo_dir} has no config.json - point --repo-dir at the downloaded model repo "
                  f"(huggingface-cli download minchul/cvlface_adaface_vit_base_kprpe_webface12m --local-dir ./kprpe_repo)")
     try:
-        from transformers import AutoModel
+        from transformers.dynamic_module_utils import get_class_from_dynamic_module
     except ImportError:
         sys.exit("transformers is missing. Run: pip install transformers omegaconf")
 
@@ -61,7 +61,13 @@ def load_model(repo_dir, weights_path):
     sys.path.insert(0, str(repo_dir))
     os.chdir(repo_dir)
     try:
-        model = AutoModel.from_pretrained(str(repo_dir), trust_remote_code=True)
+        model_class = get_class_from_dynamic_module(
+            "wrapper.CVLFaceRecognitionModel", str(repo_dir), local_files_only=True
+        )
+        # CVLFace's wrapper predates Transformers' tied-weight bookkeeping and has no tied weights.
+        if not hasattr(model_class, "all_tied_weights_keys"):
+            model_class.all_tied_weights_keys = {}
+        model = model_class.from_pretrained(str(repo_dir))
     except Exception as error:
         sys.exit(f"Could not build the model from {repo_dir}: {type(error).__name__}: {error}\n"
                  f"Check that the repo download is complete (models/, pretrained_model/, wrapper.py, config.json) "
