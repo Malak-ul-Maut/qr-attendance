@@ -119,12 +119,25 @@ from gallery_extras import (EmbeddingFileCache, degrade_photo, is_cctv_crop, par
 HERE = Path(__file__).resolve().parent
 CLAIM_MARGIN = 0.03   # a borderline match loses to a live track already holding the same student if that track scored this much higher
 IMAGE_TYPES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+# Where the 5 landmarks sit in a perfectly aligned 112x112 crop, as (x, y) / 112. A KP-RPE recognizer takes the face's
+# landmarks as a second input; this is what it gets when told to ignore the detector's own (noisy) landmarks.
+TEMPLATE_KEYPOINTS = (face_align.arcface_dst / 112.0).astype(np.float32)
+KEYPOINT_MODES = ("detected", "template")
+
+
+def keypoint_mode_setting():
+    """CCTV_KEYPOINTS: 'detected' (default) feeds a KP-RPE recognizer the face's real landmarks, mapped into the
+    aligned crop - how CVLface itself uses the model. 'template' feeds the fixed ideal landmark positions instead
+    (the same thing as a model exported with `convert_to_onnx.py --keypoints template`). Ignored by models that
+    take only an image. The setting is part of the gallery-cache name, so switching it rebuilds the embeddings."""
+    value = os.environ.get("CCTV_KEYPOINTS", "detected").strip().lower()
+    return value if value in KEYPOINT_MODES else "detected"
 GALLERY_DET_SIZE = (640, 640)
 DEFAULT_REC_FILENAME = "adaface_ir101_webface4m.onnx"
 RECOGNIZE_BATCH_SIZE = 16  # most faces sent to AdaFace in one model call (keeps memory use modest)
 MODEL_URLS = {
     "det_10g.onnx": "https://drive.google.com/file/d/1Y10_5Eb8lk8wfMOv9AZIjQb_qqyVpkry/view?usp=sharing",
-    DEFAULT_REC_FILENAME: "https://drive.google.com/file/d/1xKznKlLYCeCrmR_Vpfn-GDqYRCebFjLz/view?usp=sharing",
+    DEFAULT_REC_FILENAME: "https://drive.google.com/file/d/19brStYrgePk_SW3PNLb2emre-R_mRIeo/view?usp=drive_link",
 }
 
 # Every per-run setting and its default, in ONE place. The command line (parse_args) and the
@@ -261,6 +274,11 @@ class AdaFaceRecognizer:
     .get(image, face) (one face) or .get_batch(image, faces) (many faces, one model call) fills
     in face.embedding AND face.quality (AdaFace's own quality score for that crop - see the
     module docstring).
+
+    Two kinds of model file work. The IR-101 kind takes the aligned image only. The KP-RPE ViT kind (made by
+    convert_to_onnx.py --keypoints input) takes the image AND the face's 5 landmarks as a second input called
+    'keypoints' - (x, y) in the aligned 112x112 crop, divided by 112, shape [N, 5, 2]. Which kind a file is gets
+    detected from its inputs, so nothing else needs configuring.
     """
 
     def __init__(self, onnx_path, session=None):
@@ -268,8 +286,15 @@ class AdaFaceRecognizer:
         self.model_file = str(onnx_path)
         # `session` = an already-built engine (accel.OpenVINOSession); without one, plain onnxruntime on the CPU
         self.session = session or onnxruntime.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
-        model_input = self.session.get_inputs()[0]
+        inputs = self.session.get_inputs()
+        model_input = inputs[0]
         self.input_name = model_input.name
+        if len(inputs) > 2:
+            sys.exit(f"{Path(onnx_path).name} has {len(inputs)} inputs - this script supports an image, "
+                     f"optionally plus 'keypoints'.")
+        self.keypoint_name = inputs[1].name if len(inputs) == 2 else None
+        self.uses_keypoints = self.keypoint_name is not None
+        self.keypoint_mode = keypoint_mode_setting() if self.uses_keypoints else None
         self.output_names = [output.name for output in self.session.get_outputs()]
         if len(self.output_names) < 2:
             sys.exit(f"{Path(onnx_path).name} only has one output - this script needs the (embedding, quality_norm) "
@@ -283,6 +308,15 @@ class AdaFaceRecognizer:
         """The 112x112 BGR crop the model sees: the face warped so eyes, nose and mouth sit in fixed places."""
         return self.align(image, landmark=kps, image_size=112)
 
+    def crop_keypoints(self, kps):
+        """The 5 landmarks of a face as a KP-RPE model wants them: where they land INSIDE the aligned 112x112 crop,
+        (x, y) / 112. Uses the very transform align_face applies, so the crop and its landmarks always agree."""
+        if self.keypoint_mode == "template" or kps is None:
+            return TEMPLATE_KEYPOINTS
+        kps = np.asarray(kps, dtype=np.float32)
+        matrix = face_align.estimate_norm(kps, 112)       # the 2x3 similarity transform norm_crop uses
+        return ((kps @ matrix[:, :2].T + matrix[:, 2]) / 112.0).astype(np.float32)
+
     @staticmethod
     def to_tensor(aligned):
         """A 112x112 BGR crop -> the 1x3x112x112 number array AdaFace expects."""
@@ -290,16 +324,30 @@ class AdaFaceRecognizer:
         pixels = (aligned.astype(np.float32) / 255.0 - 0.5) / 0.5
         return np.ascontiguousarray(pixels.transpose(2, 0, 1)[np.newaxis])  # HxWxC -> 1xCxHxW
 
+    def _feed(self, batch, keypoints):
+        """The model's input dict. `keypoints`: one [5, 2] row per image, or None for the template positions."""
+        feed = {self.input_name: batch}
+        if self.uses_keypoints:
+            if keypoints is None:
+                keypoints = np.repeat(TEMPLATE_KEYPOINTS[np.newaxis], len(batch), axis=0)
+            feed[self.keypoint_name] = np.ascontiguousarray(np.asarray(keypoints, dtype=np.float32))
+        return feed
+
+    def blank_feed(self, size):
+        """An all-zero input of `size` faces (for warming the models up)."""
+        return self._feed(np.zeros((size, 3, 112, 112), dtype=np.float32), None)
+
     def preprocess(self, image, face):
         """Align one face to 112x112 and turn it into the 1x3x112x112 number array AdaFace expects."""
         aligned = self.align_face(image, face.kps)
         face.aligned_bgr = aligned   # kept so a confirmed match can be saved to the gallery as it was seen
         return self.to_tensor(aligned)
 
-    def embed_aligned(self, aligned_crops):
+    def embed_aligned(self, aligned_crops, keypoints=None):
         """
         Embeddings for crops that are ALREADY aligned 112x112 (e.g. saved CCTV crops). Returns
-        (unit embeddings, quality norms), one row per crop.
+        (unit embeddings, quality norms), one row per crop. `keypoints` (KP-RPE models only): one [5, 2] row per
+        crop from crop_keypoints(); left out, the crops are assumed perfectly aligned (the template positions).
         """
         if not len(aligned_crops):
             return np.zeros((0, 512), np.float32), np.zeros((0,), np.float32)
@@ -308,7 +356,8 @@ class AdaFaceRecognizer:
         tensors = [self.to_tensor(crop) for crop in aligned_crops]
         for start in range(0, len(tensors), chunk_size):
             batch = np.concatenate(tensors[start:start + chunk_size])
-            chunk_embeddings, chunk_norms = self.session.run(self.output_names, {self.input_name: batch})
+            chunk_keypoints = None if keypoints is None else np.stack(keypoints[start:start + chunk_size])
+            chunk_embeddings, chunk_norms = self.session.run(self.output_names, self._feed(batch, chunk_keypoints))
             embeddings.append(np.asarray(chunk_embeddings, dtype=np.float32))
             norms.append(np.asarray(chunk_norms, dtype=np.float32).reshape(-1))
         embeddings = np.concatenate(embeddings)
@@ -317,7 +366,9 @@ class AdaFaceRecognizer:
 
     def embed_with_kps(self, image, kps):
         """Unit embedding + quality norm of the face with these five landmarks in `image`."""
-        embeddings, norms = self.embed_aligned([self.align_face(image, np.asarray(kps, dtype=np.float32))])
+        kps = np.asarray(kps, dtype=np.float32)
+        keypoints = [self.crop_keypoints(kps)] if self.uses_keypoints else None
+        embeddings, norms = self.embed_aligned([self.align_face(image, kps)], keypoints)
         return embeddings[0], float(norms[0])
 
     def get_batch(self, image, faces, timings=None):
@@ -328,14 +379,16 @@ class AdaFaceRecognizer:
         timings = timings or Timings()
         with timings.measure("recognize: align + preprocess"):
             tensors = [self.preprocess(image, face) for face in faces]
+            keypoints = [self.crop_keypoints(face.kps) for face in faces] if self.uses_keypoints else None
 
         # A batch-capable model takes up to RECOGNIZE_BATCH_SIZE faces per call; otherwise 1 per call
         chunk_size = RECOGNIZE_BATCH_SIZE if self.supports_batch else 1
         for start in range(0, len(faces), chunk_size):
             chunk_faces = faces[start:start + chunk_size]
             batch = np.concatenate(tensors[start:start + chunk_size])  # shape: (faces in chunk, 3, 112, 112)
+            chunk_keypoints = None if keypoints is None else np.stack(keypoints[start:start + chunk_size])
             with timings.measure("recognize: model inference"):
-                embeddings, norms = self.session.run(self.output_names, {self.input_name: batch})
+                embeddings, norms = self.session.run(self.output_names, self._feed(batch, chunk_keypoints))
             norms = np.asarray(norms).reshape(-1)  # one quality number per face
             for face, embedding, norm in zip(chunk_faces, embeddings, norms):
                 face.embedding = embedding  # face.normed_embedding is computed from this automatically
@@ -368,6 +421,10 @@ class FaceModel:
         self.recognizer = AdaFaceRecognizer(rec_path, session=rec_session)
 
         self.det_name, self.rec_name = det_path.stem, rec_path.stem
+        if self.recognizer.uses_keypoints:
+            # the gallery cache is keyed by this name: real vs template landmarks give different embeddings, so they
+            # must never share cached gallery rows
+            self.rec_name = f"{rec_path.stem}-kp-{self.recognizer.keypoint_mode}"
         self.model_mb = (det_path.stat().st_size + rec_path.stat().st_size) / 1e6
 
     @staticmethod
@@ -402,8 +459,10 @@ class FaceModel:
     def describe(self):
         """One line for the startup log."""
         batching = "on" if self.recognizer.supports_batch else "OFF (model has a fixed batch size of 1)"
+        keypoints = (f", keypoints: {self.recognizer.keypoint_mode} landmarks"
+                     if self.recognizer.uses_keypoints else "")
         return (f"detector {self.det_name} @ {self.det_size[0]}x{self.det_size[1]}, "
-                f"recognizer {self.rec_name}, batching {batching}, {self.model_mb:.0f} MB of models, "
+                f"recognizer {self.rec_name}, batching {batching}{keypoints}, {self.model_mb:.0f} MB of models, "
                 f"engine: {self.backend_summary()}")
 
     def warm_up(self):
@@ -413,8 +472,7 @@ class FaceModel:
         recognizer = self.recognizer
         sizes = self.rec_session.batches if self.rec_session is not None else (1,)
         for size in sizes:   # OpenVINO: one compile per batch size; onnxruntime: just the one warm-up call
-            blank = np.zeros((size, 3, 112, 112), dtype=np.float32)
-            recognizer.session.run(recognizer.output_names, {recognizer.input_name: blank})
+            recognizer.session.run(recognizer.output_names, recognizer.blank_feed(size))
         if self.det_session is not None and tuple(GALLERY_DET_SIZE) != tuple(self.det_size):
             # gallery photos are detected at 640x640 - compile that shape now, not during the first gallery build
             self.detect(np.zeros((GALLERY_DET_SIZE[1], GALLERY_DET_SIZE[0], 3), dtype=np.uint8), det_size=GALLERY_DET_SIZE)

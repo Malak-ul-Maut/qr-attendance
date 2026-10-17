@@ -24,6 +24,9 @@ Settings (environment variables, all optional):
 How it plugs in: OpenVINOSession has the small slice of the onnxruntime InferenceSession interface that
 recognize.py and insightface use (get_inputs, get_outputs, run, set_providers), so the rest of the code does not
 know which engine is underneath.
+
+Models with more than one input (the KP-RPE ViT recognizer: an image AND 5 face keypoints) are supported: every
+input is reshaped, padded and compiled together, and `run` matches the arrays to the model's inputs by NAME.
 """
 import os
 import threading
@@ -88,7 +91,8 @@ def _port_shape(port):
 
 class OpenVINOSession:
     """
-    An onnxruntime-InferenceSession look-alike backed by OpenVINO, for models with ONE input.
+    An onnxruntime-InferenceSession look-alike backed by OpenVINO, for models with one input (the detector, the
+    IR-101 recognizer) or several (the KP-RPE recognizer: image + keypoints, which share the batch dimension).
 
     OpenVINO compiles a model for fixed tensor shapes (fastest, and the only good option on the iGPU), while
     onnxruntime accepts any shape per call. So every distinct input shape is compiled the first time it is seen
@@ -111,8 +115,6 @@ class OpenVINOSession:
             self.core.set_property({"CACHE_DIR": str(cache)})
         self.model_file = str(onnx_path)
         self._model = self.core.read_model(self.model_file)
-        if len(self._model.inputs) != 1:
-            raise ValueError(f"{Path(onnx_path).name}: OpenVINOSession supports single-input models only")
         self._inputs = [_Port(_port_name(p, f"input{i}"), _port_shape(p)) for i, p in enumerate(self._model.inputs)]
         self._outputs = [_Port(_port_name(p, f"output{i}"), _port_shape(p)) for i, p in enumerate(self._model.outputs)]
         first = self._inputs[0].shape[0]
@@ -131,20 +133,26 @@ class OpenVINOSession:
         """insightface calls this (CPU only) from detector.prepare(); the device is chosen by CCTV_DEVICE here instead."""
 
     def run(self, output_names, input_feed, run_options=None):
-        (array,) = input_feed.values()
-        array = np.ascontiguousarray(array, dtype=np.float32)
-        count = array.shape[0]
-        padded = array
+        names = [port.name for port in self._inputs]
+        if all(name in input_feed for name in names):
+            arrays = [input_feed[name] for name in names]      # matched by name, whatever order the caller used
+        elif len(names) == len(input_feed):
+            arrays = list(input_feed.values())                 # unusual names: trust the caller's order
+        else:
+            raise ValueError(f"model inputs are {names}, but got {list(input_feed)}")
+        arrays = [np.ascontiguousarray(a, dtype=np.float32) for a in arrays]
+        count = arrays[0].shape[0]
+        padded = arrays
         if self.dynamic_batch:
             target = self.bucket_for(count)
-            if target > count:
-                padded = np.concatenate([array, np.repeat(array[-1:], target - count, axis=0)])
+            if target > count:   # pad EVERY input up to the bucket by repeating its last row
+                padded = [np.concatenate([a, np.repeat(a[-1:], target - count, axis=0)]) for a in arrays]
         with self._lock:
-            _, request = self._get(tuple(padded.shape))
-            request.infer({0: padded})
+            _, request = self._get(tuple(tuple(a.shape) for a in padded))
+            request.infer({i: a for i, a in enumerate(padded)})
             outputs = [request.get_output_tensor(i).data.copy() for i in range(len(self._outputs))]
-        if padded.shape[0] != count:
-            outputs = [out[:count] if out.ndim and out.shape[0] == padded.shape[0] else out for out in outputs]
+        if padded[0].shape[0] != count:
+            outputs = [out[:count] if out.ndim and out.shape[0] == padded[0].shape[0] else out for out in outputs]
         return outputs
 
     # --- internals ----------------------------------------------------------------------------------
@@ -155,23 +163,38 @@ class OpenVINOSession:
         return count   # bigger than every bucket: compile that exact size once
 
     def compile_shape(self, shape):
-        """Compile (and cache on disk) the model for this exact input shape now, instead of on first use."""
+        """Compile (and cache on disk) the model for this input shape now, instead of on first use. `shape` is the
+        FIRST input's shape; any other input (keypoints) gets its declared shape with the same batch size."""
         with self._lock:
-            self._get(tuple(shape))
+            self._get(self._shapes_for(tuple(shape)))
 
-    def _get(self, shape):
-        entry = self._compiled.get(shape)
+    def _shapes_for(self, first_shape):
+        shapes = [tuple(first_shape)]
+        for port in self._inputs[1:]:
+            declared = list(port.shape)
+            if declared and not (isinstance(declared[0], int) and declared[0] > 0):
+                declared[0] = first_shape[0]                  # the batch dimension is shared by every input
+            if any(not isinstance(dim, int) for dim in declared):
+                raise ValueError(f"input '{port.name}' has dynamic dimensions {port.shape}; give its shape explicitly")
+            shapes.append(tuple(declared))
+        return tuple(shapes)
+
+    def _get(self, shapes):
+        entry = self._compiled.get(shapes)
         if entry is None:
-            entry = self._compiled[shape] = self._compile(shape)
+            entry = self._compiled[shapes] = self._compile(shapes)
         return entry
 
-    def _compile(self, shape):
+    def _compile(self, shapes):
         ov = self._ov
         try:
             model = self._model.clone()
         except AttributeError:   # older OpenVINO without Model.clone(): read the file again
             model = self.core.read_model(self.model_file)
-        model.reshape(ov.PartialShape(list(shape)))
+        if len(shapes) == 1:
+            model.reshape(ov.PartialShape(list(shapes[0])))
+        else:
+            model.reshape({i: ov.PartialShape(list(shape)) for i, shape in enumerate(shapes)})
         config = {"PERFORMANCE_HINT": "LATENCY"}
         if self.precision in ("f32", "f16"):
             config["INFERENCE_PRECISION_HINT"] = self.precision

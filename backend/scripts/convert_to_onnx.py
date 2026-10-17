@@ -18,9 +18,12 @@ What the original model is, and what this script changes so recognize.py can use
     image) - and returns ONE un-normalised vector. recognize.py feeds a BGR image only and wants (embedding, norm).
     So the exported graph wraps the network and:
       * flips BGR -> RGB inside the graph            (recognize.py keeps sending BGR, exactly as for AdaFace IR-101)
-      * supplies the keypoints itself                (default: the fixed ArcFace landmark template, which is exactly where
-                                                      recognize.py's norm_crop puts the eyes/nose/mouth in the 112x112 crop;
-                                                      use --keypoints input to expose them as a second input instead)
+      * keypoints: DEFAULT is to expose them as a second input called 'keypoints' ([N, 5, 2], (x, y) / 112 inside the aligned
+                   crop). That is how CVLface itself runs the model (apps/verification/verify.py feeds the aligned image together
+                   with the landmarks in the aligned frame), and the model code treats them as positions in the [0, 1] square of
+                   the image it sees. recognize.py computes them from the detector's landmarks and can also be told to feed the
+                   fixed template instead (CCTV_KEYPOINTS=template), so ONE .onnx file covers both settings for an A/B test.
+                   --keypoints template bakes the fixed ArcFace template into the graph (image-only file, as before).
       * splits the output into a unit-length embedding and the feature norm (AdaFace's quality hint, same meaning as before)
 
 Which exporter:
@@ -37,9 +40,15 @@ Dynamic batch (why the model needs a patch):
     "broadcast an axis ... 16 by 64". patch_rpe_for_dynamic_batch() swaps in `.view(-1, x.shape[1], L_query, L_key)`,
     which gives identical results and keeps the batch dimension dynamic. The repo files on disk are not modified.
 
+Other models in the family (minchul/cvlface_adaface_ir101_*, cvlface_arcface_ir101_*, cvlface_adaface_vit_base_*):
+    The IR-ResNet and plain-ViT models take the image only; the script detects KP-RPE models (they own `keypoint_linear`)
+    and otherwise exports image-only graphs with the same contract below (BGR in, unit embedding + norm out). Only the
+    AdaFace-trained models make `norm` a quality hint; for ArcFace-trained ones it is still exported but not meaningful.
+    A <model>.onnx.json sidecar records the contract and a SHA-256 of the file.
+
 Model contract of the .onnx written here:
     input     : 'input'     float32 [N, 3, 112, 112]  aligned face, BGR order, pixels (x / 255 - 0.5) / 0.5
-    (optional): 'keypoints' float32 [N, 5, 2]         only with --keypoints input: landmarks in the 112x112 crop, (x, y) / 112
+    (KP-RPE)  : 'keypoints' float32 [N, 5, 2]         default for KP-RPE models: landmarks in the 112x112 crop, (x, y) / 112
     output    : 'embedding' float32 [N, 512]          L2-normalised
                 'norm'      float32 [N, 1]            norm of the raw feature (quality hint; not on the same scale as IR-101's)
 """
@@ -185,10 +194,10 @@ def patch_rpe_for_dynamic_batch(network):
     return len(patched)
 
 
-def apply_batch_patch(network):
+def apply_batch_patch(network, uses_keypoints=True):
     """Patch, and prove in plain PyTorch that the patched network gives the same output as the original on a batch of 3."""
     probe = torch.from_numpy(np.random.default_rng(3).uniform(-1, 1, size=(3, 3, 112, 112)).astype(np.float32))
-    wrapper = EmbedderFixedKeypoints(network, False).eval()
+    wrapper = EmbedderFixedKeypoints(network, False, uses_keypoints).eval()
     with torch.no_grad():
         before = wrapper(probe)[0]
         count = patch_rpe_for_dynamic_batch(network)
@@ -201,8 +210,11 @@ def apply_batch_patch(network):
         sys.exit("The batch patch changed the model output - refusing to export.")
 
 
-def check_openvino(out_path, batches=(1, 4, 8, 16)):
-    """Mimic accel.OpenVINOSession: read the .onnx, reshape to each batch bucket, compile on the CPU, compare with onnxruntime."""
+def check_openvino(out_path, input_names, batches=(1, 4, 8, 16), crops=None):
+    """Mimic accel.OpenVINOSession: read the .onnx, reshape EVERY input to each batch bucket, compile on each CPU/GPU device
+    OpenVINO can see, compare with onnxruntime. Two precisions per device: f32 (CCTV_PRECISION=f32) and the device default
+    (what accel.py uses with CCTV_PRECISION=auto - f16 on an Intel iGPU). `crops` = real crops from _crop_tensors, used
+    instead of random noise when given. f32 must match; a weaker default-precision result is a warning, not a failure."""
     try:
         import openvino as ov
     except ImportError:
@@ -211,43 +223,207 @@ def check_openvino(out_path, batches=(1, 4, 8, 16)):
     import onnxruntime as ort
     session = ort.InferenceSession(str(out_path), providers=["CPUExecutionProvider"])
     core = ov.Core()
+    devices = [d for d in core.available_devices if d.split(".")[0] in ("CPU", "GPU")]
+    print("OpenVINO devices: " + ", ".join(f"{d} ({core.get_property(d, 'FULL_DEVICE_NAME')})" for d in devices))
     rng = np.random.default_rng(1)
     ok = True
-    for n in batches:
-        x = rng.uniform(-1, 1, size=(n, 3, 112, 112)).astype(np.float32)
-        try:
-            model = core.read_model(str(out_path))
-            model.reshape(ov.PartialShape([n, 3, 112, 112]))
-            request = core.compile_model(model, "CPU", {"PERFORMANCE_HINT": "LATENCY"}).create_infer_request()
-            request.infer({0: x})
-            got = request.get_output_tensor(0).data.copy()
-        except Exception as error:
-            print(f"  OpenVINO batch {n}: FAILED ({type(error).__name__}: {str(error).splitlines()[0][:200]})")
-            ok = False
-            continue
-        expected = session.run(None, {"input": x})[0]
-        diff = float(np.abs(got - expected).max())
-        print(f"  OpenVINO batch {n}: max |embedding diff| vs onnxruntime = {diff:.2e}")
-        ok = ok and diff <= 1e-3
+    for device in devices:
+        for precision in ("f32", "default"):
+            worst_cos, worst_diff, failed = 1.0, 0.0, False
+            for n in batches:
+                if crops is not None:
+                    x = np.ascontiguousarray(crops[np.arange(n) % len(crops)])
+                else:
+                    x = rng.uniform(-1, 1, size=(n, 3, 112, 112)).astype(np.float32)
+                feeds = {"input": x}
+                if "keypoints" in input_names:
+                    feeds["keypoints"] = (TEMPLATE_KEYPOINTS + rng.normal(0, 0.01, size=(n, 5, 2))).astype(np.float32)
+                try:
+                    model = core.read_model(str(out_path))
+                    model.reshape({i: ov.PartialShape(list(feeds[name].shape)) for i, name in enumerate(input_names)})
+                    config = {"PERFORMANCE_HINT": "LATENCY"}
+                    if precision == "f32":
+                        config["INFERENCE_PRECISION_HINT"] = "f32"
+                    request = core.compile_model(model, device, config).create_infer_request()
+                    request.infer({i: feeds[name] for i, name in enumerate(input_names)})
+                    got = request.get_output_tensor(0).data.copy()
+                except Exception as error:
+                    print(f"  OpenVINO {device} {precision:7s} batch {n}: FAILED ({type(error).__name__}: {str(error).splitlines()[0][:200]})")
+                    failed = True
+                    continue
+                expected = session.run(None, feeds)[0]
+                worst_diff = max(worst_diff, float(np.abs(got - expected).max()))
+                worst_cos = min(worst_cos, float((got * expected).sum(1).min() / 1.0))
+            if failed:
+                ok = ok and precision != "f32"
+                continue
+            good = worst_cos >= 0.9999 and worst_diff <= 1e-3 if precision == "f32" else worst_cos >= 0.999
+            verdict = "OK" if good else ("PROBLEM" if precision == "f32" else "WARNING - set CCTV_PRECISION=f32 for this model")
+            print(f"  OpenVINO {device} {precision:7s}: batches {list(batches)}: min cosine vs onnxruntime = {worst_cos:.6f}, "
+                  f"max |diff| = {worst_diff:.2e}  {verdict}")
+            if precision == "f32":
+                ok = ok and good
     print("OpenVINO bucket check: " + ("OK" if ok else "PROBLEM - see above"))
     return ok
 
 
+def detect_uses_keypoints(network):
+    """KP-RPE models (VisionTransformerWithKPRPE) own a `keypoint_linear` layer and need (image, keypoints); the plain
+    IR-ResNet / ViT models in the same family take the image only."""
+    return any(hasattr(module, "keypoint_linear") for module in network.modules())
+
+
+def _load_bgr_112(path):
+    """An image file -> 112x112 BGR uint8 (None if unreadable). Use already-aligned face crops for a meaningful test."""
+    try:
+        import cv2
+        image = cv2.imread(str(path), cv2.IMREAD_COLOR)
+        return None if image is None else cv2.resize(image, (112, 112), interpolation=cv2.INTER_AREA)
+    except ImportError:
+        try:
+            from PIL import Image
+            image = Image.open(path).convert("RGB").resize((112, 112), Image.BILINEAR)
+            return np.asarray(image)[:, :, ::-1].copy()
+        except Exception:
+            return None
+
+
+def _crop_tensors(folder, limit=16):
+    """Real face crops from `folder` -> float32 (N, 3, 112, 112): BGR, (x/255 - 0.5)/0.5 - exactly what recognize.py sends.
+    None when the folder has no readable image."""
+    suffixes = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+    files = sorted(p for p in Path(folder).rglob("*") if p.suffix.lower() in suffixes)[:limit]
+    crops = [c for c in (_load_bgr_112(p) for p in files) if c is not None]
+    if not crops:
+        return None
+    batch = np.stack(crops).astype(np.float32)
+    return np.ascontiguousarray(((batch / 255.0 - 0.5) / 0.5).transpose(0, 3, 1, 2))
+
+
+def verify_images(model, input_names, out_path, folder, static_batch=0, limit=16):
+    """
+    Checks on REAL face crops (random noise barely exercises the attention layers):
+      1. wrapper vs ONNX Runtime            - the export itself is faithful
+      2. GOLDEN: raw network vs ONNX        - the raw CVLface network fed an RGB tensor made with plain numpy (no wrapper, no
+                                              in-graph flip) must give the same embedding as the ONNX fed BGR. Check 1 cannot
+                                              catch a wrong channel order or normalisation because both sides share the wrapper.
+      3. the feature norm's range on these crops (its scale differs from IR-101's: matters for min_norm and pooling weights)
+      4. (KP-RPE) how much the embedding moves when the keypoints are noisy - a feel for how much real, noisy landmarks
+         from tiny CCTV faces could hurt compared with the fixed template
+    """
+    import onnxruntime as ort
+    tensors = _crop_tensors(folder, limit)
+    if tensors is None:
+        print(f"--verify-dir: no readable images in {folder}; skipped the real-image check.")
+        return True
+    chunk = static_batch or len(tensors)
+    if len(tensors) < chunk:
+        print(f"--verify-dir: only {len(tensors)} readable crops, fewer than the fixed batch {chunk}; skipped the real-image check.")
+        return True
+    tensors = tensors[: (len(tensors) // chunk) * chunk]
+    session = ort.InferenceSession(str(out_path), providers=["CPUExecutionProvider"])
+    rng = np.random.default_rng(5)
+    worst_cos, worst_norm, worst_golden = 1.0, 0.0, 1.0
+    all_norms = []
+    for start in range(0, len(tensors) - chunk + 1, chunk):
+        x = tensors[start:start + chunk]
+        feeds = {"input": x}
+        if "keypoints" in input_names:   # slightly different landmarks per face, so the keypoint path is really exercised
+            feeds["keypoints"] = (TEMPLATE_KEYPOINTS + rng.normal(0, 0.01, size=(len(x), 5, 2))).astype(np.float32)
+        with torch.no_grad():
+            want_emb, want_norm = (t.numpy() for t in model(*[torch.from_numpy(feeds[n]) for n in input_names]))
+            rgb = torch.from_numpy(np.ascontiguousarray(x[:, ::-1]))          # BGR -> RGB by flipping the channel axis in numpy
+            if model.uses_keypoints:
+                kp = feeds.get("keypoints")
+                if kp is None:
+                    kp = np.repeat(TEMPLATE_KEYPOINTS[None], len(x), axis=0)
+                ref = model.network(rgb, torch.from_numpy(kp))
+            else:
+                ref = model.network(rgb)
+            ref = ref[0] if isinstance(ref, (tuple, list)) else ref
+            ref = (ref / ref.norm(dim=1, keepdim=True).clamp_min(1e-9)).numpy()
+        got_emb, got_norm = session.run(None, feeds)
+        worst_cos = min(worst_cos, float(((want_emb * got_emb).sum(1)).min()))
+        worst_norm = max(worst_norm, float((np.abs(want_norm - got_norm) / np.maximum(np.abs(want_norm), 1e-9)).max()))
+        worst_golden = min(worst_golden, float((ref * got_emb).sum(1).min()))
+        all_norms.append(got_norm.reshape(-1))
+    print(f"Real-image check ({len(tensors)} crops from {folder}): min cosine = {worst_cos:.6f}, "
+          f"max relative norm diff = {worst_norm:.2e}")
+    print(f"Golden check (raw network, RGB tensor, no wrapper) vs ONNX: min cosine = {worst_golden:.6f}"
+          + ("" if worst_golden >= 0.9999 else "   <-- channel order / normalisation / keypoints are NOT what the model expects"))
+    norms = np.concatenate(all_norms)
+    print(f"Feature norm on these crops: min {norms.min():.2f}, median {np.median(norms):.2f}, max {norms.max():.2f} "
+          f"(recognize.py's min_norm and pooling weights use this scale; IR-101's is different)")
+
+    if "keypoints" in input_names:
+        def embed_all(keypoints):
+            out = []
+            for start in range(0, len(tensors) - chunk + 1, chunk):
+                out.append(session.run(None, {"input": tensors[start:start + chunk],
+                                              "keypoints": keypoints[start:start + chunk].astype(np.float32)})[0])
+            return np.concatenate(out)
+        template = np.repeat(TEMPLATE_KEYPOINTS[None], len(tensors), axis=0)
+        clean = embed_all(template)
+        noise_rng = np.random.default_rng(11)
+        print("Keypoint sensitivity (cosine between the embedding with the clean template and with noisy keypoints):")
+        for sigma in (0.01, 0.03, 0.06):
+            cos = (clean * embed_all(template + noise_rng.normal(0, sigma, size=template.shape))).sum(1)
+            print(f"  noise sigma = {sigma:.2f} ({sigma * 112:.1f} px at 112): mean {cos.mean():.4f}, min {cos.min():.4f}")
+    return worst_cos >= 0.9999 and worst_norm <= 1e-3 and worst_golden >= 0.9999
+
+
+def write_sidecar(out_path, repo_dir, keypoints_mode, static_batch, opset, exporter):
+    """<model>.onnx.json next to the model: the contract recognize.py / the gallery cache can rely on, plus a SHA-256 so a
+    re-export under the same file name is noticed (the gallery cache currently only looks at the file name)."""
+    import hashlib
+    import json
+    digest = hashlib.sha256()
+    with open(out_path, "rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    source = Path(repo_dir).resolve().name
+    try:
+        config = json.loads((Path(repo_dir) / "config.json").read_text(encoding="utf-8"))
+        source = str(config.get("_name_or_path") or config.get("name") or source)
+    except (OSError, ValueError):
+        pass
+    lowered = source.lower()
+    info = {
+        "file": Path(out_path).name,
+        "sha256": digest.hexdigest(),
+        "source": source,
+        "input": {"name": "input", "layout": "NCHW", "size": 112, "color_order": "BGR", "normalisation": "(x/255-0.5)/0.5"},
+        "outputs": ["embedding (L2-normalised, 512-d)", "norm (feature norm, [N,1])"],
+        "keypoints": keypoints_mode,                      # none | template | input
+        "keypoint_coordinates": "(x, y) / 112 inside the aligned 112x112 crop, shape [N, 5, 2]" if keypoints_mode == "input" else None,
+        "batch": static_batch or "dynamic",
+        "opset": opset, "exporter": exporter, "torch": torch.__version__,
+        # name-based guess: only AdaFace-trained models make the feature norm a quality score
+        "norm_is_quality_hint": True if "adaface" in lowered else False if "arcface" in lowered else None,
+    }
+    path = str(out_path) + ".json"
+    Path(path).write_text(json.dumps(info, indent=2), encoding="utf-8")
+    print(f"Wrote {path} (sha256 {info['sha256'][:12]}...)")
+
 class Embedder(nn.Module):
     """BGR image in -> (unit embedding, feature norm) out. Keypoints are a baked-in constant, or a second input."""
 
-    def __init__(self, network, keypoints_as_input):
+    def __init__(self, network, keypoints_as_input, uses_keypoints=True):
         super().__init__()
         self.network = network
         self.keypoints_as_input = keypoints_as_input
+        self.uses_keypoints = uses_keypoints      # False for the plain IR / ViT models that take an image only
         self.register_buffer("template", torch.from_numpy(TEMPLATE_KEYPOINTS), persistent=False)    # [5, 2]
         self.register_buffer("rgb_index", torch.tensor([2, 1, 0], dtype=torch.long), persistent=False)
 
     def forward(self, x, keypoints=None):
         x = x.index_select(1, self.rgb_index)                    # BGR -> RGB (the model was trained on RGB)
-        if keypoints is None:
-            keypoints = self.template.unsqueeze(0).expand(x.shape[0], -1, -1)   # same landmarks for every face in the batch
-        feature = self.network(x, keypoints)
+        if self.uses_keypoints:
+            if keypoints is None:
+                keypoints = self.template.unsqueeze(0).expand(x.shape[0], -1, -1)   # same landmarks for every face in the batch
+            feature = self.network(x, keypoints)
+        else:
+            feature = self.network(x)
         if isinstance(feature, (tuple, list)):                   # be safe if a future version returns extras
             feature = feature[0]
         norm = torch.linalg.vector_norm(feature, dim=1, keepdim=True)
@@ -261,10 +437,12 @@ class EmbedderFixedKeypoints(Embedder):
         return super().forward(x, None)
 
 
-def export(network, out_path, opset=17, static_batch=0, keypoints_as_input=False, simplify=False, exporter="legacy"):
+def export(network, out_path, opset=17, static_batch=0, keypoints_as_input=False, simplify=False, exporter="legacy",
+           uses_keypoints=True):
     """Write `out_path` and return (wrapper module, input names). Separate from main() so it can be tested on its own."""
     scrub_fake_tensors(network)
-    model = (Embedder(network, True) if keypoints_as_input else EmbedderFixedKeypoints(network, False)).eval()
+    model = (Embedder(network, True, uses_keypoints) if keypoints_as_input
+             else EmbedderFixedKeypoints(network, False, uses_keypoints)).eval()
     batch = max(static_batch, 1)
     dummy = [torch.randn(batch, 3, 112, 112)]
     input_names = ["input"]
@@ -345,9 +523,10 @@ def main():
     ap.add_argument("--repo-dir", required=True, help="folder with the downloaded model repo (config.json, wrapper.py, models/, weights)")
     ap.add_argument("--weights", help="optional .safetensors / .pt file to load instead of the repo's own weights")
     ap.add_argument("--out", required=True, help="output .onnx path")
-    ap.add_argument("--keypoints", choices=["template", "input"], default="template",
-                    help="template (default): bake in the ArcFace landmark template - works with recognize.py's aligned crops as is. "
-                         "input: expose a second 'keypoints' [N,5,2] input")
+    ap.add_argument("--keypoints", choices=["template", "input"], default=None,
+                    help="default: 'input' for KP-RPE models (a second 'keypoints' [N,5,2] input; recognize.py chooses real or "
+                         "template landmarks at run time with CCTV_KEYPOINTS), nothing for image-only models. "
+                         "template: bake the fixed ArcFace landmark template into the graph (image-only file)")
     ap.add_argument("--opset", type=int, default=17)
     ap.add_argument("--exporter", choices=["legacy", "dynamo"], default="legacy",
                     help="legacy (default): classic TorchScript exporter, works with this model. "
@@ -355,17 +534,26 @@ def main():
     ap.add_argument("--static-batch", type=int, default=0,
                     help="fix the batch size to N. Default: dynamic batch (needed for recognize.py's OpenVINO batch buckets)")
     ap.add_argument("--simplify", action="store_true", help="run onnxsim afterwards if it is installed")
+    ap.add_argument("--verify-dir", help="folder of (ideally already aligned 112x112) face crops: also compare PyTorch and ONNX on "
+                                         "these real images, not only on random noise")
     args = ap.parse_args()
 
     network = load_model(args.repo_dir, args.weights)
-    apply_batch_patch(network)
+    uses_keypoints = detect_uses_keypoints(network)
+    if args.keypoints and not uses_keypoints:
+        sys.exit("--keypoints only makes sense for KP-RPE models; this model takes an image only.")
+    print(f"Model type: {'KP-RPE (image + keypoints)' if uses_keypoints else 'image only (no keypoints)'}")
+    apply_batch_patch(network, uses_keypoints)
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-    keypoints_as_input = args.keypoints == "input"
+    keypoints_mode = "none" if not uses_keypoints else (args.keypoints or "input")
+    keypoints_as_input = keypoints_mode == "input"
+    last = {}
 
     def build(static_batch):
         """Export + verify once. Returns (ok, input_names)."""
         model, input_names = export(network, args.out, args.opset, static_batch, keypoints_as_input, args.simplify,
-                                    args.exporter)
+                                    args.exporter, uses_keypoints)
+        last["model"], last["input_names"] = model, input_names
         out_dir = os.path.dirname(os.path.abspath(args.out))
         size_mb = sum(os.path.getsize(os.path.join(out_dir, f)) for f in os.listdir(out_dir)
                       if f.startswith(os.path.basename(args.out))) / 1048576
@@ -388,10 +576,17 @@ def main():
         ok, input_names = build(static_batch)
     if not ok:
         sys.exit("MISMATCH: the exported model does not reproduce the PyTorch output. Do not use it.")
-    if not static_batch and len(input_names) == 1:
-        check_openvino(args.out)      # informational: recognize.py's accel.py reshapes the model to batch buckets 1/4/8/16
+    if args.verify_dir and not verify_images(last["model"], last["input_names"], args.out, args.verify_dir, static_batch):
+        sys.exit("MISMATCH on real images: the exported model does not reproduce the PyTorch output. Do not use it.")
+    write_sidecar(args.out, args.repo_dir, keypoints_mode, static_batch, args.opset, args.exporter)
+    if not static_batch:
+        # informational: recognize.py's accel.py reshapes the model to batch buckets 1/4/8/16 (every input, keypoints included)
+        check_openvino(args.out, input_names, crops=_crop_tensors(args.verify_dir) if args.verify_dir else None)
     print("OK. Input: float32 [%s,3,112,112], BGR, (pixel/255 - 0.5)/0.5" % (static_batch or "N")
           + (" + keypoints [N,5,2]" if keypoints_as_input else "") + ". Outputs: 512-d L2-normalised embedding, norm [N,1].")
+    if keypoints_as_input:
+        print("recognize.py: CCTV_KEYPOINTS=detected (default) feeds the real landmarks, CCTV_KEYPOINTS=template feeds the fixed "
+              "template - same file, so you can A/B both. Re-calibrate the thresholds for this model either way.")
 
 
 if __name__ == "__main__":
