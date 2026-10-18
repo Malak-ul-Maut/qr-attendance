@@ -8,7 +8,7 @@ import { refreshEnrolmentQa } from './cctv.routes.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { addDays, isValidDate, weekdayName } from '../utils/dates.js';
+import { addDays, isValidDate, weekdayName, classDayName } from '../utils/dates.js';
 
 // Everything a signed-in student can read or change about themselves.
 // Passwords are still plain text for now (hashing comes later), so the password
@@ -129,13 +129,11 @@ router.get('/schedule', async (req, res) => {
       const dow = new Date(`${date}T00:00:00Z`).getUTCDay(); // 0 = Sunday
       const monday = addDays(date, -((dow + 6) % 7));
       const days = [];
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 6; i++) {
         const day = addDays(monday, i);
-        days.push({
-          date: day,
-          day: weekdayName(day),
-          rows: await scheduleRows(req.student.id, klass, day, now),
-        });
+        const rows = await scheduleRows(req.student.id, klass, day, now);
+        if (i === 5 && rows.length === 0) continue; // Saturday only shows when a class is arranged
+        days.push({ date: day, day: classDayName(day), rows });
       }
       return res.json({
         ...base,
@@ -150,7 +148,7 @@ router.get('/schedule', async (req, res) => {
       ...base,
       assigned: true,
       date,
-      day: weekdayName(date), // null on a weekend
+      day: rows.length ? classDayName(date) : weekdayName(date), // null on a weekend with no class
       rows,
       nextClassDate: rows.length ? null : await nextClassDate(klass, date),
       timetableChange: await upcomingChange(klass.classId, today),
@@ -160,17 +158,28 @@ router.get('/schedule', async (req, res) => {
   }
 });
 
-// Timetable rows in force on `date` for this student's class (and batch), with live state.
+// Periods of this student's class (and batch) on `date`, with live state. A period is what the class really
+// had: the planned timetable row, but with the subject / faculty / room of the session that was actually held
+// (a borrowed period shows the borrower's subject, a merged class sees the merged session), plus arranged
+// classes that have no timetable row at all (any Monday-Saturday).
 async function scheduleRows(studentId, klass, date, now) {
   const day = weekdayName(date);
-  if (!day) return [];
+  if (!classDayName(date)) return [];
 
-  const rows = await dbAll(
-    `
+  const covers = `EXISTS (SELECT 1 FROM session_classes sc WHERE sc.session_id = s.id AND sc.class_id = ?
+                     AND (sc.batch IS NULL OR ? IS NULL OR sc.batch = ?))`;
+
+  const planned = day
+    ? await dbAll(
+        `
     SELECT t.id AS timetableId, sl.label AS slot, sl.start_time AS startTime,
-      sl.end_time AS endTime, sub.id AS subjectId, sub.code, sub.name, sub.abbr,
-      sub.takes_attendance AS takesAttendance, f.name AS faculty,
-      CASE WHEN r.id IS NULL THEN NULL ELSE r.block || '-' || r.number END AS room,
+      sl.end_time AS endTime, COALESCE(asub.id, sub.id) AS subjectId,
+      COALESCE(asub.code, sub.code) AS code, COALESCE(asub.name, sub.name) AS name,
+      COALESCE(asub.abbr, sub.abbr) AS abbr,
+      COALESCE(asub.takes_attendance, sub.takes_attendance) AS takesAttendance,
+      COALESCE(af.name, f.name) AS faculty,
+      CASE WHEN COALESCE(ar.id, r.id) IS NULL THEN NULL
+           ELSE COALESCE(ar.block, r.block) || '-' || COALESCE(ar.number, r.number) END AS room,
       MAX(tc.batch IS NOT NULL) AS forBatch,
       s.id AS sessionId, s.method, s.end_time AS sessionEnd,
       a.id AS attendanceId, a.marked_at AS markedAt, a.method AS markedMethod
@@ -182,14 +191,46 @@ async function scheduleRows(studentId, klass, date, now) {
     JOIN subjects sub ON sub.id = t.subject_id
     LEFT JOIN faculties f ON f.id = t.faculty_id
     LEFT JOIN rooms r ON r.id = t.room_id
-    LEFT JOIN sessions s ON s.timetable_id = t.id AND s.date = ?
+    LEFT JOIN sessions s ON s.date = ? AND s.slot_id = t.slot_id AND ${covers}
+    LEFT JOIN subjects asub ON asub.id = s.subject_id
+    LEFT JOIN faculties af ON af.id = s.faculty_id
+    LEFT JOIN rooms ar ON ar.id = s.room_id
     LEFT JOIN attendance a ON a.session_id = s.id AND a.student_id = ?
     WHERE t.day = ? AND t.valid_from <= ? AND (t.valid_to IS NULL OR t.valid_to >= ?)
     GROUP BY t.id
     ORDER BY sl.start_time, t.id
     `,
-    [klass.classId, klass.batch, klass.batch, date, studentId, day, date, date],
+        [
+          klass.classId, klass.batch, klass.batch,
+          date, klass.classId, klass.batch, klass.batch,
+          studentId, day, date, date,
+        ],
+      )
+    : [];
+
+  // Arranged classes (no timetable row) that this student's class was part of.
+  const arranged = await dbAll(
+    `
+    SELECT NULL AS timetableId, sl.label AS slot, sl.start_time AS startTime, sl.end_time AS endTime,
+      sub.id AS subjectId, sub.code, sub.name, sub.abbr, sub.takes_attendance AS takesAttendance,
+      f.name AS faculty,
+      CASE WHEN r.id IS NULL THEN NULL ELSE r.block || '-' || r.number END AS room,
+      0 AS forBatch,
+      s.id AS sessionId, s.method, s.end_time AS sessionEnd,
+      a.id AS attendanceId, a.marked_at AS markedAt, a.method AS markedMethod
+    FROM sessions s
+    JOIN slots sl ON sl.id = s.slot_id
+    JOIN subjects sub ON sub.id = s.subject_id
+    LEFT JOIN faculties f ON f.id = s.faculty_id
+    LEFT JOIN rooms r ON r.id = s.room_id
+    LEFT JOIN attendance a ON a.session_id = s.id AND a.student_id = ?
+    WHERE s.date = ? AND s.timetable_id IS NULL AND ${covers}
+    ORDER BY sl.start_time, s.id
+    `,
+    [studentId, date, klass.classId, klass.batch, klass.batch],
   );
+
+  const rows = [...planned, ...arranged].sort((x, y) => x.startTime.localeCompare(y.startTime));
 
   const today = localDate(now);
   const minutes = localMinutes(now);
@@ -282,9 +323,8 @@ router.get('/attendance', async (req, res) => {
         COUNT(*) AS held, SUM(a.marked_at IS NOT NULL) AS attended
       FROM attendance a
       JOIN sessions s ON s.id = a.session_id
-      JOIN timetable t ON t.id = s.timetable_id
-      JOIN subjects sub ON sub.id = t.subject_id
-      LEFT JOIN faculties f ON f.id = t.faculty_id
+      JOIN subjects sub ON sub.id = s.subject_id
+      LEFT JOIN faculties f ON f.id = s.faculty_id
       WHERE a.student_id = ? AND sub.takes_attendance = 1
         AND (s.end_time IS NOT NULL OR s.date < ?)
       GROUP BY sub.id
@@ -327,9 +367,8 @@ router.get('/attendance', async (req, res) => {
           sub.id AS subjectId, sub.name AS subject, a.marked_at AS markedAt, a.method
         FROM attendance a
         JOIN sessions s ON s.id = a.session_id
-        JOIN timetable t ON t.id = s.timetable_id
-        JOIN slots sl ON sl.id = t.slot_id
-        JOIN subjects sub ON sub.id = t.subject_id
+        JOIN slots sl ON sl.id = s.slot_id
+        JOIN subjects sub ON sub.id = s.subject_id
         WHERE ${where.join(' AND ')}
         ORDER BY s.date DESC, sl.start_time DESC
         LIMIT ${MAX_RECORDS}

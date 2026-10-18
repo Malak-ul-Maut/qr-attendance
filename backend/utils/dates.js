@@ -33,6 +33,15 @@ export function weekdayName(value) {
   return name === 'Saturday' || name === 'Sunday' ? null : name;
 }
 
+// 'Monday'..'Saturday' for a date a class can be held on (arranged classes may be on a Saturday).
+// Null for Sunday or a bad date.
+export function classDayName(value) {
+  if (!isValidDate(value)) return null;
+  const [year, month, day] = value.split('-').map(Number);
+  const name = WEEKDAYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
+  return name === 'Sunday' ? null : name;
+}
+
 // Today's date on the server's clock as 'YYYY-MM-DD'.
 export function todayLocal() {
   const now = new Date();

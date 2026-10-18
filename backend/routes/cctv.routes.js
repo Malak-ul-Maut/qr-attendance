@@ -127,8 +127,7 @@ export async function releaseSessionCamera(sessionCode) {
     const stillOpen = await dbGet(
       `
       SELECT 1 AS open FROM sessions
-      JOIN timetable ON timetable.id = sessions.timetable_id
-      WHERE timetable.room_id = ? AND sessions.method = 'cctv'
+      WHERE sessions.room_id = ? AND sessions.method = 'cctv'
         AND sessions.end_time IS NULL AND sessions.session_code != ?
       LIMIT 1
       `,
@@ -250,7 +249,7 @@ router.post('/run', async (req, res) => {
       .slice(0, 10);
     const cacheKey = context.room_number
       ? `${context.block}_${context.room_number}_${rosterHash}`
-      : `timetable${context.timetable_id}_${rosterHash}`;
+      : `session${context.session_id}_${rosterHash}`;
 
     // The roster travels inside the request, so there are no temp files to write or clean up.
     const output = await callRecognitionService({
@@ -325,20 +324,20 @@ router.post('/run', async (req, res) => {
   }
 });
 
-// First session row of the code, with its room (room can be empty for a one-off period).
+// First session row of the code, with the room it is REALLY held in (the faculty can pick a different room than
+// the timetable's; an arranged class has no timetable row at all). The room's camera is the one used.
 function getSessionContext(sessionCode) {
   return dbGet(
     `
     SELECT
       sessions.id AS session_id,
       sessions.timetable_id,
-      timetable.room_id,
+      sessions.room_id,
       rooms.block,
       rooms.number AS room_number,
       rooms.camera_url
     FROM sessions
-    JOIN timetable ON timetable.id = sessions.timetable_id
-    LEFT JOIN rooms ON rooms.id = timetable.room_id
+    LEFT JOIN rooms ON rooms.id = sessions.room_id
     WHERE sessions.session_code = ?
     ORDER BY sessions.id
     LIMIT 1

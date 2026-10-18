@@ -50,7 +50,7 @@ router.get('/', wrap(async (req, res) => {
     `SELECT tc.class_id AS id, COUNT(*) AS total, SUM(a.marked_at IS NOT NULL) AS present
      FROM attendance a
      JOIN sessions s ON s.id = a.session_id
-     JOIN timetable_classes tc ON tc.timetable_id = s.timetable_id
+     JOIN session_classes tc ON tc.session_id = s.id
      JOIN students_mapping sm ON sm.student_id = a.student_id AND sm.class_id = tc.class_id
      WHERE s.date BETWEEN ? AND ?
      GROUP BY tc.class_id`,
@@ -71,8 +71,7 @@ router.get('/', wrap(async (req, res) => {
     `SELECT sub.abbr AS label, COUNT(*) AS total, SUM(a.marked_at IS NOT NULL) AS present
      FROM attendance a
      JOIN sessions s ON s.id = a.session_id
-     JOIN timetable t ON t.id = s.timetable_id
-     JOIN subjects sub ON sub.id = t.subject_id
+     JOIN subjects sub ON sub.id = s.subject_id
      WHERE s.date BETWEEN ? AND ?
      GROUP BY sub.id ORDER BY label`,
     range,
@@ -94,16 +93,15 @@ router.get('/', wrap(async (req, res) => {
             MAX(s.end_time IS NULL) AS live, MIN(s.method) AS method,
             MIN(sub.abbr) AS subject, MIN(f.abbr) AS faculty,
             (SELECT group_concat(DISTINCT tc.class_id)
-               FROM sessions s2 JOIN timetable_classes tc ON tc.timetable_id = s2.timetable_id
+               FROM sessions s2 JOIN session_classes tc ON tc.session_id = s2.id
               WHERE s2.session_code = s.session_code) AS classIds,
             (SELECT COUNT(*) FROM attendance a JOIN sessions s3 ON s3.id = a.session_id
               WHERE s3.session_code = s.session_code) AS total,
             (SELECT COUNT(*) FROM attendance a JOIN sessions s3 ON s3.id = a.session_id
               WHERE s3.session_code = s.session_code AND a.marked_at IS NOT NULL) AS present
      FROM sessions s
-     JOIN timetable t ON t.id = s.timetable_id
-     JOIN subjects sub ON sub.id = t.subject_id
-     LEFT JOIN faculties f ON f.id = t.faculty_id
+     JOIN subjects sub ON sub.id = s.subject_id
+     LEFT JOIN faculties f ON f.id = s.faculty_id
      WHERE s.date BETWEEN ? AND ?
      GROUP BY s.session_code ORDER BY MIN(s.date) DESC, MIN(s.id) DESC LIMIT 25`,
     range,
@@ -126,8 +124,8 @@ router.get('/session/:code', wrap(async (req, res) => {
   const info = await dbGet(
     `SELECT MIN(s.date) AS date, MIN(s.start_time) AS startTime, MAX(s.end_time) AS endTime, MAX(s.end_time IS NULL) AS live,
             MIN(s.method) AS method, MIN(sub.name) AS subject, MIN(f.name) AS faculty
-     FROM sessions s JOIN timetable t ON t.id = s.timetable_id JOIN subjects sub ON sub.id = t.subject_id
-     LEFT JOIN faculties f ON f.id = t.faculty_id WHERE s.session_code = ?`, [code]);
+     FROM sessions s JOIN subjects sub ON sub.id = s.subject_id
+     LEFT JOIN faculties f ON f.id = s.faculty_id WHERE s.session_code = ?`, [code]);
   if (!info || !info.date) throw new HttpError(404, 'not_found', 'That session no longer exists.');
   const students = await dbAll(
     `SELECT st.id, st.name, st.roll_number AS roll, MAX(a.marked_at) AS markedAt, MIN(a.method) AS method
@@ -147,8 +145,8 @@ router.get('/student/:id', wrap(async (req, res) => {
     `SELECT s.session_code AS code, s.date, s.start_time AS startTime, sub.abbr AS subject, f.abbr AS faculty,
             (a.marked_at IS NOT NULL) AS present, a.marked_at AS markedAt
      FROM attendance a JOIN sessions s ON s.id = a.session_id
-     JOIN timetable t ON t.id = s.timetable_id JOIN subjects sub ON sub.id = t.subject_id
-     LEFT JOIN faculties f ON f.id = t.faculty_id
+     JOIN subjects sub ON sub.id = s.subject_id
+     LEFT JOIN faculties f ON f.id = s.faculty_id
      WHERE a.student_id = ? AND s.date BETWEEN ? AND ? ORDER BY s.date DESC, s.start_time DESC`,
     [student.id, from, today]);
   res.json({ ok: true, student, from, to: today, sessions: sessions.map(r => ({ ...r, present: Boolean(r.present) })) });

@@ -196,8 +196,7 @@ async function checkStudentForSession(sessionCode, username) {
   const subjectRow = await dbGet(
     `SELECT subjects.name AS name
      FROM sessions
-     JOIN timetable ON timetable.id = sessions.timetable_id
-     JOIN subjects ON subjects.id = timetable.subject_id
+     JOIN subjects ON subjects.id = sessions.subject_id
      WHERE sessions.session_code = ? LIMIT 1`,
     [sessionCode],
   );
@@ -240,9 +239,9 @@ function getEligibleStudent(sessionCode, username) {
         SELECT classes.section
         FROM students_mapping
         JOIN classes ON classes.id = students_mapping.class_id
-        JOIN timetable_classes
-          ON timetable_classes.class_id = classes.id
-          AND timetable_classes.timetable_id = sessions.timetable_id
+        JOIN session_classes
+          ON session_classes.class_id = classes.id
+          AND session_classes.session_id = sessions.id
         WHERE students_mapping.student_id = students.id
         LIMIT 1
       ) AS section

@@ -109,14 +109,58 @@
             </div>
           </fieldset>
 
-          <fieldset class="field">
+          <!-- Regular: one of the faculty's own planned periods -->
+          <fieldset id="regularSetup" class="field">
             <legend>Class slot</legend>
             <div id="slots" class="slot-grid"></div>
             <p id="slotMsg" class="alert alert-danger" role="alert" hidden></p>
             <p id="slotEmpty" class="muted" hidden>
-              No classes are scheduled for this date.
+              No classes are scheduled for this date. Use Arranged to take an
+              extra class.
             </p>
           </fieldset>
+
+          <!-- Arranged: an extra class, a Saturday class, or a period borrowed from another faculty -->
+          <div id="arrangedSetup" class="arranged-setup" hidden>
+            <fieldset class="field">
+              <legend>Classes</legend>
+              <div id="arrClasses" class="pick-list"></div>
+              <p class="muted pick-note">
+                Only classes you teach can be picked here.
+              </p>
+            </fieldset>
+            <div class="field">
+              <label for="arrSubject">Subject</label>
+              <select id="arrSubject" class="input"></select>
+            </div>
+            <fieldset class="field">
+              <legend>Periods</legend>
+              <div id="arrSlots" class="slot-grid"></div>
+              <p class="muted pick-note">
+                Pick one period, or two or more for a combined lecture. A
+                period that belongs to another faculty is borrowed instantly;
+                they can no longer take attendance for it.
+              </p>
+            </fieldset>
+            <p id="arrMsg" class="alert alert-danger" role="alert" hidden></p>
+          </div>
+
+          <!-- Where the class really is (the camera used for CCTV comes from this room) -->
+          <div class="field">
+            <label for="roomSelect">Room</label>
+            <select id="roomSelect" class="input"></select>
+            <p id="roomHint" class="field-msg info" role="status" hidden></p>
+          </div>
+
+          <!-- Regular only: other classes sitting in on this period -->
+          <details id="mergeBox" class="merge-box" hidden>
+            <summary id="mergeSummary">Merge other classes into this period</summary>
+            <p class="muted pick-note">
+              Their own faculty will not be able to take attendance for this
+              period.
+            </p>
+            <div id="mergeList" class="pick-list"></div>
+          </details>
 
           <fieldset class="field">
             <legend>Attendance method</legend>
@@ -318,6 +362,11 @@
                   Submit attendance
                 </button>
               </div>
+              <p class="discard-row">
+                <button id="discardBtn" class="link-btn" type="button">
+                  Started by mistake? Discard this session
+                </button>
+              </p>
 
               <p id="liveStatus" class="live-status" role="status"></p>
               <div class="roster-filter">
@@ -382,6 +431,23 @@
           type="button"
           disabled>
           Add selected
+        </button>
+      </div>
+    </dialog>
+
+    <dialog id="discard-dialog" class="dialog" aria-labelledby="discardTitle">
+      <h2 id="discardTitle">Discard this session?</h2>
+      <p>
+        No attendance is saved and the period becomes free again, so another
+        faculty (or you) can start it. This only works while nobody is marked
+        present.
+      </p>
+      <div class="dialog-actions">
+        <button id="keepSessionBtn" class="btn btn-secondary" type="button">
+          Keep session
+        </button>
+        <button id="confirmDiscardBtn" class="btn btn-primary" type="button">
+          Discard
         </button>
       </div>
     </dialog>

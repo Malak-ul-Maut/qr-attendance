@@ -64,6 +64,84 @@
 .slot-skeleton {
   height: 4rem;
 }
+/* A period someone else already holds, or a combined lecture that cannot be borrowed */
+.slot-card input:disabled {
+  cursor: not-allowed;
+}
+.slot-card input:disabled + .slot-body {
+  opacity: 0.55;
+  background: var(--surface-2, var(--surface));
+}
+.slot-card[data-status='borrow'] .slot-details {
+  color: var(--red-600);
+  font-weight: 600;
+}
+
+/* ---- Arranged class, room and merge pickers ---- */
+.arranged-setup {
+  display: grid;
+  gap: var(--space-5);
+}
+.pick-list {
+  display: grid;
+  gap: var(--space-1);
+}
+.pick-list .check-row {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+}
+.pick-list .check-row:hover {
+  background: var(--surface-2, transparent);
+}
+.pick-list .check-row[data-busy='true'] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.pick-hint {
+  margin-left: auto;
+  font-size: var(--text-sm);
+  color: var(--ink-500);
+}
+.pick-note {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+}
+.merge-box {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+}
+.merge-box > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--ink-900);
+  min-height: var(--touch-target);
+  display: flex;
+  align-items: center;
+}
+.merge-box[hidden] {
+  display: none;
+}
+#roomHint.warn {
+  color: var(--danger-600);
+}
+.discard-row {
+  margin: var(--space-3) 0 0;
+  text-align: center;
+}
+.link-btn {
+  background: none;
+  border: 0;
+  padding: var(--space-2);
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--ink-500);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.link-btn:hover {
+  color: var(--danger-600);
+}
 
 .chips {
   display: flex;

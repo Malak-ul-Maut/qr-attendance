@@ -60,6 +60,22 @@ const ERROR_TEXT = {
     'Attendance for this class was already submitted today.',
   session_method_mismatch:
     'A session for this class is already open with a different method.',
+  slot_taken: 'Another faculty already has this period for that class.',
+  room_in_use: 'That room is in use at this time. Pick another room.',
+  no_class_on_sunday: 'There are no classes on Sundays.',
+  pick_classes: 'Pick at least one class.',
+  pick_periods: 'Pick at least one period.',
+  pick_subject: 'Pick a subject.',
+  subject_not_yours: 'You can only take attendance for subjects you teach.',
+  class_not_yours: 'You can only pick classes you teach.',
+  borrow_partial:
+    'That period is a combined lecture with other classes. Pick all of those classes too, or choose another period.',
+  invalid_room: 'That room could not be found. Pick the room again.',
+  invalid_class_or_room: 'A class or room you picked no longer exists. Reload and try again.',
+  invalid_slot: 'That period could not be found. Reload and try again.',
+  session_has_marks:
+    'Some students are already marked present, so this session cannot be discarded. Submit it instead.',
+  not_your_session: 'This session belongs to another faculty.',
   database_error: 'The server had a problem. Please try again.',
   session_insert_failed: 'The session could not be created. Please try again.',
   invalid_session: 'This session no longer exists. Start a new one.',
@@ -78,8 +94,13 @@ const ERROR_TEXT = {
   cctv_processing_failed:
     'The CCTV image could not be processed. Try again, or add students manually.',
 };
-const friendlyError = code =>
-  ERROR_TEXT[code] || 'Something went wrong. Please try again.';
+const friendlyError = (code, details = {}) => {
+  if (code === 'slot_taken')
+    return `${details.takenBy || 'Another faculty'} already has this period for that class.`;
+  if (code === 'room_in_use')
+    return `That room is in use by ${details.takenBy || 'another faculty'} at this time. Pick another room.`;
+  return ERROR_TEXT[code] || 'Something went wrong. Please try again.';
+};
 
 // The roll number, if the server sent one
 const idLabel = s => String(s.roll_number || s.rollNumber || '');
@@ -218,9 +239,12 @@ const rowEls = new Map(); // studentId -> <li> currently in the list
 const getMethod = () => $('input[name="method"]:checked').value;
 const getSlotId = () => $('input[name="slot"]:checked')?.value;
 const selectedSlot = () => slotInfo.get(String(getSlotId()));
+const sessionType = () => $('input[name="session-type"]:checked').value;
 const updateSubjectHeader = () => {
   $('#sub-name').textContent =
-    selectedSlot()?.subject_label || defaultSubjectLabel;
+    sessionType() === 'arranged'
+      ? $('#arrSubject').selectedOptions[0]?.textContent || defaultSubjectLabel
+      : selectedSlot()?.subject_label || defaultSubjectLabel;
 };
 
 // ---------- Setup: date, slots, classes ----------
@@ -242,7 +266,9 @@ function updateStartLabel() {
 
 // Pre-select the class happening now (or the next one) when taking today's attendance
 function chooseSlot(slots) {
-  if (dateInput.value !== localISODate()) return { pick: 0, nowId: null };
+  const free = slots.map(slot => !slot.taken_by); // a period someone else took cannot be started
+  const firstFree = free.indexOf(true);
+  if (dateInput.value !== localISODate()) return { pick: firstFree, nowId: null };
   const now = new Date();
   const minutes = now.getHours() * 60 + now.getMinutes();
   const times = slots.map(s => ({
@@ -256,9 +282,12 @@ function chooseSlot(slots) {
       minutes >= t.start &&
       minutes < t.end,
   );
-  if (current !== -1) return { pick: current, nowId: slots[current].id };
-  const upcoming = times.findIndex(t => t.start !== null && t.start > minutes);
-  return { pick: upcoming === -1 ? 0 : upcoming, nowId: null };
+  if (current !== -1)
+    return { pick: free[current] ? current : firstFree, nowId: slots[current].id };
+  const upcoming = times.findIndex(
+    (t, i) => free[i] && t.start !== null && t.start > minutes,
+  );
+  return { pick: upcoming === -1 ? firstFree : upcoming, nowId: null };
 }
 
 async function loadSlots() {
@@ -275,6 +304,7 @@ async function loadSlots() {
   updateSubjectHeader();
   startBtn.disabled = true;
   updateDateWarning();
+  $('#mergeBox').hidden = true;
 
   try {
     const res = await fetch(
@@ -299,9 +329,13 @@ async function loadSlots() {
         const input = label.querySelector('input');
         input.value = slot.id;
         input.checked = i === pick;
+        input.disabled = Boolean(slot.taken_by);
+        label.dataset.status = slot.taken_by ? 'taken' : 'own';
         input.addEventListener('change', () => {
           updateSubjectHeader();
           loadClasses();
+          loadRooms();
+          loadMerge();
         });
         const time = label.querySelector('.slot-time');
         time.textContent = `${slot.start_time} - ${slot.end_time}`;
@@ -311,14 +345,15 @@ async function loadSlots() {
           badge.textContent = 'Now';
           time.append(' ', badge);
         }
-        label.querySelector('.slot-details').textContent =
-          `${slot.subject_abbr} (${slot.block}-${slot.room_number})`;
+        label.querySelector('.slot-details').textContent = slot.taken_by
+          ? `${slot.subject_abbr}: taken by ${slot.taken_by}`
+          : `${slot.subject_abbr} (${slot.block}-${slot.room_number})`;
         return label;
       }),
     );
     $('#slotEmpty').hidden = slots.length > 0;
-    startBtn.disabled = slots.length === 0;
-    await loadClasses();
+    updateStartState();
+    await Promise.all([loadClasses(), loadRooms(), loadMerge()]);
   } catch {
     if (requestId !== slotRequestId) return;
     slotList.replaceChildren();
@@ -352,13 +387,274 @@ async function loadClasses() {
   }
 }
 
+// ---------- Room, merged classes and arranged classes ----------
+const roomSelect = $('#roomSelect');
+const roomInfo = new Map(); // roomId -> room from the server
+let roomRequestId = 0;
+let mergeRequestId = 0;
+let arrangedRequestId = 0;
+let arrangedClasses = []; // classes this faculty teaches (arranged mode)
+
+const enc = encodeURIComponent;
+const roomName = room => `${room.block}-${room.number}`;
+const chosenArrClassIds = () =>
+  [...document.querySelectorAll('#arrClasses input:checked')].map(i => Number(i.value));
+const chosenArrSlotIds = () =>
+  [...document.querySelectorAll('#arrSlots input:checked')].map(i => Number(i.value));
+const chosenMergeIds = () =>
+  sessionType() === 'regular'
+    ? [...document.querySelectorAll('#mergeList input:checked')].map(i => Number(i.value))
+    : [];
+const setupSlotIds = () =>
+  sessionType() === 'regular'
+    ? getSlotId() ? [Number(getSlotId())] : []
+    : chosenArrSlotIds();
+
+function updateStartState() {
+  startBtn.disabled =
+    sessionType() === 'arranged'
+      ? !(chosenArrClassIds().length && chosenArrSlotIds().length && $('#arrSubject').value)
+      : !getSlotId();
+}
+
+// The room the faculty most likely means: the timetable's room for the period, or the class's home room.
+function defaultRoomId() {
+  if (sessionType() === 'regular') return selectedSlot()?.room_id ?? null;
+  const first = chosenArrClassIds()[0];
+  return arrangedClasses.find(c => c.class_id === first)?.room_id ?? null;
+}
+
+async function loadRooms() {
+  const requestId = ++roomRequestId;
+  const slotIds = setupSlotIds();
+  try {
+    const res = await fetch(
+      `/api/session/rooms?date=${enc(dateInput.value)}&slotId=${slotIds.join(',')}&faculty_id=${enc(facultyId)}`,
+    );
+    if (!res.ok) throw new Error();
+    const rooms = await res.json();
+    if (requestId !== roomRequestId) return;
+    const preferred = defaultRoomId();
+    roomInfo.clear();
+    roomSelect.replaceChildren(
+      ...rooms.map(room => {
+        roomInfo.set(String(room.id), room);
+        const option = document.createElement('option');
+        option.value = room.id;
+        const notes = [];
+        if (room.id === preferred)
+          notes.push(sessionType() === 'regular' ? 'timetable room' : 'class room');
+        if (room.type === 'lab') notes.push('lab');
+        if (room.in_use_by) notes.push(`in use by ${room.in_use_by}`);
+        else if (room.planned) notes.push(`planned: ${room.planned}`);
+        if (!room.has_camera) notes.push('no camera');
+        option.textContent = notes.length
+          ? `${roomName(room)} (${notes.join(', ')})`
+          : roomName(room);
+        option.disabled = Boolean(room.in_use_by);
+        return option;
+      }),
+    );
+    const usable = rooms.find(r => r.id === preferred && !r.in_use_by) || rooms.find(r => !r.in_use_by);
+    if (usable) roomSelect.value = usable.id;
+    updateRoomHint();
+  } catch {
+    if (requestId === roomRequestId) {
+      roomSelect.replaceChildren();
+      updateRoomHint();
+    }
+  }
+}
+
+// Tells the faculty what a room choice means, before they start.
+function updateRoomHint() {
+  const hint = $('#roomHint');
+  const room = roomInfo.get(String(roomSelect.value));
+  hint.classList.remove('warn');
+  hint.hidden = true;
+  if (!room) return;
+  if (getMethod() === 'cctv' && !room.has_camera) {
+    hint.textContent =
+      'This room has no camera set up, so CCTV cannot see your class here. Pick a room with a camera, or use QR.';
+    hint.classList.add('warn');
+    hint.hidden = false;
+  } else if (room.planned && String(room.id) !== String(defaultRoomId())) {
+    hint.textContent = `The timetable plans ${room.planned} in this room at this time. Make sure it is free.`;
+    hint.hidden = false;
+  }
+}
+roomSelect.addEventListener('change', updateRoomHint);
+
+function pickRow(value, text, hint, { busy = false, name } = {}) {
+  const label = document.createElement('label');
+  label.className = 'check-row';
+  label.dataset.busy = busy ? 'true' : 'false';
+  label.innerHTML = '<input type="checkbox"><span class="pick-text"></span><span class="pick-hint"></span>';
+  const input = label.querySelector('input');
+  input.value = value;
+  input.disabled = busy;
+  if (name) input.name = name;
+  label.querySelector('.pick-text').textContent = text;
+  label.querySelector('.pick-hint').textContent = hint || '';
+  return label;
+}
+
+// Regular mode: other classes that can sit in on this period.
+async function loadMerge() {
+  const requestId = ++mergeRequestId;
+  const box = $('#mergeBox');
+  $('#mergeList').replaceChildren();
+  box.open = false;
+  updateMergeSummary();
+  if (sessionType() !== 'regular' || !getSlotId()) {
+    box.hidden = true;
+    return;
+  }
+  try {
+    const res = await fetch(
+      `/api/session/merge-options?date=${enc(dateInput.value)}&slotId=${enc(getSlotId())}&faculty_id=${enc(facultyId)}`,
+    );
+    if (!res.ok) throw new Error();
+    const options = await res.json();
+    if (requestId !== mergeRequestId) return;
+    $('#mergeList').replaceChildren(
+      ...options.map(c => {
+        const hint = c.busy_by ? `taken by ${c.busy_by}` : c.planned ? `planned: ${c.planned}` : 'free';
+        const row = pickRow(c.class_id, classLabel(c), hint, { busy: Boolean(c.busy_by) });
+        row.querySelector('input').addEventListener('change', updateMergeSummary);
+        return row;
+      }),
+    );
+    box.hidden = options.length === 0;
+  } catch {
+    if (requestId === mergeRequestId) box.hidden = true;
+  }
+}
+function updateMergeSummary() {
+  const n = chosenMergeIds().length;
+  $('#mergeSummary').textContent = n
+    ? `Merging ${n} other ${n === 1 ? 'class' : 'classes'} into this period`
+    : 'Merge other classes into this period';
+}
+
+// Arranged mode: the faculty's classes and subjects, then the periods for the chosen classes.
+async function loadArranged() {
+  const requestId = ++arrangedRequestId;
+  $('#arrMsg').hidden = true;
+  updateDateWarning();
+  startBtn.disabled = true;
+  const keptClasses = new Set(chosenArrClassIds());
+  const keptSubject = $('#arrSubject').value;
+  try {
+    const res = await fetch(
+      `/api/session/arranged/options?date=${enc(dateInput.value)}&faculty_id=${enc(facultyId)}`,
+    );
+    if (!res.ok) throw new Error();
+    const data = await res.json();
+    if (requestId !== arrangedRequestId) return;
+    arrangedClasses = data.classes || [];
+    if (data.closed) {
+      $('#arrMsg').textContent = 'There are no classes on Sundays. Pick another date.';
+      $('#arrMsg').hidden = false;
+    }
+    $('#arrClasses').replaceChildren(
+      ...arrangedClasses.map(c => {
+        const row = pickRow(c.class_id, classLabel(c), c.room || '', { name: 'arr-class' });
+        const input = row.querySelector('input');
+        input.checked = keptClasses.has(c.class_id) || arrangedClasses.length === 1;
+        input.addEventListener('change', () => loadArrangedSlots());
+        return row;
+      }),
+    );
+    $('#arrSubject').replaceChildren(
+      ...(data.subjects || []).map(subject => {
+        const option = document.createElement('option');
+        option.value = subject.id;
+        option.textContent = subject.name;
+        return option;
+      }),
+    );
+    if ([...$('#arrSubject').options].some(o => o.value === keptSubject))
+      $('#arrSubject').value = keptSubject;
+    updateSubjectHeader();
+    await loadArrangedSlots();
+  } catch {
+    if (requestId !== arrangedRequestId) return;
+    $('#arrMsg').textContent = 'Could not load your classes. Check your connection and change the date to retry.';
+    $('#arrMsg').hidden = false;
+  }
+}
+
+async function loadArrangedSlots() {
+  const requestId = ++arrangedRequestId;
+  const classIdsChosen = chosenArrClassIds();
+  const keptSlots = new Set(chosenArrSlotIds());
+  try {
+    const res = await fetch(
+      `/api/session/arranged/slots?date=${enc(dateInput.value)}&faculty_id=${enc(facultyId)}&classIds=${classIdsChosen.join(',')}`,
+    );
+    if (!res.ok) throw new Error();
+    const slots = await res.json();
+    if (requestId !== arrangedRequestId) return;
+    $('#arrSlots').replaceChildren(
+      ...slots.map(slot => {
+        const label = document.createElement('label');
+        label.className = 'slot-card';
+        label.dataset.status = slot.status;
+        label.innerHTML =
+          '<input type="checkbox" name="arr-slot"><span class="slot-body"><span class="slot-time"></span><span class="slot-details"></span></span>';
+        const input = label.querySelector('input');
+        input.value = slot.id;
+        input.disabled = slot.status === 'taken' || slot.status === 'blocked' || classIdsChosen.length === 0;
+        input.checked = keptSlots.has(slot.id) && !input.disabled;
+        input.addEventListener('change', () => {
+          updateStartState();
+          loadRooms();
+        });
+        label.querySelector('.slot-time').textContent = `${slot.start_time} - ${slot.end_time}`;
+        label.querySelector('.slot-details').textContent = classIdsChosen.length
+          ? slot.note
+          : 'Pick a class first';
+        return label;
+      }),
+    );
+    updateStartState();
+    await loadRooms();
+  } catch {
+    if (requestId !== arrangedRequestId) return;
+    $('#arrMsg').textContent = 'Could not load the periods. Try again.';
+    $('#arrMsg').hidden = false;
+  }
+}
+$('#arrSubject').addEventListener('change', () => {
+  updateSubjectHeader();
+  updateStartState();
+});
+
+function refreshSetup() {
+  updateSubjectHeader();
+  return sessionType() === 'arranged' ? loadArranged() : loadSlots();
+}
+
+function applySessionType() {
+  const arranged = sessionType() === 'arranged';
+  $('#regularSetup').hidden = arranged;
+  $('#arrangedSetup').hidden = !arranged;
+  if (arranged) $('#mergeBox').hidden = true;
+  refreshSetup();
+}
+document
+  .querySelectorAll('input[name="session-type"]')
+  .forEach(r => r.addEventListener('change', applySessionType));
+
 dateInput.addEventListener('change', () => {
   if (!dateInput.value) dateInput.value = localISODate(); // cleared with the picker's "Clear"
-  loadSlots();
+  refreshSetup();
 });
 document.querySelectorAll('input[name="method"]').forEach(r =>
   r.addEventListener('change', () => {
     updateStartLabel();
+    updateRoomHint();
   }),
 );
 
@@ -444,7 +740,7 @@ function renderSessionHeader() {
     return;
   }
   header.hidden = false;
-  const { slot, classes, date, method, sessionType } = headerInfo;
+  const { slot, classes, date, method, sessionType, periods = 1, borrowed = false } = headerInfo;
   const merged = classes.length > 1;
   $('#shPresent').textContent = presentCount();
   $('#shTotal').textContent = allStudents.size ? ` / ${allStudents.size}` : '';
@@ -456,8 +752,10 @@ function renderSessionHeader() {
     slot?.block && slot?.room_number
       ? `Room ${slot.block}-${slot.room_number}`
       : '',
+    periods > 1 ? `${periods} periods` : '',
     method === 'qr' ? 'QR session' : 'CCTV session',
     sessionType ? `${titleCase(sessionType)} class` : '',
+    borrowed ? 'Includes a borrowed period' : '',
   ].filter(Boolean);
   const key = JSON.stringify([meta, rows, merged, slot?.subject_label]);
   if (key === headerKey) return; // nothing new: leave the DOM alone
@@ -735,42 +1033,76 @@ socket.on('connect', () => {
 
 // ---------- Start session ----------
 startBtn.addEventListener('click', async () => {
+  const arranged = sessionType() === 'arranged';
   const slotId = getSlotId();
-  if (!slotId) return notify('Pick a class slot first.', 'error');
+  if (!arranged && !slotId) return notify('Pick a class slot first.', 'error');
+  if (arranged && !chosenArrClassIds().length)
+    return notify('Pick at least one class.', 'error');
+  if (arranged && !chosenArrSlotIds().length)
+    return notify('Pick at least one period.', 'error');
   const method = getMethod();
+  const roomId = roomSelect.value ? Number(roomSelect.value) : undefined;
 
   startBtn.setAttribute('aria-busy', 'true');
   startBtn.disabled = true;
   try {
-    const response = await postData('/api/session/start', {
-      date: dateInput.value,
-      slotId,
-      facultyId,
-      method,
-      classIds,
-      sessionType: $('input[name="session-type"]:checked').value,
-    });
+    const response = arranged
+      ? await postData('/api/session/arranged', {
+          date: dateInput.value,
+          facultyId,
+          method,
+          roomId,
+          classIds: chosenArrClassIds(),
+          slotIds: chosenArrSlotIds(),
+          subjectId: Number($('#arrSubject').value),
+        })
+      : await postData('/api/session/start', {
+          date: dateInput.value,
+          slotId,
+          facultyId,
+          method,
+          roomId,
+          mergeClassIds: chosenMergeIds(),
+          classIds,
+          sessionType: sessionType(),
+        });
     if (!response)
       return notify('Could not reach the server. Try again.', 'error');
     if (!response.ok)
       return notify(
-        `Could not start the session. ${friendlyError(response.error)}`,
+        `Could not start the session. ${friendlyError(response.error, response)}`,
         'error',
       );
 
     sessionCode = response.sessionCode;
     sessionMethod = method;
+    // The server says what really started: subject, room, periods and every class (merged ones too).
+    const real = response.header;
+    const periods = real?.periods || [];
     sessionMeta = {
       date: dateInput.value,
-      slot: selectedSlot()?.label || 'Class',
+      slot: periods.length
+        ? periods.map(p => p.label).join(' + ')
+        : selectedSlot()?.label || 'Class',
       method,
     };
     headerInfo = {
       date: dateInput.value,
-      slot: selectedSlot() ? { ...selectedSlot() } : null,
-      classes: [...classInfo],
+      slot: real
+        ? {
+            start_time: periods[0]?.start_time,
+            end_time: periods[periods.length - 1]?.end_time,
+            block: real.block,
+            room_number: real.room_number,
+            subject_label: real.subject_label,
+            subject_abbr: real.subject_abbr,
+          }
+        : selectedSlot() ? { ...selectedSlot() } : null,
+      classes: real ? real.classes : [...classInfo],
+      periods: periods.length || 1,
+      borrowed: Boolean(real?.kinds?.includes('borrowed')),
       method,
-      sessionType: $('input[name="session-type"]:checked').value,
+      sessionType: sessionType(),
     };
     headerKey = '';
     roster.clear();
@@ -1382,6 +1714,21 @@ $('#confirmSubmitBtn').addEventListener('click', async event => {
   endSessionUI();
 });
 
+// Started by mistake: drop the session so the period is free again (for example for a faculty it was borrowed from).
+$('#discardBtn').addEventListener('click', () => $('#discard-dialog').showModal());
+$('#keepSessionBtn').addEventListener('click', () => $('#discard-dialog').close());
+$('#confirmDiscardBtn').addEventListener('click', async event => {
+  const btn = event.currentTarget;
+  btn.setAttribute('aria-busy', 'true');
+  const response = await postData('/api/session/cancel', { sessionCode, facultyId });
+  btn.removeAttribute('aria-busy');
+  $('#discard-dialog').close();
+  if (!response?.ok)
+    return notify(`Could not discard the session. ${friendlyError(response?.error, response)}`, 'error');
+  showToast('Session discarded. The period is free again.', 'success');
+  endSessionUI();
+});
+
 function endSessionUI() {
   clearTimeout(qrTimer);
   clearTimeout(renderTimer);
@@ -1410,6 +1757,7 @@ function endSessionUI() {
   refreshFailures = 0;
   afterStart.hidden = true;
   beforeStart.hidden = false;
+  refreshSetup(); // periods taken or borrowed in the meantime show up right away
 }
 
 updateStartLabel();
