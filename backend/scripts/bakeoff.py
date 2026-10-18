@@ -232,6 +232,8 @@ class Display:
     def __init__(self, work, gui=True):
         self.path = work.root / "label_view.jpg"
         self.gui = gui
+        self.window = "bakeoff label"
+        self.window_created = False
 
     def show(self, image, frame, highlight, names):
         out = image.copy()
@@ -251,7 +253,21 @@ class Display:
                 out[0:240, 0:240] = zoom
         if self.gui:
             try:
-                cv2.imshow("bakeoff label", out)
+                max_width, max_height = 1280, 720
+                preview_scale = min(1.0, max_width / out.shape[1], max_height / out.shape[0])
+                if preview_scale < 1.0:
+                    preview = cv2.resize(
+                        out,
+                        (int(out.shape[1] * preview_scale), int(out.shape[0] * preview_scale)),
+                        interpolation=cv2.INTER_AREA,
+                    )
+                else:
+                    preview = out
+                if not self.window_created:
+                    cv2.namedWindow(self.window, cv2.WINDOW_NORMAL)
+                    self.window_created = True
+                cv2.imshow(self.window, preview)
+                cv2.resizeWindow(self.window, preview.shape[1], preview.shape[0])
                 cv2.waitKey(1)
                 return
             except cv2.error:
