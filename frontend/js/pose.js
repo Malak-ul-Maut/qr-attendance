@@ -25,7 +25,8 @@ export function estimatePose(landmarks, rollRef = null) {
   const v = { x: -u.y, y: u.x };
   const eyeMid = { x: (le.x + re.x) / 2, y: (le.y + re.y) / 2 };
   const mouthMid = { x: (lm.x + rm.x) / 2, y: (lm.y + rm.y) / 2 };
-  const along = (p, axis) => (p.x - eyeMid.x) * axis.x + (p.y - eyeMid.y) * axis.y;
+  const along = (p, axis) =>
+    (p.x - eyeMid.x) * axis.x + (p.y - eyeMid.y) * axis.y;
   const mouthDown = along(mouthMid, v);
   if (mouthDown < 1e-6) return null;
   return {
@@ -49,15 +50,20 @@ export function plausibleFace(face) {
   const eyeY = (le.y + re.y) / 2;
   const mouthY = (lm.y + rm.y) / 2;
   const mouthWidth = rm.x - lm.x;
-  const rollDeg = Math.abs(Math.atan2(re.y - le.y, re.x - le.x)) * 180 / Math.PI;
+  const rollDeg =
+    (Math.abs(Math.atan2(re.y - le.y, re.x - le.x)) * 180) / Math.PI;
   return (
-    eyeY < nose.y && nose.y < mouthY && // top to bottom: eyes, nose, mouth
-    eyeDist / boxWidth > 0.25 && eyeDist / boxWidth < 0.75 && // eyes about a third to a half of the box width
-    mouthWidth > 0 && mouthWidth < eyeDist * 1.4 && // the mouth is not wider than the eyes
+    eyeY < nose.y &&
+    nose.y < mouthY && // top to bottom: eyes, nose, mouth
+    eyeDist / boxWidth > 0.25 &&
+    eyeDist / boxWidth < 0.75 && // eyes about a third to a half of the box width
+    mouthWidth > 0 &&
+    mouthWidth < eyeDist * 1.4 && // the mouth is not wider than the eyes
     (mouthY - eyeY) / boxHeight > 0.2 && // eyes and mouth are well apart vertically
     (mouthY - eyeY) / boxHeight < 0.75 &&
     rollDeg < 40 &&
-    boxWidth / boxHeight > 0.5 && boxWidth / boxHeight < 1.4
+    boxWidth / boxHeight > 0.5 &&
+    boxWidth / boxHeight < 1.4
   );
 }
 
@@ -66,17 +72,114 @@ export function plausibleFace(face) {
 // Most CCTV faces are seen from slightly above and nearly front-on, so most shots are close to frontal; 'high'
 // (phone raised above the eyes, looking up at it) gives the camera's own downward view.
 export const SHOTS = [
-  { id: 'front', title: 'Look straight at the camera', hint: 'Phone at eye level, light on your face.', short: 'Look straight · सीधे देखें', yaw: [-0.07, 0.07], dPitch: [-0.07, 0.07], template: true },
-  { id: 'left', title: 'Turn your head slightly to your left', hint: 'About a quarter turn. Keep looking at the screen.', short: '← A little left · थोड़ा बाएँ', yaw: [0.12, 0.32], dPitch: [-0.08, 0.08], template: true },
-  { id: 'right', title: 'Turn your head slightly to your right', hint: 'About a quarter turn. Keep looking at the screen.', short: 'A little right · थोड़ा दाएँ →', yaw: [-0.32, -0.12], dPitch: [-0.08, 0.08], template: true },
-  { id: 'down', title: 'Lower your chin a little', hint: 'Like glancing down at your notes.', short: '↓ Chin down · ठुड्डी नीचे', yaw: [-0.08, 0.08], dPitch: [0.06, 0.2], template: true },
-  { id: 'high', title: 'Raise the phone above your eyes and look up at it', hint: 'Like the classroom camera, which looks down on you. Keep your eyes open.', short: '↑ Phone up high · फ़ोन ऊपर', yaw: [-0.08, 0.08], dPitch: [-0.2, -0.06], template: false },
-  { id: 'down-left', title: 'Chin down, and turn slightly to your left', hint: 'Like looking at your desk from the right side of the room.', short: '↙ Down and left · नीचे + बाएँ', yaw: [0.1, 0.3], dPitch: [0.06, 0.2], template: false },
-  { id: 'down-right', title: 'Chin down, and turn slightly to your right', hint: 'Like looking at your desk from the left side of the room.', short: 'Down and right · नीचे + दाएँ ↘', yaw: [-0.3, -0.1], dPitch: [0.06, 0.2], template: false },
-  { id: 'front2', title: 'Look straight again, relaxed', hint: 'Natural face, one more time.', short: 'Straight again · फिर सीधे', yaw: [-0.07, 0.07], dPitch: [-0.07, 0.07], template: true },
+  {
+    id: 'front',
+    title: 'Look straight at the camera',
+    hint: 'Phone at eye level, light on your face.',
+    short: 'Look straight · सीधे देखें',
+    yaw: [-0.07, 0.07],
+    dPitch: [-0.07, 0.07],
+    template: true,
+  },
+  {
+    id: 'left',
+    title: 'Turn your head slightly to your left',
+    hint: 'About a quarter turn. Keep looking at the screen.',
+    short: '← A little left · थोड़ा बाएँ',
+    yaw: [0.12, 0.32],
+    dPitch: [-0.08, 0.08],
+    template: true,
+  },
+  {
+    id: 'right',
+    title: 'Turn your head slightly to your right',
+    hint: 'About a quarter turn. Keep looking at the screen.',
+    short: 'A little right · थोड़ा दाएँ →',
+    yaw: [-0.32, -0.12],
+    dPitch: [-0.08, 0.08],
+    template: true,
+  },
+  {
+    id: 'down',
+    title: 'Lower your chin a little',
+    hint: 'Like glancing down at your notes.',
+    short: '↓ Chin down · ठुड्डी नीचे',
+    yaw: [-0.08, 0.08],
+    dPitch: [0.06, 0.2],
+    template: true,
+  },
+  {
+    id: 'high',
+    title: 'Raise the phone above your eyes and look up at it',
+    hint: 'Like the classroom camera, which looks down on you. Keep your eyes open.',
+    short: '↑ Phone up high · फ़ोन ऊपर',
+    yaw: [-0.08, 0.08],
+    dPitch: [-0.2, -0.06],
+    template: false,
+  },
+  {
+    id: 'down-left',
+    title: 'Chin down, and turn slightly to your left',
+    hint: 'Like looking at your desk from the right side of the room.',
+    short: '↙ Down and left · नीचे + बाएँ',
+    yaw: [0.1, 0.3],
+    dPitch: [0.06, 0.2],
+    template: false,
+  },
+  {
+    id: 'down-right',
+    title: 'Chin down, and turn slightly to your right',
+    hint: 'Like looking at your desk from the left side of the room.',
+    short: 'Down and right · नीचे + दाएँ ↘',
+    yaw: [-0.3, -0.1],
+    dPitch: [0.06, 0.2],
+    template: false,
+  },
+  {
+    id: 'front2',
+    title: 'Look straight again, relaxed',
+    hint: 'Natural face, one more time.',
+    short: 'Straight again · फिर सीधे',
+    yaw: [-0.07, 0.07],
+    dPitch: [-0.07, 0.07],
+    template: true,
+  },
+  {
+    id: 'left-wide',
+    title: 'Turn your head well to your left',
+    hint: 'Further than before, but you can still see the screen. Skip if it is hard.',
+    short: '⇇ Turn more left · और बाएँ',
+    yaw: [0.34, 0.55],
+    dPitch: [-0.1, 0.1],
+  },
+  {
+    id: 'right-wide',
+    title: 'Turn your head well to your right',
+    hint: 'Further than before, but you can still see the screen. Skip if it is hard.',
+    short: 'Turn more right · और दाएँ ⇉',
+    yaw: [-0.55, -0.34],
+    dPitch: [-0.1, 0.1],
+  },
+  {
+    id: 'down-deep',
+    title: 'Look down at your desk, as if writing',
+    hint: 'Chin well down. Your eyes may look half closed, that is fine.',
+    short: '⇣ Look at your desk · मेज़ की ओर',
+    yaw: [-0.1, 0.1],
+    dPitch: [0.2, 0.34],
+  },
 ];
-export const GLASSES_OFF_SHOT = { id: 'no-glasses', title: 'Take your glasses off and look straight', hint: 'Just this one photo without them.', short: 'Glasses off · चश्मा हटाएँ', yaw: [-0.07, 0.07], dPitch: [-0.07, 0.07], template: true };
-export const shotsFor = wearsGlasses => (wearsGlasses ? [...SHOTS, GLASSES_OFF_SHOT] : SHOTS);
+export const GLASSES_OFF_SHOT = {
+  id: 'no-glasses',
+  title: 'Take your glasses off and look straight',
+  hint: 'Just this one photo without them.',
+  short: 'Glasses off · चश्मा हटाएँ',
+  yaw: [-0.07, 0.07],
+  dPitch: [-0.07, 0.07],
+  template: true,
+};
+export const shotsFor = wearsGlasses =>
+  wearsGlasses ? [...SHOTS, GLASSES_OFF_SHOT] : SHOTS;
 
 // Sanity range for the very first photo, when the student's own front pitch is not known yet.
 const FIRST_PITCH = [0.35, 0.85];
@@ -89,27 +192,62 @@ export function checkPose(shot, pose, baseline) {
   const wantsRight = yawMax < 0;
 
   if (pose.yaw < yawMin) {
-    if (wantsLeft) return { ok: false, hint: 'Turn a little more to your left.' };
-    if (wantsRight) return { ok: false, hint: 'Turned too far. Turn back a little to your left.' };
-    return { ok: false, hint: 'Turn a little to your right, to face the camera.' };
+    if (wantsLeft)
+      return { ok: false, hint: 'Turn a little more to your left.' };
+    if (wantsRight)
+      return {
+        ok: false,
+        hint: 'Turned too far. Turn back a little to your left.',
+      };
+    return {
+      ok: false,
+      hint: 'Turn a little to your right, to face the camera.',
+    };
   }
   if (pose.yaw > yawMax) {
-    if (wantsRight) return { ok: false, hint: 'Turn a little more to your right.' };
-    if (wantsLeft) return { ok: false, hint: 'Turned too far. Turn back a little to your right.' };
-    return { ok: false, hint: 'Turn a little to your left, to face the camera.' };
+    if (wantsRight)
+      return { ok: false, hint: 'Turn a little more to your right.' };
+    if (wantsLeft)
+      return {
+        ok: false,
+        hint: 'Turned too far. Turn back a little to your right.',
+      };
+    return {
+      ok: false,
+      hint: 'Turn a little to your left, to face the camera.',
+    };
   }
 
   if (baseline === null) {
     if (pose.pitch < FIRST_PITCH[0] || pose.pitch > FIRST_PITCH[1])
-      return { ok: false, hint: 'Hold the phone at eye level and look straight at it.' };
+      return {
+        ok: false,
+        hint: 'Hold the phone at eye level and look straight at it.',
+      };
     return { ok: true };
   }
   const d = pose.pitch - baseline.pitch;
   const [pMin, pMax] = shot.dPitch;
   const wantsDown = pMin > 0;
   const wantsUp = pMax < 0;
-  if (d < pMin) return { ok: false, hint: wantsDown ? 'Lower your chin a little more.' : wantsUp ? 'Not that high. Lower the phone a little.' : 'Lower your chin a little, to look straight.' };
-  if (d > pMax) return { ok: false, hint: wantsDown ? 'Not that far. Raise your chin a little.' : wantsUp ? 'Raise the phone a little higher and look up at it.' : 'Raise your chin a little, to look straight.' };
+  if (d < pMin)
+    return {
+      ok: false,
+      hint: wantsDown
+        ? 'Lower your chin a little more.'
+        : wantsUp
+          ? 'Not that high. Lower the phone a little.'
+          : 'Lower your chin a little, to look straight.',
+    };
+  if (d > pMax)
+    return {
+      ok: false,
+      hint: wantsDown
+        ? 'Not that far. Raise your chin a little.'
+        : wantsUp
+          ? 'Raise the phone a little higher and look up at it.'
+          : 'Raise your chin a little, to look straight.',
+    };
   return { ok: true };
 }
 
@@ -141,9 +279,12 @@ const GUIDE_YAW_SPAN = 0.22; // yaw error that counts as "far"
 const GUIDE_PITCH_SPAN = 0.14; // pitch error that counts as "far"
 export function poseGuidance(shot, pose, baseline) {
   if (!pose) return null;
-  const toWindow = (value, [min, max]) => (value < min ? min - value : value > max ? max - value : 0);
+  const toWindow = (value, [min, max]) =>
+    value < min ? min - value : value > max ? max - value : 0;
   const yawNeed = toWindow(pose.yaw, shot.yaw);
-  const pitchNeed = baseline ? toWindow(pose.pitch - baseline.pitch, shot.dPitch) : toWindow(pose.pitch, FIRST_PITCH);
+  const pitchNeed = baseline
+    ? toWindow(pose.pitch - baseline.pitch, shot.dPitch)
+    : toWindow(pose.pitch, FIRST_PITCH);
   const dx = Math.max(-1, Math.min(1, yawNeed / GUIDE_YAW_SPAN));
   const dy = Math.max(-1, Math.min(1, pitchNeed / GUIDE_PITCH_SPAN));
   const strength = Math.min(1, Math.hypot(dx, dy));
@@ -167,13 +308,20 @@ function meterAxis(value, [lo, hi], directional) {
   const span = hi + 1.2 * width - min;
   let status = 'ok';
   if (value < lo || value > hi) {
-    if (!directional || (lo <= 0 && hi >= 0)) status = 'off'; // a "straight" pose: being to either side is simply off
-    else if (lo > 0) status = value < lo ? 'little' : 'much'; // the pose is on the positive side: below the band is not enough
+    if (!directional || (lo <= 0 && hi >= 0))
+      status = 'off'; // a "straight" pose: being to either side is simply off
+    else if (lo > 0)
+      status = value < lo ? 'little' : 'much'; // the pose is on the positive side: below the band is not enough
     else status = value > hi ? 'little' : 'much'; // the pose is on the negative side: above the band is not enough
   }
   const wantsOffCentre = directional && (lo > 0 || hi < 0);
   if (status === 'ok' && !wantsOffCentre) return null;
-  return { pos: (value - min) / span, from: (lo - min) / span, to: (hi - min) / span, status };
+  return {
+    pos: (value - min) / span,
+    from: (lo - min) / span,
+    to: (hi - min) / span,
+    status,
+  };
 }
 
 export function poseMeters(shot, pose, baseline) {
@@ -191,7 +339,10 @@ export function poseCoach(shot, pose, baseline) {
   const meters = poseMeters(shot, pose, baseline);
   if (!meters) return null;
   // how far each axis is from the middle of its band, so the axis that is further off is the one to talk about
-  const miss = axis => (axis && axis.status !== 'ok' ? Math.abs(axis.pos - (axis.from + axis.to) / 2) : 0);
+  const miss = axis =>
+    axis && axis.status !== 'ok'
+      ? Math.abs(axis.pos - (axis.from + axis.to) / 2)
+      : 0;
   const yawMiss = miss(meters.yaw);
   const pitchMiss = miss(meters.pitch);
   if (yawMiss === 0 && pitchMiss === 0) return null;
@@ -199,17 +350,55 @@ export function poseCoach(shot, pose, baseline) {
   if (yawMiss >= pitchMiss) {
     const { status } = meters.yaw;
     const left = shot.yaw[0] > 0;
-    if (status === 'little') return { tone: 'little', text: left ? 'A bit more to the left · थोड़ा और बाएँ' : 'A bit more to the right · थोड़ा और दाएँ' };
-    if (status === 'much') return { tone: 'much', text: 'Too far, turn back a little · ज़्यादा हो गया, थोड़ा वापस' };
+    if (status === 'little')
+      return {
+        tone: 'little',
+        text: left
+          ? 'A bit more to the left · थोड़ा और बाएँ'
+          : 'A bit more to the right · थोड़ा और दाएँ',
+      };
+    if (status === 'much')
+      return {
+        tone: 'much',
+        text: 'Too far, turn back a little · ज़्यादा हो गया, थोड़ा वापस',
+      };
     // a "straight" pose and the head is to one side: which side is it on?
-    return { tone: 'off', text: pose.yaw < shot.yaw[0] ? 'Turn a little to your left · थोड़ा बाएँ आएँ' : 'Turn a little to your right · थोड़ा दाएँ आएँ' };
+    return {
+      tone: 'off',
+      text:
+        pose.yaw < shot.yaw[0]
+          ? 'Turn a little to your left · थोड़ा बाएँ आएँ'
+          : 'Turn a little to your right · थोड़ा दाएँ आएँ',
+    };
   }
   const { status } = meters.pitch;
   const up = baseline && shot.dPitch[1] < 0; // the "phone up high" pose
-  if (!baseline) return { tone: 'off', text: 'Phone at eye level, look straight · फ़ोन आँखों के सामने' };
-  if (status === 'little') return { tone: 'little', text: up ? 'Raise the phone a bit more · फ़ोन थोड़ा और ऊपर' : 'Chin down a little more · ठुड्डी थोड़ी और नीचे' };
-  if (status === 'much') return { tone: 'much', text: up ? 'Too high, lower it a little · ज़्यादा ऊपर, थोड़ा नीचे' : 'Too low, lift your chin a little · ज़्यादा नीचे, थोड़ा ऊपर' };
-  return { tone: 'off', text: pose.pitch - baseline.pitch < shot.dPitch[0] ? 'Lower your chin a little · ठुड्डी थोड़ी नीचे' : 'Raise your chin a little · ठुड्डी थोड़ी ऊपर' };
+  if (!baseline)
+    return {
+      tone: 'off',
+      text: 'Phone at eye level, look straight · फ़ोन आँखों के सामने',
+    };
+  if (status === 'little')
+    return {
+      tone: 'little',
+      text: up
+        ? 'Raise the phone a bit more · फ़ोन थोड़ा और ऊपर'
+        : 'Chin down a little more · ठुड्डी थोड़ी और नीचे',
+    };
+  if (status === 'much')
+    return {
+      tone: 'much',
+      text: up
+        ? 'Too high, lower it a little · ज़्यादा ऊपर, थोड़ा नीचे'
+        : 'Too low, lift your chin a little · ज़्यादा नीचे, थोड़ा ऊपर',
+    };
+  return {
+    tone: 'off',
+    text:
+      pose.pitch - baseline.pitch < shot.dPitch[0]
+        ? 'Lower your chin a little · ठुड्डी थोड़ी नीचे'
+        : 'Raise your chin a little · ठुड्डी थोड़ी ऊपर',
+  };
 }
 
 // Where the nose should be on screen for this shot: an ellipse (centre x, y, radii rx, ry, tilt angle) in image
@@ -224,7 +413,8 @@ export function targetNose(landmarks, shot, baseline) {
   const v = { x: -u.y, y: u.x };
   const eyeMid = { x: (le.x + re.x) / 2, y: (le.y + re.y) / 2 };
   const mouthMid = { x: (lm.x + rm.x) / 2, y: (lm.y + rm.y) / 2 };
-  const mouthDown = (mouthMid.x - eyeMid.x) * v.x + (mouthMid.y - eyeMid.y) * v.y;
+  const mouthDown =
+    (mouthMid.x - eyeMid.x) * v.x + (mouthMid.y - eyeMid.y) * v.y;
   const yawMid = (shot.yaw[0] + shot.yaw[1]) / 2;
   const yawTol = (shot.yaw[1] - shot.yaw[0]) / 2;
   const [lo, hi] = baseline ? shot.dPitch : FIRST_PITCH;

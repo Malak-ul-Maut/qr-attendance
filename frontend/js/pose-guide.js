@@ -32,6 +32,7 @@ export const GUIDE_TUNING = {
   arrowSwitchDeg: 35, // the arrow turns to another direction only when the wanted direction is this far off
   axisDominance: 0.3, // an axis whose error is below this share of the other one is ignored for the arrow
   brakeStrength: 0.15, // arrow strength while the student should slow down / stop
+  gapResetMs: 700, // no usable pose for this long (face lost, other face, bad light): forget the filter state, so old numbers cannot make the first frames after the gap look like fast movement
 };
 
 // ---------- One-Euro filter ----------
@@ -117,12 +118,17 @@ export function createPoseGuide(tuning = GUIDE_TUNING) {
   let textSince = 0;
   let runYaw = { dir: 0, n: 0 }; // how many frames in a row the head has moved the same way (yaw / pitch)
   let runPitch = { dir: 0, n: 0 };
+  let lastT = null; // time of the last frame that had a usable pose
 
-  const reset = () => { runYaw = { dir: 0, n: 0 }; runPitch = { dir: 0, n: 0 }; fYaw.reset(); fPitch.reset(); arrow = null; text = ''; tone = ''; textSince = 0; };
+  const reset = () => { runYaw = { dir: 0, n: 0 }; runPitch = { dir: 0, n: 0 }; fYaw.reset(); fPitch.reset(); arrow = null; text = ''; tone = ''; textSince = 0; lastT = null; };
 
   // Smooth one frame. Returns a pose like estimatePose() but with filtered yaw/pitch, plus speeds.
   function filter(pose, t) {
     if (!pose) return null;
+    if (lastT !== null && t - lastT > tuning.gapResetMs) { // the filter's dt is capped at 0.5 s, so a long gap would otherwise leave stale state behind
+      fYaw.reset(); fPitch.reset(); runYaw = { dir: 0, n: 0 }; runPitch = { dir: 0, n: 0 };
+    }
+    lastT = t;
     const y = fYaw.next(pose.yaw, t);
     const p = fPitch.next(pose.pitch, t);
     const track = (run, speed) => (Math.abs(speed) > tuning.minSpeed && (run.dir === 0 || Math.sign(speed) === run.dir) ? { dir: Math.sign(speed), n: run.n + 1 } : { dir: 0, n: 0 });

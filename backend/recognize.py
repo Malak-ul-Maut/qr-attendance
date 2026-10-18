@@ -3,7 +3,7 @@
 recognize.py - CCTV classroom attendance: given a video clip (or live stream), detect faces,
 track them across frames, and recognize each track (AdaFace ir101) only as often as needed.
 
-Setup:    pip install insightface openvino opencv-python numpy gdown uvicorn
+Setup:    pip install insightface openvino opencv-python numpy gdown uvicorn scipy
 
 Usage:
     python recognize.py --video clip.mp4
@@ -110,18 +110,19 @@ except ImportError:
     sys.exit("InsightFace is missing. Run: pip install insightface onnxruntime opencv-python numpy")
 
 import accel
+import crop_ops
 from tracker import Tracker, iou
-from matching import TrackPool, rank_candidates, choose_faces_to_report
+from matching import (TrackPool, rank_candidates, choose_faces_to_report, RunState, stronger_live_claim,
+                      nearest_gallery_match, decide_attempt, gate_track, CLAIM_MARGIN)   # the decision logic lives in matching.py
 from enroll_qa import sharpness_of
 from gallery_extras import (EmbeddingFileCache, degrade_photo, is_cctv_crop, parse_widths)
 
 # ------------------------------------------------------------------ settings
 HERE = Path(__file__).resolve().parent
-CLAIM_MARGIN = 0.03   # a borderline match loses to a live track already holding the same student if that track scored this much higher
 IMAGE_TYPES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 # Where the 5 landmarks sit in a perfectly aligned 112x112 crop, as (x, y) / 112. A KP-RPE recognizer takes the face's
 # landmarks as a second input; this is what it gets when told to ignore the detector's own (noisy) landmarks.
-TEMPLATE_KEYPOINTS = (face_align.arcface_dst / 112.0).astype(np.float32)
+TEMPLATE_KEYPOINTS = crop_ops.TEMPLATE_KEYPOINTS   # = face_align.arcface_dst / 112
 KEYPOINT_MODES = ("detected", "template")
 
 
@@ -132,6 +133,15 @@ def keypoint_mode_setting():
     take only an image. The setting is part of the gallery-cache name, so switching it rebuilds the embeddings."""
     value = os.environ.get("CCTV_KEYPOINTS", "detected").strip().lower()
     return value if value in KEYPOINT_MODES else "detected"
+
+
+def default_crop_config(profile_crop=None):
+    """The crop settings a FaceModel starts with: the model's profile (<model>.settings.json), and CCTV_KEYPOINTS,
+    when that variable is set, decides the keypoints mode (detected / template) on top of it."""
+    config = crop_ops.CropConfig.from_dict(profile_crop)
+    if "CCTV_KEYPOINTS" in os.environ:
+        config = crop_ops.CropConfig(**{**config.as_dict(), "keypoints": keypoint_mode_setting()})
+    return config
 GALLERY_DET_SIZE = (640, 640)
 DEFAULT_REC_FILENAME = "adaface_ir101_webface4m.onnx"
 RECOGNIZE_BATCH_SIZE = 16  # most faces sent to AdaFace in one model call (keeps memory use modest)
@@ -164,7 +174,48 @@ DEFAULT_SETTINGS = {
     "suggestions": 3,       # "who might this be" candidates listed for each unmatched face
     "suggest_min_score": 0.12,  # ...but only students scoring at least this
     "gallery_degrade_widths": (),  # e.g. (20, 28): also keep CCTV-quality copies of every gallery photo. Off until measured (bakeoff.py)
+    "aggregator": "max",    # how a student's several gallery photos become one score: max | mean2 | mean3. Off (max) until measured (bakeoff.py)
+    "margin": 0.0,          # 0 = off. Else the best student must beat the best OTHER student by this much, or the attempt is "ambiguous"
+    "pool_gate": 0.0,       # 0 = off. Else a look this dissimilar (cosine) to a track's pooled looks starts a fresh pool (seatmate took over the track)
+    "trace": False,         # True: record every recognition attempt (result["trace"]) for offline replay
 }
+
+
+def model_fingerprint(path):
+    """A short id for the recognizer FILE, so a re-export under the same name is noticed: the SHA-256 recorded by
+    convert_to_onnx.py (a <model>.onnx.json next to it) plus the size, otherwise size + modified time."""
+    path = Path(path)
+    stat = path.stat()
+    try:
+        sha = json.loads(Path(str(path) + ".json").read_text(encoding="utf-8")).get("sha256")
+        if sha:
+            return f"{str(sha)[:12]}-{stat.st_size}"
+    except (OSError, ValueError, AttributeError):
+        pass
+    return f"{stat.st_size}-{stat.st_mtime_ns}"
+
+
+def load_model_profile(rec_path):
+    """Optional per-model tuning in <model>.settings.json next to the .onnx (written by bakeoff.py), e.g.
+    {"crop": {"interp": "cubic", "flip": true}, "settings": {"threshold": 0.2, "accept_threshold": 0.24}}."""
+    try:
+        data = json.loads(Path(rec_path).with_suffix(".settings.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def apply_profile_defaults(args, model):
+    """args with the model's own tuned values filled in - but only where the caller left the global default, so an
+    explicit command-line / request value always wins."""
+    profile = getattr(model, "profile_settings", None) or {}
+    if not profile:
+        return args
+    merged = dict(vars(args))
+    for key, value in profile.items():
+        if key in DEFAULT_SETTINGS and merged.get(key, DEFAULT_SETTINGS[key]) == DEFAULT_SETTINGS[key]:
+            merged[key] = value
+    return SimpleNamespace(**merged)
 
 
 def make_settings(**overrides):
@@ -279,10 +330,17 @@ class AdaFaceRecognizer:
     convert_to_onnx.py --keypoints input) takes the image AND the face's 5 landmarks as a second input called
     'keypoints' - (x, y) in the aligned 112x112 crop, divided by 112, shape [N, 5, 2]. Which kind a file is gets
     detected from its inputs, so nothing else needs configuring.
+
+    How a face becomes the 112x112 input (interpolation, photometric clean-up, flip / jitter averaging, and for a
+    KP-RPE model whether it gets the detected or the template landmarks) is set by `crop_config`
+    (crop_ops.CropConfig); the default is exactly insightface's own alignment. `role` says where a picture comes
+    from: 'photo' = a clean phone/ID photo, 'cctv' = a camera crop (probes, saved CCTV crops, degraded gallery
+    copies); some crop settings apply to only one of the two. The landmarks of a KP-RPE model always follow the
+    crop: shifted for a jittered alignment, mirrored for a flipped crop.
     """
 
-    def __init__(self, onnx_path, session=None):
-        self.align = face_align.norm_crop  # the same 112x112 face alignment InsightFace's own recognizers use
+    def __init__(self, onnx_path, session=None, crop_config=None):
+        self.crop_config = crop_config or default_crop_config()
         self.model_file = str(onnx_path)
         # `session` = an already-built engine (accel.OpenVINOSession); without one, plain onnxruntime on the CPU
         self.session = session or onnxruntime.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
@@ -294,7 +352,6 @@ class AdaFaceRecognizer:
                      f"optionally plus 'keypoints'.")
         self.keypoint_name = inputs[1].name if len(inputs) == 2 else None
         self.uses_keypoints = self.keypoint_name is not None
-        self.keypoint_mode = keypoint_mode_setting() if self.uses_keypoints else None
         self.output_names = [output.name for output in self.session.get_outputs()]
         if len(self.output_names) < 2:
             sys.exit(f"{Path(onnx_path).name} only has one output - this script needs the (embedding, quality_norm) "
@@ -303,19 +360,24 @@ class AdaFaceRecognizer:
         # the model was exported for ONE face per call; a name like "batch" means any number works.
         batch_dim = model_input.shape[0]
         self.supports_batch = not (isinstance(batch_dim, int) and batch_dim > 0)
+        out_shape = self.session.get_outputs()[0].shape
+        self.dim = out_shape[1] if len(out_shape) > 1 and isinstance(out_shape[1], int) and out_shape[1] > 0 else 512
+
+    @property
+    def keypoint_mode(self):
+        """'detected' or 'template' for a KP-RPE model (see crop_ops.CropConfig.keypoints); None for an image-only model."""
+        return self.crop_config.keypoints if self.uses_keypoints else None
 
     def align_face(self, image, kps):
         """The 112x112 BGR crop the model sees: the face warped so eyes, nose and mouth sit in fixed places."""
-        return self.align(image, landmark=kps, image_size=112)
+        return crop_ops.align(image, np.asarray(kps, dtype=np.float32), self.crop_config.interp)
 
     def crop_keypoints(self, kps):
         """The 5 landmarks of a face as a KP-RPE model wants them: where they land INSIDE the aligned 112x112 crop,
         (x, y) / 112. Uses the very transform align_face applies, so the crop and its landmarks always agree."""
         if self.keypoint_mode == "template" or kps is None:
             return TEMPLATE_KEYPOINTS
-        kps = np.asarray(kps, dtype=np.float32)
-        matrix = face_align.estimate_norm(kps, 112)       # the 2x3 similarity transform norm_crop uses
-        return ((kps @ matrix[:, :2].T + matrix[:, 2]) / 112.0).astype(np.float32)
+        return crop_ops.crop_keypoints(kps)
 
     @staticmethod
     def to_tensor(aligned):
@@ -343,67 +405,81 @@ class AdaFaceRecognizer:
         face.aligned_bgr = aligned   # kept so a confirmed match can be saved to the gallery as it was seen
         return self.to_tensor(aligned)
 
-    def embed_aligned(self, aligned_crops, keypoints=None):
+    def _run(self, tensors, keypoints):
+        """(embeddings, norms) for a list of 1x3x112x112 arrays (and their [5, 2] landmark rows, KP-RPE models only),
+        in chunks the model / engine accepts."""
+        embeddings, norms = [], []
+        # A batch-capable model takes up to RECOGNIZE_BATCH_SIZE crops per call; otherwise 1 per call
+        chunk_size = RECOGNIZE_BATCH_SIZE if self.supports_batch else 1
+        for start in range(0, len(tensors), chunk_size):
+            batch = np.concatenate(tensors[start:start + chunk_size])   # shape: (crops in chunk, 3, 112, 112)
+            chunk_keypoints = None if keypoints is None else np.stack(keypoints[start:start + chunk_size])
+            chunk_embeddings, chunk_norms = self.session.run(self.output_names, self._feed(batch, chunk_keypoints))
+            embeddings.append(np.asarray(chunk_embeddings, dtype=np.float32))
+            norms.append(np.asarray(chunk_norms, dtype=np.float32).reshape(-1))   # one quality number per crop
+        return np.concatenate(embeddings), np.concatenate(norms)
+
+    def _embed_groups(self, groups, role):
+        """`groups` = one list of (aligned crop, landmarks inside it) pairs per face (the primary crop first, then any
+        jittered ones; landmarks None = the template). Every crop gets the configured clean-up (and its mirror image, with
+        flip) and all of them go through the model together; each face's results are averaged.
+        Returns [(unit embedding, quality)], one per face."""
+        tensors, keypoints, owner = [], [], []
+        for index, pairs in enumerate(groups):
+            for crop, landmarks in crop_ops.finalize_pairs(pairs, self.crop_config, role):
+                tensors.append(self.to_tensor(crop))
+                keypoints.append(landmarks)
+                owner.append(index)
+        embeddings, norms = self._run(tensors, keypoints if self.uses_keypoints else None)
+        owner = np.asarray(owner)
+        return [crop_ops.combine(embeddings[owner == index], norms[owner == index]) for index in range(len(groups))]
+
+    def embed_aligned(self, aligned_crops, keypoints=None, role="cctv"):
         """
         Embeddings for crops that are ALREADY aligned 112x112 (e.g. saved CCTV crops). Returns
         (unit embeddings, quality norms), one row per crop. `keypoints` (KP-RPE models only): one [5, 2] row per
         crop from crop_keypoints(); left out, the crops are assumed perfectly aligned (the template positions).
         """
         if not len(aligned_crops):
-            return np.zeros((0, 512), np.float32), np.zeros((0,), np.float32)
-        embeddings, norms = [], []
-        chunk_size = RECOGNIZE_BATCH_SIZE if self.supports_batch else 1
-        tensors = [self.to_tensor(crop) for crop in aligned_crops]
-        for start in range(0, len(tensors), chunk_size):
-            batch = np.concatenate(tensors[start:start + chunk_size])
-            chunk_keypoints = None if keypoints is None else np.stack(keypoints[start:start + chunk_size])
-            chunk_embeddings, chunk_norms = self.session.run(self.output_names, self._feed(batch, chunk_keypoints))
-            embeddings.append(np.asarray(chunk_embeddings, dtype=np.float32))
-            norms.append(np.asarray(chunk_norms, dtype=np.float32).reshape(-1))
-        embeddings = np.concatenate(embeddings)
-        embeddings = embeddings / np.maximum(np.linalg.norm(embeddings, axis=1, keepdims=True), 1e-9)
-        return embeddings, np.concatenate(norms)
+            return np.zeros((0, self.dim), np.float32), np.zeros((0,), np.float32)
+        rows = keypoints if keypoints is not None else [None] * len(aligned_crops)
+        results = self._embed_groups([[(crop, kp)] for crop, kp in zip(aligned_crops, rows)], role)
+        return np.stack([embedding for embedding, _ in results]), np.array([quality for _, quality in results], np.float32)
 
-    def embed_with_kps(self, image, kps):
+    def embed_with_kps(self, image, kps, role="photo"):
         """Unit embedding + quality norm of the face with these five landmarks in `image`."""
         kps = np.asarray(kps, dtype=np.float32)
-        keypoints = [self.crop_keypoints(kps)] if self.uses_keypoints else None
-        embeddings, norms = self.embed_aligned([self.align_face(image, kps)], keypoints)
-        return embeddings[0], float(norms[0])
+        ((embedding, quality),) = self._embed_groups([crop_ops.variants_for(image, kps, self.crop_config, role)], role)
+        return embedding, float(quality)
 
-    def get_batch(self, image, faces, timings=None):
+    def get_batch(self, image, faces, timings=None, role="cctv"):
         """Align all the faces, run AdaFace on them in as few model calls as possible, and store
         the embedding + quality on each face."""
         if not faces:
             return
         timings = timings or Timings()
         with timings.measure("recognize: align + preprocess"):
-            tensors = [self.preprocess(image, face) for face in faces]
-            keypoints = [self.crop_keypoints(face.kps) for face in faces] if self.uses_keypoints else None
+            groups = []
+            for face in faces:
+                pairs = crop_ops.variants_for(image, face.kps, self.crop_config, role)
+                face.aligned_bgr = pairs[0][0]   # the plain aligned crop, kept so a confirmed match can be saved as it was seen
+                groups.append(pairs)
+        with timings.measure("recognize: model inference"):
+            results = self._embed_groups(groups, role)
+        for face, (embedding, quality) in zip(faces, results):
+            face.embedding = embedding  # face.normed_embedding is computed from this automatically
+            face.quality = float(quality)
 
-        # A batch-capable model takes up to RECOGNIZE_BATCH_SIZE faces per call; otherwise 1 per call
-        chunk_size = RECOGNIZE_BATCH_SIZE if self.supports_batch else 1
-        for start in range(0, len(faces), chunk_size):
-            chunk_faces = faces[start:start + chunk_size]
-            batch = np.concatenate(tensors[start:start + chunk_size])  # shape: (faces in chunk, 3, 112, 112)
-            chunk_keypoints = None if keypoints is None else np.stack(keypoints[start:start + chunk_size])
-            with timings.measure("recognize: model inference"):
-                embeddings, norms = self.session.run(self.output_names, self._feed(batch, chunk_keypoints))
-            norms = np.asarray(norms).reshape(-1)  # one quality number per face
-            for face, embedding, norm in zip(chunk_faces, embeddings, norms):
-                face.embedding = embedding  # face.normed_embedding is computed from this automatically
-                face.quality = float(norm)
-
-    def get(self, image, face):
+    def get(self, image, face, role="photo"):
         """Single-face version of get_batch (used for gallery photos)."""
-        self.get_batch(image, [face])
+        self.get_batch(image, [face], role=role)
 
 
 class FaceModel:
     """Detector (SCRFD det_10g) + recognizer (AdaFace ir101), both loaded straight from local .onnx
     files."""
 
-    def __init__(self, models_dir, det_size, det_thresh, rec_filename=DEFAULT_REC_FILENAME, log=print):
+    def __init__(self, models_dir, det_size, det_thresh, rec_filename=DEFAULT_REC_FILENAME, log=print, crop_config=None):
         models_dir = Path(models_dir)
         det_path = download_if_missing(models_dir / "det_10g.onnx", MODEL_URLS["det_10g.onnx"])
         rec_path = download_if_missing(models_dir / rec_filename, MODEL_URLS.get(rec_filename))
@@ -418,14 +494,28 @@ class FaceModel:
         if det_session is not None:
             self.detector.session = det_session
         self.det_session, self.rec_session = det_session, rec_session   # None = onnxruntime
-        self.recognizer = AdaFaceRecognizer(rec_path, session=rec_session)
+        # per-model tuning written by bakeoff.py (<model>.settings.json); an explicit crop_config wins over it
+        self.profile = load_model_profile(rec_path)
+        if crop_config is None:
+            crop_config = default_crop_config(self.profile.get("crop"))
+        self.recognizer = AdaFaceRecognizer(rec_path, session=rec_session, crop_config=crop_config)
 
         self.det_name, self.rec_name = det_path.stem, rec_path.stem
-        if self.recognizer.uses_keypoints:
-            # the gallery cache is keyed by this name: real vs template landmarks give different embeddings, so they
-            # must never share cached gallery rows
-            self.rec_name = f"{rec_path.stem}-kp-{self.recognizer.keypoint_mode}"
+        self.rec_fingerprint = model_fingerprint(rec_path)
         self.model_mb = (det_path.stat().st_size + rec_path.stat().st_size) / 1e6
+
+    @property
+    def profile_settings(self):
+        """Run settings tuned for THIS recognizer (from its .settings.json), applied where the caller kept the default."""
+        settings = self.profile.get("settings")
+        return settings if isinstance(settings, dict) else {}
+
+    @property
+    def cache_tag(self):
+        """Identifies everything that changes what an embedding means: model name + file fingerprint + crop settings
+        (which include the keypoints mode of a KP-RPE model). Part of every gallery cache key, so a re-exported model
+        or a new crop / landmark setting never reuses old numbers."""
+        return f"{self.rec_name}:{self.rec_fingerprint}:{self.recognizer.crop_config.signature()}"
 
     @staticmethod
     def _open_openvino(det_path, rec_path, det_size, log):
@@ -461,8 +551,9 @@ class FaceModel:
         batching = "on" if self.recognizer.supports_batch else "OFF (model has a fixed batch size of 1)"
         keypoints = (f", keypoints: {self.recognizer.keypoint_mode} landmarks"
                      if self.recognizer.uses_keypoints else "")
+        crop = self.recognizer.crop_config.label()
         return (f"detector {self.det_name} @ {self.det_size[0]}x{self.det_size[1]}, "
-                f"recognizer {self.rec_name}, batching {batching}{keypoints}, {self.model_mb:.0f} MB of models, "
+                f"recognizer {self.rec_name} [{crop}], batching {batching}{keypoints}, {self.model_mb:.0f} MB of models, "
                 f"engine: {self.backend_summary()}")
 
     def warm_up(self):
@@ -518,12 +609,12 @@ def embed_gallery_photo(model, photo, degrade_widths=(), log=print):
     if is_cctv_crop(photo):
         if image.shape[:2] != (112, 112):
             image = cv2.resize(image, (112, 112), interpolation=cv2.INTER_AREA)
-        embeddings, _ = model.recognizer.embed_aligned([image])
+        embeddings, _ = model.recognizer.embed_aligned([image], role="cctv")
         return embeddings
     faces, _, _ = model.find_faces(image, det_size=GALLERY_DET_SIZE)
     if not faces:
         log(f"    ! no face found in {photo.parent.name}/{photo.name}")
-        return np.zeros((0, 512), np.float32)
+        return np.zeros((0, model.recognizer.dim), np.float32)
     if len(faces) > 1:
         log(f"    ! {len(faces)} faces in {photo.parent.name}/{photo.name}, using the largest")
     biggest = max(faces, key=lambda f: np.prod(face_size(f)))
@@ -533,7 +624,7 @@ def embed_gallery_photo(model, photo, degrade_widths=(), log=print):
         degraded = degrade_photo(image, biggest.kps, face_width, width)
         if degraded is not None:
             small_image, small_kps = degraded
-            rows.append(model.recognizer.embed_with_kps(small_image, small_kps)[0])
+            rows.append(model.recognizer.embed_with_kps(small_image, small_kps, role="cctv")[0])
     return np.stack(rows)
 
 
@@ -559,7 +650,7 @@ def build_gallery(model, gallery_dir, cache_key, only_folders=None, memory_cache
     photos = [(name, photo) for name, photo in photos if photo.exists()]   # one may be replaced while we list
     if not photos:
         return None, None
-    fingerprint = str([model.rec_name, degrade_widths]
+    fingerprint = str([model.cache_tag, degrade_widths]
                       + [(name, p.name, p.stat().st_size, int(p.stat().st_mtime)) for name, p in photos if p.exists()])
 
     if memory_cache is not None:
@@ -587,7 +678,7 @@ def build_gallery(model, gallery_dir, cache_key, only_folders=None, memory_cache
     embeddings, names, computed = [], [], 0
     for name, photo in photos:
         try:
-            key = photo_cache.key_for(photo, model.rec_name, degrade_widths)
+            key = photo_cache.key_for(photo, model.cache_tag, degrade_widths)
             rows = photo_cache.get(key, name)   # name = the student's folder: cache/photos/<student folder>/<key>.npy
             if rows is None:
                 rows = embed_gallery_photo(model, photo, degrade_widths, log)
@@ -608,17 +699,6 @@ def build_gallery(model, gallery_dir, cache_key, only_folders=None, memory_cache
     np.savez(cache_file, embeddings=embeddings, names=np.array(names), fingerprint=np.array(fingerprint))
     remember(embeddings, names)
     return embeddings, names
-
-
-def nearest_gallery_match(embedding, gallery_embeddings, gallery_names):
-    """
-    The single closest gallery photo to this embedding, and its similarity score. This already
-    finds the best-matching STUDENT too, not just the best photo: whichever photo scores highest
-    across the searched gallery is, by definition, that student's own best photo.
-    """
-    scores = gallery_embeddings @ embedding  # both are unit-length, so this is cosine similarity
-    best = int(np.argmax(scores))
-    return gallery_names[best], float(scores[best])
 
 
 # -------------------------------------------------------------- quality gates
@@ -950,28 +1030,6 @@ def live_frame_source(stream, args, timings, stop_note, log, lock=None):
 
 
 # ---------------------------------------------------------------- attendance
-class RunState:
-    """Everything that changes while one clip is being scanned."""
-
-    def __init__(self):
-        self.present = {}            # student_id -> record of the match that marked them present
-        self.attempts_used = {}      # track_id -> recognition attempts spent so far
-        self.track_identity = {}     # track_id -> student_id, or None once given up on
-        self.track_boxes = {}        # track_id -> last known bbox (for the final annotated image)
-        self.track_best_scores = {}  # track_id -> best trusted similarity so far
-        self.recognitions = 0        # total face recognitions run (for the timing summary)
-        self.frames_processed = 0    # processed frames so far (the clock for track_last_seen)
-        self.track_sightings = {}    # track_id -> number of processed frames it was detected in
-        self.track_last_seen = {}    # track_id -> frames_processed value at its latest sighting
-        self.track_votes = {}        # track_id -> {student_id: borderline attempts that named that student}
-        self.frame_faces = {}        # track_id -> what happened to that face on the frame just processed (for snapshots)
-        self.track_pools = {}        # track_id -> TrackPool: the best looks at that face (for pooled matching + saved crops)
-        self.track_thumbs = {}       # track_id -> (det score, small BGR picture of the face with some margin)
-        self.track_widths = {}       # track_id -> latest face width in pixels
-        self.track_attempt_frames = {}  # track_id -> [processed-frame number of each recognition attempt] (for window_study.py)
-        self.frame_stats = []        # one dict per processed frame: faces, recognitions, detect/recognize ms, new matches
-
-
 def remember_thumb(state, track_id, face, frame, size=80, margin=0.5):
     """Keeps a small picture of the face (with some surroundings) from the frame where the detector was surest, so
     the faculty can see WHO an unrecognised face is without hunting for it in the big picture."""
@@ -1016,21 +1074,11 @@ def process_frame(model, tracker, crop, gallery, identity_map, state, args, fram
             info = {"bbox": face.bbox, "det": float(face.det_score), "status": "queued", "score": None, "quality": None}
             state.frame_faces[track_id] = info
 
-            if track_id in state.track_identity:
-                info["status"] = "resolved" if state.track_identity[track_id] is not None else "gave up"
-                continue  # already resolved (matched, or gave up) - nothing left to do for this track
-            if state.attempts_used.get(track_id, 0) >= args.max_attempts:
-                state.track_identity[track_id] = None  # give up on this track for good
-                info["status"] = "gave up"
-                continue
-            if not face_is_big_enough(face, args.min_face):
-                info["status"] = "skipped: small"
-                continue  # too small to bother with - free, does not use up an attempt
             x1, y1, x2, y2 = (max(0, int(v)) for v in face.bbox)  # max(0, ..): a box poking out of the frame must not wrap around
-            if not crop_is_sharp_enough(crop[y1:y2, x1:x2], args.min_sharpness):
-                info["status"] = "skipped: blurry"
-                continue  # too blurry - also free
-            to_recognize.append((face, track_id))
+            if gate_track(state, track_id, info, args,
+                          big_enough=lambda: face_is_big_enough(face, args.min_face),
+                          sharp_enough=lambda: crop_is_sharp_enough(crop[y1:y2, x1:x2], args.min_sharpness)):
+                to_recognize.append((face, track_id))
 
     # Step 2 (expensive): one batched AdaFace call for every face chosen above
     recognize_ms = 0.0
@@ -1044,62 +1092,9 @@ def process_frame(model, tracker, crop, gallery, identity_map, state, args, fram
     newly_present = []
     with timings.measure("match against gallery"):
         for face, track_id in to_recognize:
-            attempts = state.attempts_used.get(track_id, 0) + 1
-            state.attempts_used[track_id] = attempts
-            state.track_attempt_frames.setdefault(track_id, []).append(state.frames_processed)
-            matched = False
-            info = state.frame_faces[track_id]
-            info["status"] = "tried (no match)"
-            info["quality"] = float(face.quality)
-
-            pool = state.track_pools.setdefault(track_id, TrackPool(top_k=args.pool_top_k))
-            pool.add(face.normed_embedding, face.quality, getattr(face, "aligned_bgr", None))
-            if face.quality >= args.min_norm:  # a low-norm crop is not trusted (its attempt still counted)
-                name, score = nearest_gallery_match(face.normed_embedding, gallery_embeddings, gallery_names)
-                single_look_score = score
-                if args.pool_attempts and pool.count >= 2:
-                    # Several looks at the same face: average the best of them. A genuine match that one noisy
-                    # frame scored too low often clears the bar when the noise is averaged out.
-                    pooled_name, pooled_score = nearest_gallery_match(pool.pooled(), gallery_embeddings, gallery_names)
-                    if pooled_score > score:
-                        name, score = pooled_name, pooled_score
-                        info["pooled"] = True
-                info["score"] = float(score)
-                state.track_best_scores[track_id] = max(state.track_best_scores.get(track_id, float("-inf")), score)
-                identity = identity_map.get(name)  # None = a gallery folder with no matching roster student
-                if score >= args.threshold and identity is not None:
-                    student_id = identity["student_id"]
-                    if args.accept_threshold > args.threshold and score < args.accept_threshold:
-                        # borderline: needs a second agreeing attempt, and no stronger live claim on this student
-                        holder = stronger_live_claim(state, track_id, student_id, score)
-                        if holder is not None:
-                            info["status"] = f"tried (T{holder} holds this student)"
-                        elif info.get("pooled") and single_look_score < args.threshold:
-                            # the average is borderline and this look alone is below the bar: the averaged looks are
-                            # not independent of the earlier vote, so this does not count as a second opinion
-                            info["status"] = "borderline (average only)"
-                        else:
-                            votes = state.track_votes.setdefault(track_id, {})
-                            votes[student_id] = votes.get(student_id, 0) + 1
-                            matched = votes[student_id] >= 2
-                            if not matched:
-                                info["status"] = "borderline 1/2"
-                    else:
-                        matched = True
-                if matched:
-                    info["status"] = "MATCHED"
-                    state.track_identity[track_id] = identity["student_id"]
-                    if identity["student_id"] not in state.present:
-                        record = {**identity, "best_score": round(score, 4), "frame": frame_index, "track_id": track_id,
-                                  "attempt": attempts,   # which recognition attempt on this track matched (for window_study.py)
-                                  "sightings": state.track_sightings.get(track_id, 0)}
-                        state.present[identity["student_id"]] = record
-                        newly_present.append((record, face))
-
-            if not matched and face.quality < args.min_norm:
-                info["status"] = "tried (low quality)"
-            if not matched and attempts >= args.max_attempts:
-                state.track_identity[track_id] = None  # out of attempts: resolved as "unmatched" right away
+            record = decide_attempt(state, track_id, face, gallery, identity_map, args, frame_index)   # matching.py
+            if record is not None:
+                newly_present.append((record, face))
 
     state.frame_stats.append({"frame": frame_index, "faces": len(faces), "recognized": len(to_recognize),
                               "detect_ms": round(detect_ms, 1), "recognize_ms": round(recognize_ms, 1),
@@ -1108,22 +1103,6 @@ def process_frame(model, tracker, crop, gallery, identity_map, state, args, fram
         log(f"  frame {frame_index}: {len(faces)} face(s) detected ({detect_ms:.0f} ms), "
             f"{len(to_recognize)} recognized ({recognize_ms:.0f} ms), {len(newly_present)} newly matched")
     return newly_present
-
-
-def stronger_live_claim(state, track_id, student_id, score):
-    """
-    Track id of another LIVE track (seen this frame or the one before) that already holds
-    `student_id` with a clearly higher score than `score`, else None. Dead tracks are ignored on
-    purpose: a student who leaned and got a new track id must not be rejected by their own old track.
-    """
-    for other_id, other_student in state.track_identity.items():
-        if other_student != student_id or other_id == track_id:
-            continue
-        if state.track_last_seen.get(other_id, 0) < state.frames_processed - 1:
-            continue
-        if state.track_best_scores.get(other_id, float("-inf")) >= score + CLAIM_MARGIN:
-            return other_id
-    return None
 
 
 SNAPSHOT_COLORS = {          # BGR box colour per outcome on that frame
@@ -1408,6 +1387,7 @@ def run_attendance(model, video, identity_map, args, gallery_dir, cache_key, ann
     timings = Timings()
     run_started = time.perf_counter()
     infer_lock = infer_lock if infer_lock is not None else nullcontext()
+    args = apply_profile_defaults(args, model)   # this recognizer's own tuned thresholds, where the caller kept the defaults
 
     with timings.measure("gallery (load/build)"), infer_lock:
         gallery = build_gallery(model, gallery_dir, cache_key, only_folders=set(identity_map),
@@ -1539,6 +1519,8 @@ def run_attendance(model, video, identity_map, args, gallery_dir, cache_key, ann
     result.update({"elapsed_seconds": round(elapsed, 2), "stop_reason": stop_reason,
                    "video_seconds_scanned": round(scanned_to, 1), "recognitions": state.recognitions,
                    "timings": timings.as_dict()})
+    if getattr(args, "trace", False):
+        result["trace"] = state.attempt_log   # one entry per recognition attempt, for offline replay
 
     log(f"\n{len(present_students)}/{len(target_ids)} present, {processed} frame(s) processed in {elapsed:.2f}s")
     if state.recognitions:
@@ -1598,6 +1580,22 @@ def parse_args():
     parser.add_argument("--gallery-degrade", dest="gallery_degrade_widths", type=parse_widths,
                         default=parse_widths(os.environ.get("CCTV_GALLERY_DEGRADE", "")),
                         help="e.g. '20,28': also keep CCTV-quality copies of every gallery photo (measure with bakeoff.py first)")
+    parser.add_argument("--aggregator", choices=["max", "mean2", "mean3"], default=DEFAULT_SETTINGS["aggregator"],
+                        help="how a student's several gallery photos become one score (measure with bakeoff.py)")
+    parser.add_argument("--margin", type=float, default=DEFAULT_SETTINGS["margin"],
+                        help="0 = off. The best student must beat the best OTHER student by this much, else the attempt is ambiguous")
+    parser.add_argument("--pool-gate", type=float, default=DEFAULT_SETTINGS["pool_gate"],
+                        help="0 = off. A look whose similarity to the track's earlier looks is below this starts a fresh pool")
+    parser.add_argument("--trace-out", default=None, help="write one JSON line per recognition attempt here (offline replay)")
+    parser.add_argument("--interp", choices=sorted(crop_ops.INTERP_FLAGS), default=None,
+                        help="interpolation when warping the face to 112x112 (default: the model's profile, else linear)")
+    parser.add_argument("--enhance", default=None,
+                        help="clean-up of the aligned crop, e.g. clahe:2:4, gamma:0.7, autogamma, histeq, unsharp, gauss:0.7, nlm:5 (chain with +)")
+    parser.add_argument("--enhance-side", choices=["both", "cctv"], default=None,
+                        help="apply --enhance to every crop, or only to camera-side crops (probes, saved CCTV crops)")
+    parser.add_argument("--flip-tta", action="store_true", help="embed each crop and its mirror image and average them (2x model cost)")
+    parser.add_argument("--jitter", type=int, choices=[0, 4, 8], default=None,
+                        help="CCTV probes: also embed this many slightly shifted alignments and average them")
     parser.add_argument("--crops-dir", default=None, help="save the aligned crop of each reported face here")
     parser.add_argument("--start", type=float, default=DEFAULT_SETTINGS["start"], help="seconds into the clip to start at")
     parser.add_argument("--verbose", action="store_true", help="log one line per processed frame")
@@ -1614,7 +1612,15 @@ def main():
 
     print("Loading models ...")
     load_started = time.perf_counter()
-    model = FaceModel(args.models, det_size, args.det_thresh, args.rec_model)
+    crop_flags = {"interp": args.interp, "enhance": args.enhance, "enhance_side": args.enhance_side,
+                  "jitter": args.jitter, "flip": True if args.flip_tta else None}
+    given = {key: value for key, value in crop_flags.items() if value is not None}
+    # None = the model's profile (and CCTV_KEYPOINTS); any flag given builds the config from the flags + the profile
+    crop_config = None
+    if given:
+        base = default_crop_config(load_model_profile(Path(args.models) / args.rec_model).get("crop"))
+        crop_config = crop_ops.CropConfig(**{**base.as_dict(), **given})
+    model = FaceModel(args.models, det_size, args.det_thresh, args.rec_model, crop_config=crop_config)
     print(f"  loaded in {time.perf_counter() - load_started:.1f}s: {model.describe()}")
 
     if args.students_json:
@@ -1624,7 +1630,8 @@ def main():
         identity_map = identity_map_from_gallery(args.gallery)
         cache_key = "all"
 
-    settings = make_settings(**{name: getattr(args, name) for name in DEFAULT_SETTINGS})
+    settings = make_settings(**{**{name: getattr(args, name) for name in DEFAULT_SETTINGS if hasattr(args, name)},
+                                "trace": bool(args.trace_out)})
     try:
         result = run_attendance(model, args.video, identity_map, settings, args.gallery, cache_key,
                                 annotated_out=args.annotated_out, debug_dir=args.debug_dir,
@@ -1632,6 +1639,11 @@ def main():
     except RecognitionError as error:
         sys.exit(mask_url(error))
 
+    trace = result.pop("trace", None)
+    if args.trace_out and trace is not None:
+        Path(args.trace_out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.trace_out).write_text("\n".join(json.dumps(entry) for entry in trace) + "\n", encoding="utf-8")
+        print(f"Saved: {args.trace_out} ({len(trace)} attempts)")
     out_path = Path(args.json_out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(result, indent=1))

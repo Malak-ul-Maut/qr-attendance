@@ -15,6 +15,9 @@ Three things live here:
 
 3. A per-photo embedding cache on disk. Embedding one gallery photo costs ~0.3 s on CPU. Without this, every new
    CCTV crop would force the whole class gallery (hundreds of photos) to be embedded again.
+
+Cache keys: callers pass the recognizer's cache_tag (model name + file fingerprint + crop settings) as an extra
+part, so a re-exported model or a changed crop setting never reuses old embeddings.
 """
 import hashlib
 from pathlib import Path
@@ -23,7 +26,7 @@ import cv2
 import numpy as np
 
 CCTV_CROP_PREFIX = "cctv_"
-CACHE_VERSION = "1"     # bump to throw away every cached embedding (e.g. after changing how photos are prepared)
+CACHE_VERSION = "2"     # bump to throw away every cached embedding (e.g. after changing how photos are prepared)
 
 
 def is_cctv_crop(path):
@@ -95,7 +98,9 @@ class EmbeddingFileCache:
 
     def put(self, key, embeddings, group=None):
         self._path(key, group).parent.mkdir(parents=True, exist_ok=True)
-        array = np.asarray(embeddings, dtype=np.float32).reshape(-1, 512) if len(embeddings) else np.zeros((0, 512), np.float32)
+        # any embedding length (512 for every model so far); an empty entry means "no usable face in this photo"
+        array = (np.stack([np.asarray(e, dtype=np.float32).ravel() for e in embeddings]) if len(embeddings)
+                 else np.zeros((0, 512), np.float32))
         temporary = self._path(key, group).with_suffix(".tmp.npy")
         np.save(temporary, array)
         temporary.replace(self._path(key, group))   # swap in at the end, so a crash never leaves a broken file

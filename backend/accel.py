@@ -24,9 +24,6 @@ Settings (environment variables, all optional):
 How it plugs in: OpenVINOSession has the small slice of the onnxruntime InferenceSession interface that
 recognize.py and insightface use (get_inputs, get_outputs, run, set_providers), so the rest of the code does not
 know which engine is underneath.
-
-Models with more than one input (the KP-RPE ViT recognizer: an image AND 5 face keypoints) are supported: every
-input is reshaped, padded and compiled together, and `run` matches the arrays to the model's inputs by NAME.
 """
 import os
 import threading
@@ -91,8 +88,9 @@ def _port_shape(port):
 
 class OpenVINOSession:
     """
-    An onnxruntime-InferenceSession look-alike backed by OpenVINO, for models with one input (the detector, the
-    IR-101 recognizer) or several (the KP-RPE recognizer: image + keypoints, which share the batch dimension).
+    An onnxruntime-InferenceSession look-alike backed by OpenVINO. Usually ONE input (the detector, an IR-101
+    recognizer). A KP-RPE recognizer has TWO (image + 'keypoints', see convert_to_onnx.py --keypoints input): they share
+    the batch dimension and every other dimension must be fixed, so such a model compiles one shape per batch bucket.
 
     OpenVINO compiles a model for fixed tensor shapes (fastest, and the only good option on the iGPU), while
     onnxruntime accepts any shape per call. So every distinct input shape is compiled the first time it is seen
@@ -115,11 +113,17 @@ class OpenVINOSession:
             self.core.set_property({"CACHE_DIR": str(cache)})
         self.model_file = str(onnx_path)
         self._model = self.core.read_model(self.model_file)
+        if len(self._model.inputs) > 2:
+            raise ValueError(f"{Path(onnx_path).name}: OpenVINOSession supports one input, or two that share the batch dimension")
         self._inputs = [_Port(_port_name(p, f"input{i}"), _port_shape(p)) for i, p in enumerate(self._model.inputs)]
         self._outputs = [_Port(_port_name(p, f"output{i}"), _port_shape(p)) for i, p in enumerate(self._model.outputs)]
         first = self._inputs[0].shape[0]
         self.dynamic_batch = not (isinstance(first, int) and first > 0)
-        self._compiled = {}          # input shape tuple -> (compiled model, infer request)
+        if len(self._inputs) > 1:
+            for port in self._inputs[1:]:
+                if not all(isinstance(d, int) for d in port.shape[1:]):
+                    raise ValueError(f"{Path(onnx_path).name}: input '{port.name}' has a dynamic dimension besides the batch")
+        self._compiled = {}          # tuple of input shapes -> (compiled model, infer request)
         self._lock = threading.Lock()
 
     # --- the onnxruntime-style surface -------------------------------------------------------------
@@ -133,19 +137,18 @@ class OpenVINOSession:
         """insightface calls this (CPU only) from detector.prepare(); the device is chosen by CCTV_DEVICE here instead."""
 
     def run(self, output_names, input_feed, run_options=None):
-        names = [port.name for port in self._inputs]
-        if all(name in input_feed for name in names):
-            arrays = [input_feed[name] for name in names]      # matched by name, whatever order the caller used
-        elif len(names) == len(input_feed):
-            arrays = list(input_feed.values())                 # unusual names: trust the caller's order
-        else:
-            raise ValueError(f"model inputs are {names}, but got {list(input_feed)}")
-        arrays = [np.ascontiguousarray(a, dtype=np.float32) for a in arrays]
+        # one array per model input, in the model's input order (looked up by name when the feed is a dict of names)
+        if len(input_feed) != len(self._inputs):
+            raise ValueError(f"expected {len(self._inputs)} input(s), got {len(input_feed)}")
+        arrays = [np.ascontiguousarray(input_feed[port.name] if port.name in input_feed else list(input_feed.values())[i],
+                                       dtype=np.float32) for i, port in enumerate(self._inputs)]
         count = arrays[0].shape[0]
+        if any(a.shape[0] != count for a in arrays):
+            raise ValueError("all inputs must have the same batch size")
         padded = arrays
         if self.dynamic_batch:
             target = self.bucket_for(count)
-            if target > count:   # pad EVERY input up to the bucket by repeating its last row
+            if target > count:   # pad by repeating the last row (of EVERY input), then cut the extra rows off the outputs
                 padded = [np.concatenate([a, np.repeat(a[-1:], target - count, axis=0)]) for a in arrays]
         with self._lock:
             _, request = self._get(tuple(tuple(a.shape) for a in padded))
@@ -163,21 +166,11 @@ class OpenVINOSession:
         return count   # bigger than every bucket: compile that exact size once
 
     def compile_shape(self, shape):
-        """Compile (and cache on disk) the model for this input shape now, instead of on first use. `shape` is the
-        FIRST input's shape; any other input (keypoints) gets its declared shape with the same batch size."""
+        """Compile (and cache on disk) the model for this exact shape of its FIRST input now, instead of on first use.
+        A second input ('keypoints') gets the same batch size and its own fixed other dimensions."""
+        shapes = [tuple(shape)] + [(shape[0],) + tuple(port.shape[1:]) for port in self._inputs[1:]]
         with self._lock:
-            self._get(self._shapes_for(tuple(shape)))
-
-    def _shapes_for(self, first_shape):
-        shapes = [tuple(first_shape)]
-        for port in self._inputs[1:]:
-            declared = list(port.shape)
-            if declared and not (isinstance(declared[0], int) and declared[0] > 0):
-                declared[0] = first_shape[0]                  # the batch dimension is shared by every input
-            if any(not isinstance(dim, int) for dim in declared):
-                raise ValueError(f"input '{port.name}' has dynamic dimensions {port.shape}; give its shape explicitly")
-            shapes.append(tuple(declared))
-        return tuple(shapes)
+            self._get(tuple(shapes))
 
     def _get(self, shapes):
         entry = self._compiled.get(shapes)

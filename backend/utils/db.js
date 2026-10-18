@@ -23,6 +23,7 @@ db.serialize(() => {
   // This one resets on every new connection, so it must run every time.
   db.configure('busyTimeout', 5000); // milliseconds
 
+});
 
 // ---------------------------------------------------------------------------
 // Promise helpers, shared by every route file

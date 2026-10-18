@@ -7,6 +7,7 @@ import { openCamera, nextFrame, stopCamera as stopVideo } from './face/camera.js
 import { assessFrame, canvasToDataUrl, snapshotFrame, embedSnapshot, runFaceCheck, clearOverlay, drawDetection, HINT_TEXT, FACE_TIPS, FACE_SETTINGS } from './face-verify.js';
 import { averageTemplate, cosine, estimatePose, plausibleFace, shotsFor } from './pose.js';
 import { createPoseGuide } from './pose-guide.js'; // smoothing + speed-aware coaching + steady arrow
+import { buildPhotoMeta, lumaStats } from './capture-meta.js'; // per-photo metadata (pose, lighting, landmarks) saved with every photo
 import { createTurnGuide } from './face/turn-guide.js';
 import { cameraSize } from './face/perf.js';
 import { getCurrentUser } from '../utils/storage.js';
@@ -215,11 +216,13 @@ async function enrol(id, shots) {
   if (!eng) return;
 
   const taken = []; // { shot, dataUrl, embedding }
+  const doneIdx = new Set(); // indexes of shots that were taken
+  const skippedIdx = new Set(); // optional shots the student could not do in time
   let baseline = null; // { pitch, roll } from the first photo
   let mismatches = 0;
 
   for (let i = 0; i < shots.length; i++) {
-    markDots(i, taken.length);
+    markDots(i, doneIdx, skippedIdx);
     const shot = shots[i];
     instruction.textContent = shot.short; // big, two languages; the animated arrows on the picture show which way to turn
     guide.hide();
@@ -261,18 +264,20 @@ async function enrol(id, shots) {
     taken.push({ shot, dataUrl: result.photos[0].dataUrl, photos: result.photos, embedding: result.embedding });
     if (navigator.vibrate) navigator.vibrate(40);
     guide.captured(); // ring completes, ripple, a check pops in the middle, one soft flash
-    markDots(i + 1, taken.length); // the progress segment turns green right now (and pops)
+    doneIdx.add(i);
+    markDots(i + 1, doneIdx, skippedIdx); // the progress segment turns green right now (and pops)
     setStatus(`Photo ${i + 1} of ${shots.length} saved · फ़ोटो ${i + 1} सेव हो गई`);
     await sleep(900);
   }
   if (!isRunning(id)) return;
-  markDots(shots.length, shots.length);
+  markDots(shots.length, doneIdx, skippedIdx);
   review(taken);
 }
 
-function markDots(current, done) {
+function markDots(current, done, skipped = new Set()) {
   [...dots.children].forEach((li, i) => {
-    li.classList.toggle('done', i < done);
+    li.classList.toggle('done', done instanceof Set ? done.has(i) : i < done);
+    li.classList.toggle('skipped', skipped.has(i));
     li.classList.toggle('current', i === current);
     if (i === current) li.setAttribute('aria-current', 'step'); else li.removeAttribute('aria-current');
   });
@@ -348,7 +353,10 @@ async function captureShot({ id, engine: eng, shot, baseline, taken, onMismatch 
           // Everything below uses THIS frame (frames are not kept between loops).
           const current = { face, quality: gate.quality, pose };
           // keep this frame (full size) as a candidate; only the last few are remembered
-          candidates.push({ snapshot: snapshotFrame(video, face, gate.quality, SETTINGS.stillSize), sharpness: gate.sharpness, light: gate.brightness, facePx: gate.facePx, pose });
+          candidates.push({
+            snapshot: snapshotFrame(video, face, gate.quality, SETTINGS.stillSize), sharpness: gate.sharpness, light: gate.brightness, facePx: gate.facePx, pose,
+            landmarks: face.landmarks.map(p => ({ x: p.x, y: p.y })), box: { ...face.box }, video: { w: video.videoWidth, h: video.videoHeight }, luma: faceLuma(video, face.box),
+          });
           if (candidates.length > SETTINGS.candidateFrames) candidates.shift();
           say(`Hold still (${Math.min(stable, SETTINGS.stableFrames)}/${SETTINGS.stableFrames}) · स्थिर रहें`);
           if (stable >= SETTINGS.stableFrames) {
@@ -381,15 +389,35 @@ async function takePhoto({ engine, shot, candidates, templateSoFar }) {
   const embedding = embeddings.length > 1 ? averageTemplate(embeddings) : embeddings[0];
   if (templateSoFar.length) {
     const mean = averageTemplate(templateSoFar);
-    if (cosine(embedding, mean) < SETTINGS.samePersonMin) return { status: 'mismatch' };
+    if (cosine(embedding, mean) < (shot.identityMin ?? SETTINGS.samePersonMin)) return { status: 'mismatch' };
   }
   // encode without blocking the page (two JPEGs of up to 960 px each, per photo)
   const dataUrls = await Promise.all(ranked.map(candidate => canvasToDataUrl(candidate.snapshot.canvas, 'image/jpeg', SETTINGS.jpegQuality)));
   const photos = ranked.map((candidate, index) => ({
     dataUrl: dataUrls[index],
-    meta: { shot: shot.id, rank: index + 1, sharpness: candidate.sharpness, yaw: candidate.pose.yaw, pitch: candidate.pose.pitch, light: candidate.light, facePx: candidate.facePx },
+    meta: buildPhotoMeta({ shot, rank: index + 1, candidate, userAgent: navigator.userAgent }),
   }));
   return { status: 'ok', embedding: Array.from(embedding), photos };
+}
+
+// Brightness statistics (mean, spread, left/right and top/bottom balance) of the face in the current video frame.
+// Saved with each photo so the CCTV tests can be split by lighting later. Never throws: null when it cannot be read.
+let lumaCanvas = null;
+function faceLuma(video, box) {
+  try {
+    const size = 48;
+    const x1 = Math.max(0, box.x1), y1 = Math.max(0, box.y1);
+    const x2 = Math.min(video.videoWidth, box.x2), y2 = Math.min(video.videoHeight, box.y2);
+    if (x2 - x1 < 8 || y2 - y1 < 8) return null;
+    if (!lumaCanvas) lumaCanvas = document.createElement('canvas');
+    lumaCanvas.width = size;
+    lumaCanvas.height = size;
+    const context = lumaCanvas.getContext('2d', { willReadFrequently: true });
+    context.drawImage(video, x1, y1, x2 - x1, y2 - y1, 0, 0, size, size);
+    return lumaStats(context.getImageData(0, 0, size, size).data, size, size);
+  } catch {
+    return null;
+  }
 }
 
 // good: true = green (right pose), false = red (wrong pose), null = amber (frame not usable yet, see the hint).

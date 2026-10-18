@@ -23,6 +23,11 @@ from gallery_extras import is_cctv_crop
 
 SELF_PHOTO = re.compile(r"^self_\d+\.(jpg|jpeg|png|webp)$", re.I)
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+# The optional extra enrolment shots (pose.js BONUS_SHOTS): wide turns, a deep chin-down, odd lighting. They feed the
+# CCTV gallery and the bakeoff, but they are SUPPOSED to look different from the core photos, so they are reported
+# (face size, sharpness, norm) without ever counting towards "photos look unlike each other", the outlier list, the
+# reference comparison or the minimum number of good photos.
+BONUS_SHOT_IDS = {"left-wide", "right-wide", "down-deep"}
 
 QA = {
     "min_face_px": 90,          # a face narrower than this in the saved photo is too small to be useful
@@ -92,7 +97,8 @@ def check_enrolment(model, folder, lock=None, limits=QA):
             meta = {}
 
     def analyse(path):
-        info = {"file": path.name, "problems": [], "face_px": None, "norm": None, "sharpness": None}
+        info = {"file": path.name, "problems": [], "face_px": None, "norm": None, "sharpness": None,
+                "bonus": meta.get(path.name, {}).get("shot") in BONUS_SHOT_IDS}   # set first: an unreadable photo returns early
         try:
             image = recognize.load_image(path)
             with lock:
@@ -120,6 +126,7 @@ def check_enrolment(model, folder, lock=None, limits=QA):
         if info["norm"] < limits["min_norm"]:
             info["problems"].append("low quality for recognition")
         info.update({k: v for k, v in meta.get(path.name, {}).items() if k in ("shot", "rank")})
+        info["bonus"] = info.get("shot") in BONUS_SHOT_IDS
         return info, embedding
 
     photos, embeddings = [], []
@@ -128,7 +135,8 @@ def check_enrolment(model, folder, lock=None, limits=QA):
         photos.append(info)
         embeddings.append(embedding)
 
-    usable = [(info, emb) for info, emb in zip(photos, embeddings) if emb is not None]
+    # consistency / outliers / reference similarity look at the core photos only (see BONUS_SHOT_IDS)
+    usable = [(info, emb) for info, emb in zip(photos, embeddings) if emb is not None and not info["bonus"]]
     consistency, outliers = None, []
     if len(usable) >= 3:
         matrix = np.stack([emb for _, emb in usable])
@@ -154,8 +162,9 @@ def check_enrolment(model, folder, lock=None, limits=QA):
         # No app photos at all (a student whose folder was filled by hand): nothing to judge, and not a problem.
         return {"status": "ok", "reasons": [], "consistency": None, "reference_similarity": None,
                 "photo_count": 0, "reference_count": len(references), "photos": []}
-    verdict = judge(photos, consistency, outliers, reference_similarity, bool(references), limits)
+    verdict = judge([p for p in photos if not p["bonus"]], consistency, outliers, reference_similarity, bool(references), limits)
     return {**verdict,
+            "bonus_count": sum(1 for p in photos if p["bonus"]),
             "consistency": None if consistency is None else round(consistency, 3),
             "reference_similarity": None if reference_similarity is None else round(reference_similarity, 3),
             "photo_count": len(selfs), "reference_count": len(references),

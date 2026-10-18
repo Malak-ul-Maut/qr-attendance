@@ -71,7 +71,8 @@ class Tracker:
     row is dropped (its id will not be reused).
     """
 
-    def __init__(self, iou_threshold=0.3, max_missed=15, max_center_dist=1.0, max_size_ratio=1.6):
+    def __init__(self, iou_threshold=0.3, max_missed=15, max_center_dist=1.0, max_size_ratio=1.6, assignment="hungarian"):
+        self.assignment = assignment             # 'greedy' (original) or 'hungarian' (best overall pairing; needs scipy)
         self.iou_threshold = iou_threshold
         self.max_center_dist = max_center_dist   # 0 turns the distance rule off (IoU only, as before)
         self.max_size_ratio = max_size_ratio
@@ -99,6 +100,8 @@ class Tracker:
                 if overlaps or close:
                     candidates.append((distance, track, box_i))
         candidates.sort(key=lambda c: c[0])  # smallest normalised distance first
+        if self.assignment == "hungarian":
+            candidates = self._best_pairing(candidates)
 
         used_tracks, used_boxes = set(), set()
         for score, track, box_i in candidates:
@@ -127,6 +130,28 @@ class Tracker:
         self.tracks = [t for t in self.tracks if t.missed <= self.max_missed]
 
         return assigned_ids
+
+    def _best_pairing(self, candidates):
+        """The set of plausible (track, box) pairs with the smallest TOTAL distance. Greedy picks the closest pair first,
+        which can steal a box from a track that has no other option; this cannot. Falls back to greedy without scipy."""
+        try:
+            from scipy.optimize import linear_sum_assignment
+        except ImportError:
+            return candidates
+        if not candidates:
+            return candidates
+        tracks = list({id(c[1]): c[1] for c in candidates}.values())
+        track_index = {id(t): i for i, t in enumerate(tracks)}
+        box_ids = sorted({c[2] for c in candidates})
+        box_index = {b: i for i, b in enumerate(box_ids)}
+        big = 1e6
+        cost = np.full((len(tracks), len(box_ids)), big)
+        for distance, track, box_i in candidates:
+            cost[track_index[id(track)], box_index[box_i]] = distance
+        rows, cols = linear_sum_assignment(cost)
+        chosen = {(r, c) for r, c in zip(rows, cols) if cost[r, c] < big}
+        return [cand for cand in candidates
+                if (track_index[id(cand[1])], box_index[cand[2]]) in chosen]
 
     def is_confirmed(self, track_id):
         """Has this track id been seen enough times to trust (see Track.confirmed)? False if it no longer exists."""

@@ -15,3 +15,5 @@ backend/crop-staging
 # Build
 frontend-dist
 pages-worker
+
+bakeoff_work

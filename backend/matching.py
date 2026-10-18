@@ -147,3 +147,229 @@ def choose_faces_to_report(track_boxes, track_identity, track_best_scores, track
             continue
         drawn.append((track_id, box))
     return drawn, best_track_by_student
+
+
+# ======================================================================================================
+# The per-attempt decision logic. It used to live inline in recognize.process_frame; it is here so that
+# scripts/bakeoff.py replays EXACTLY the code production runs (numpy only, no insightface needed).
+# ======================================================================================================
+CLAIM_MARGIN = 0.03   # a borderline match loses to a live track already holding the same student if that track scored this much higher
+
+
+class RunState:
+    """Everything that changes while one clip is being scanned."""
+
+    def __init__(self):
+        self.present = {}            # student_id -> record of the match that marked them present
+        self.attempts_used = {}      # track_id -> recognition attempts spent so far
+        self.track_identity = {}     # track_id -> student_id, or None once given up on
+        self.track_boxes = {}        # track_id -> last known bbox (for the final annotated image)
+        self.track_best_scores = {}  # track_id -> best trusted similarity so far
+        self.recognitions = 0        # total face recognitions run (for the timing summary)
+        self.frames_processed = 0    # processed frames so far (the clock for track_last_seen)
+        self.track_sightings = {}    # track_id -> number of processed frames it was detected in
+        self.track_last_seen = {}    # track_id -> frames_processed value at its latest sighting
+        self.track_votes = {}        # track_id -> {student_id: borderline attempts that named that student}
+        self.frame_faces = {}        # track_id -> what happened to that face on the frame just processed (for snapshots)
+        self.track_pools = {}        # track_id -> TrackPool: the best looks at that face (for pooled matching + saved crops)
+        self.track_thumbs = {}       # track_id -> (det score, small BGR picture of the face with some margin)
+        self.track_widths = {}       # track_id -> latest face width in pixels
+        self.track_attempt_frames = {}  # track_id -> [processed-frame number of each recognition attempt] (for window_study.py)
+        self.frame_stats = []        # one dict per processed frame: faces, recognitions, detect/recognize ms, new matches
+        self.attempt_log = []        # one dict per recognition attempt, filled only when settings.trace is on
+
+
+def stronger_live_claim(state, track_id, student_id, score):
+    """
+    Track id of another LIVE track (seen this frame or the one before) that already holds
+    `student_id` with a clearly higher score than `score`, else None. Dead tracks are ignored on
+    purpose: a student who leaned and got a new track id must not be rejected by their own old track.
+    """
+    for other_id, other_student in state.track_identity.items():
+        if other_student != student_id or other_id == track_id:
+            continue
+        if state.track_last_seen.get(other_id, 0) < state.frames_processed - 1:
+            continue
+        if state.track_best_scores.get(other_id, float("-inf")) >= score + CLAIM_MARGIN:
+            return other_id
+    return None
+
+
+def nearest_gallery_match(embedding, gallery_embeddings, gallery_names):
+    """
+    The single closest gallery photo to this embedding, and its similarity score. This already
+    finds the best-matching STUDENT too, not just the best photo: whichever photo scores highest
+    across the searched gallery is, by definition, that student's own best photo.
+    """
+    scores = gallery_embeddings @ embedding  # both are unit-length, so this is cosine similarity
+    best = int(np.argmax(scores))
+    return gallery_names[best], float(scores[best])
+
+
+_GROUP_CACHE = {}
+
+
+def _student_groups(gallery_names):
+    """(names, order, starts): gallery rows regrouped per student, for per-student aggregation. Cached by content."""
+    key = (len(gallery_names), hash(tuple(gallery_names)))
+    cached = _GROUP_CACHE.get(key)
+    if cached is None:
+        names = list(dict.fromkeys(gallery_names))
+        index = {name: i for i, name in enumerate(names)}
+        ids = np.array([index[name] for name in gallery_names])
+        order = np.argsort(ids, kind="stable")
+        starts = np.searchsorted(ids[order], np.arange(len(names)))
+        if len(_GROUP_CACHE) > 8:
+            _GROUP_CACHE.clear()
+        cached = _GROUP_CACHE[key] = (names, order, starts)
+    return cached
+
+
+def student_scores(embedding, gallery_embeddings, gallery_names, aggregator="max"):
+    """
+    One score per student (list of names, array of scores). aggregator:
+      max    the student's single best photo (what nearest_gallery_match does)
+      mean2  the average of the student's two best photos (mean3: three) - one lucky photo counts for less
+    """
+    names, order, starts = _student_groups(gallery_names)
+    scores = (gallery_embeddings @ embedding)[order]
+    if aggregator == "max":
+        return names, np.maximum.reduceat(scores, starts)
+    if aggregator in ("mean2", "mean3"):
+        k = int(aggregator[-1])
+        ends = list(starts[1:]) + [len(scores)]
+        return names, np.array([np.sort(scores[a:b])[::-1][:k].mean() for a, b in zip(starts, ends)])
+    raise ValueError(f"unknown aggregator '{aggregator}' (max, mean2, mean3)")
+
+
+def rank_students(embedding, gallery_embeddings, gallery_names, aggregator="max"):
+    """(best student's gallery name, their score, best score among all OTHER students or None if there is no other)."""
+    names, per_student = student_scores(embedding, gallery_embeddings, gallery_names, aggregator)
+    best = int(np.argmax(per_student))
+    if len(per_student) < 2:
+        return names[best], float(per_student[best]), None
+    second = float(np.max(np.delete(per_student, best)))
+    return names[best], float(per_student[best]), second
+
+
+def gate_track(state, track_id, info, args, big_enough, sharp_enough):
+    """
+    Step 1 of process_frame for one detected face: does this track get a recognition attempt on this frame?
+    `big_enough` / `sharp_enough` are callables (the sharpness test is not free, so it only runs when needed).
+    Updates state.track_identity / info["status"] exactly as the inline code did.
+    """
+    if track_id in state.track_identity:
+        info["status"] = "resolved" if state.track_identity[track_id] is not None else "gave up"
+        return False   # already resolved (matched, or gave up) - nothing left to do for this track
+    if state.attempts_used.get(track_id, 0) >= args.max_attempts:
+        state.track_identity[track_id] = None   # give up on this track for good
+        info["status"] = "gave up"
+        return False
+    if not big_enough():
+        info["status"] = "skipped: small"
+        return False   # too small to bother with - free, does not use up an attempt
+    if not sharp_enough():
+        info["status"] = "skipped: blurry"
+        return False   # too blurry - also free
+    return True
+
+
+def decide_attempt(state, track_id, face, gallery, identity_map, args, frame_index):
+    """
+    Step 3 of process_frame for ONE recognised face: spend an attempt, update the track's pool, compare with the
+    gallery and decide whether this marks a student present. Mutates `state` and `state.frame_faces[track_id]`.
+    Returns the new presence record when a student was newly marked present, else None.
+    `face` needs: normed_embedding, quality, and optionally aligned_bgr.
+
+    Optional settings (all off by default, so behaviour is unchanged until measured):
+      aggregator  'max' | 'mean2' | 'mean3'  how a student's several gallery photos become one score
+      margin      0 = off; else the best student must beat the best OTHER student by at least this much
+      pool_gate   0 = off; else a look whose similarity to the track's pooled looks is below this starts a fresh
+                  pool (another person probably took over the track), so two seatmates are never averaged together
+      trace       True = append one dict per attempt to state.attempt_log
+    """
+    gallery_embeddings, gallery_names = gallery
+    aggregator = getattr(args, "aggregator", "max")
+    margin = float(getattr(args, "margin", 0.0) or 0.0)
+    pool_gate = float(getattr(args, "pool_gate", 0.0) or 0.0)
+
+    def match(vector):
+        if aggregator == "max" and margin <= 0:
+            name_, score_ = nearest_gallery_match(vector, gallery_embeddings, gallery_names)
+            return name_, score_, None
+        return rank_students(vector, gallery_embeddings, gallery_names, aggregator)
+
+    attempts = state.attempts_used.get(track_id, 0) + 1
+    state.attempts_used[track_id] = attempts
+    state.track_attempt_frames.setdefault(track_id, []).append(state.frames_processed)
+    matched = False
+    record = None
+    info = state.frame_faces[track_id]
+    info["status"] = "tried (no match)"
+    info["quality"] = float(face.quality)
+
+    pool = state.track_pools.setdefault(track_id, TrackPool(top_k=args.pool_top_k))
+    if pool_gate > 0 and pool.count >= 2:
+        earlier = pool.pooled()
+        if earlier is not None and float(earlier @ face.normed_embedding) < pool_gate:
+            state.track_pools[track_id] = pool = TrackPool(top_k=args.pool_top_k)
+            state.track_votes.pop(track_id, None)
+            info["split"] = True
+    pool.add(face.normed_embedding, face.quality, getattr(face, "aligned_bgr", None))
+    name, score, second = None, None, None
+    if face.quality >= args.min_norm:  # a low-norm crop is not trusted (its attempt still counted)
+        name, score, second = match(face.normed_embedding)
+        single_look_score = score
+        if args.pool_attempts and pool.count >= 2:
+            # Several looks at the same face: average the best of them. A genuine match that one noisy
+            # frame scored too low often clears the bar when the noise is averaged out.
+            pooled_name, pooled_score, pooled_second = match(pool.pooled())
+            if pooled_score > score:
+                name, score, second = pooled_name, pooled_score, pooled_second
+                info["pooled"] = True
+        info["score"] = float(score)
+        state.track_best_scores[track_id] = max(state.track_best_scores.get(track_id, float("-inf")), score)
+        identity = identity_map.get(name)  # None = a gallery folder with no matching roster student
+        ambiguous = margin > 0 and second is not None and (score - second) < margin
+        if score >= args.threshold and identity is not None and ambiguous:
+            info["status"] = "tried (ambiguous)"
+        elif score >= args.threshold and identity is not None:
+            student_id = identity["student_id"]
+            if args.accept_threshold > args.threshold and score < args.accept_threshold:
+                # borderline: needs a second agreeing attempt, and no stronger live claim on this student
+                holder = stronger_live_claim(state, track_id, student_id, score)
+                if holder is not None:
+                    info["status"] = f"tried (T{holder} holds this student)"
+                elif info.get("pooled") and single_look_score < args.threshold:
+                    # the average is borderline and this look alone is below the bar: the averaged looks are
+                    # not independent of the earlier vote, so this does not count as a second opinion
+                    info["status"] = "borderline (average only)"
+                else:
+                    votes = state.track_votes.setdefault(track_id, {})
+                    votes[student_id] = votes.get(student_id, 0) + 1
+                    matched = votes[student_id] >= 2
+                    if not matched:
+                        info["status"] = "borderline 1/2"
+            else:
+                matched = True
+        if matched:
+            info["status"] = "MATCHED"
+            state.track_identity[track_id] = identity["student_id"]
+            if identity["student_id"] not in state.present:
+                record = {**identity, "best_score": round(score, 4), "frame": frame_index, "track_id": track_id,
+                          "attempt": attempts,   # which recognition attempt on this track matched (for window_study.py)
+                          "sightings": state.track_sightings.get(track_id, 0)}
+                state.present[identity["student_id"]] = record
+
+    if not matched and face.quality < args.min_norm:
+        info["status"] = "tried (low quality)"
+    if not matched and attempts >= args.max_attempts:
+        state.track_identity[track_id] = None  # out of attempts: resolved as "unmatched" right away
+    if getattr(args, "trace", False):
+        state.attempt_log.append({"frame": frame_index, "processed": state.frames_processed, "track": track_id,
+                                  "attempt": attempts, "quality": float(face.quality), "name": name,
+                                  "score": None if score is None else float(score),
+                                  "second": None if second is None else float(second),
+                                  "status": info["status"], "pooled": bool(info.get("pooled")),
+                                  "split": bool(info.get("split"))})
+    return record
