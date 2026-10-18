@@ -6,9 +6,9 @@
 // Example: window.API_BASE = 'https://your-name.ngrok-free.app';
 window.API_BASE = '';
 
-// ASSET_BASE is where the 27 MB of face files (ONNX Runtime .wasm and two models) are downloaded from.
-// '' = the same host as the page. `--assets=` in the build sets it to a CDN. If the CDN cannot be reached the
-// engine falls back to API_BASE, which always has the files.
+// ASSET_BASE is where the face-engine WASM and models are downloaded from.
+// Source/dev pages may leave this empty to load them from their server. The optimized build requires a CDN
+// (`--assets=`) and omits these files, so built pages need CDN access for face verification.
 window.ASSET_BASE = '';
 
 (function () {

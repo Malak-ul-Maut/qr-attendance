@@ -1,17 +1,14 @@
 // Builds ../../frontend-dist: the student page's 20 modules become one small hashed file (plus separate files for
 // the QR/face code that loads later), every text file gets a ready-made .br, and the file sizes the face engine
-// expects are checked. Serve it with SERVE_DIST=1. The source in ../../frontend is never changed.
+// expects are checked. This single folder works with the local server and Cloudflare Workers static assets.
+// Serve it locally with SERVE_DIST=1. The source in ../../frontend is never changed.
 //
 //   cd backend && npm i -D esbuild && node scripts/build-frontend.mjs
 //
-// It also makes ../../pages-deploy: the same site without the .br files, plus the _headers file Cloudflare Pages
-// needs, ready to upload. Tell it where the API lives so the pages can reach it:
-//   node scripts/build-frontend.mjs --api=https://your-name.ngrok-free.app
-// Easiest and most reliable: let a Cloudflare Worker pass /api, /socket.io and /results on to your tunnel, so the
-// browser only ever talks to the Cloudflare address (no CORS, no ngrok warning page). Add --proxy=<tunnel address>
-// and deploy from the pages-worker folder it makes (see SPEED-UP.md).
-// The 27 MB of face files can be left out of that copy and loaded from a CDN instead (see make-cdn-folder.mjs):
-//   node scripts/build-frontend.mjs --api=https://... --assets=https://cdn.jsdelivr.net/gh/USER/REPO@v1
+// Cloudflare metadata (_headers and index.html) is included in that same folder. For a Cloudflare Worker that
+// proxies API traffic to your tunnel, pass --proxy=<tunnel address>; it writes the Worker config separately.
+// Face-engine WASM/models are CDN-only and --assets is required:
+//   node scripts/build-frontend.mjs --proxy=https://your-tunnel.example --assets=https://cdn.jsdelivr.net/gh/USER/REPO@v1/frontend
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
@@ -23,6 +20,18 @@ const ROOT = path.resolve(
 );
 const SRC = path.join(ROOT, 'frontend');
 const DIST = path.join(ROOT, 'frontend-dist');
+const assetsArg = process.argv.find(a => a.startsWith('--assets='));
+const assetBase = assetsArg ? assetsArg.slice(9).replace(/\/+$/, '') : '';
+if (!assetBase) {
+  console.error('--assets is required; the face-engine WASM and models are CDN-only.');
+  process.exit(1);
+}
+if (!/^https:\/\/[^\s]+$/.test(assetBase)) {
+  console.error(
+    `--assets must look like https://cdn.jsdelivr.net/gh/USER/REPO@v1, got "${assetBase}"`,
+  );
+  process.exit(1);
+}
 
 let esbuild;
 try {
@@ -145,7 +154,34 @@ if (html.includes('js/app.js"') || html.includes('utils/auth-guard.js"'))
   throw new Error('student.html was not rewritten');
 fs.writeFileSync(path.join(DIST, 'student.html'), html.replace(/\n/g, eol));
 
-// 5. Brotli copies of every text file (the browser picks .br when it can)
+// 5. Configure the portable build. API_BASE stays same-origin so the same output works with the local server and
+//    with the Cloudflare Worker proxy. Face-engine WASM/models are fetched only from the CDN.
+const configFile = path.join(DIST, 'utils/runtime-config.js');
+const config = fs.readFileSync(configFile, 'utf8');
+if (!config.includes("window.API_BASE = '';"))
+  throw new Error('utils/runtime-config.js must leave API_BASE same-origin');
+if (!config.includes("window.ASSET_BASE = '';"))
+  throw new Error('utils/runtime-config.js changed shape; update the build');
+fs.writeFileSync(
+  configFile,
+  config.replace(
+    "window.ASSET_BASE = '';",
+    `window.ASSET_BASE = ${JSON.stringify(assetBase)};`,
+  ),
+);
+const CDN_ONLY = [
+  'utils/ort/ort-wasm-simd-threaded.wasm',
+  'utils/models/det_500m.onnx',
+  'utils/models/w600k_mbf.onnx',
+];
+for (const file of CDN_ONLY) fs.rmSync(path.join(DIST, file), { force: true });
+
+fs.copyFileSync(
+  path.join(DIST, 'homepage.html'),
+  path.join(DIST, 'index.html'),
+);
+
+// 6. Brotli copies of every text file (used by the local server; Cloudflare serves the original files).
 let count = 0;
 (function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -168,70 +204,9 @@ let count = 0;
   }
 })(DIST);
 
-// 6. The copy for Cloudflare Pages: no .br files (Pages compresses by itself), the API address filled in,
-//    and the cache rules as a _headers file (Pages does not run the server's cache code).
-const PAGES = path.join(ROOT, 'pages-deploy');
-fs.rmSync(PAGES, { recursive: true, force: true });
-fs.cpSync(DIST, PAGES, {
-  recursive: true,
-  filter: src => !src.endsWith('.br'),
-});
-for (const unused of ['icons/mit-logo.png', 'icons/mit-building.jpg'])
-  fs.rmSync(path.join(PAGES, unused), { force: true });
-const HEAVY = [
-  '/utils/ort/ort-wasm-simd-threaded.wasm',
-  '/utils/models/det_500m.onnx',
-  '/utils/models/w600k_mbf.onnx',
-];
-const assetsArg = process.argv.find(a => a.startsWith('--assets='));
-const assetBase = assetsArg ? assetsArg.slice(9).replace(/\/+$/, '') : '';
-if (assetBase) {
-  if (!/^https:\/\/[^\s]+$/.test(assetBase)) {
-    console.error(
-      `--assets must look like https://cdn.jsdelivr.net/gh/USER/REPO@v1, got "${assetBase}"`,
-    );
-    process.exit(1);
-  }
-  // The big files are served by the CDN, so they are not uploaded to Cloudflare at all
-  for (const heavy of HEAVY)
-    fs.rmSync(path.join(PAGES, heavy.slice(1)), { force: true });
-}
-const apiArg = process.argv.find(a => a.startsWith('--api='));
-const apiBase = (apiArg ? apiArg.slice(6) : process.env.API_BASE || '').replace(
-  /\/+$/,
-  '',
-);
-if (apiBase && !/^https:\/\/[^\s/]+$/.test(apiBase)) {
-  console.error(
-    `--api must look like https://your-name.ngrok-free.app (no path), got "${apiBase}"`,
-  );
-  process.exit(1);
-}
-const configFile = path.join(PAGES, 'utils/runtime-config.js');
-const config = fs.readFileSync(configFile, 'utf8');
-if (!config.includes("window.API_BASE = '';"))
-  throw new Error('utils/runtime-config.js changed shape; update the build');
-if (!config.includes("window.ASSET_BASE = '';"))
-  throw new Error('utils/runtime-config.js changed shape; update the build');
-fs.writeFileSync(
-  configFile,
-  config
-    .replace(
-      "window.API_BASE = '';",
-      `window.API_BASE = ${JSON.stringify(apiBase)};`,
-    )
-    .replace(
-      "window.ASSET_BASE = '';",
-      `window.ASSET_BASE = ${JSON.stringify(assetBase)};`,
-    ),
-);
-fs.copyFileSync(
-  path.join(PAGES, 'homepage.html'),
-  path.join(PAGES, 'index.html'),
-);
 // Rules must not overlap: where two rules match one file, Pages joins their values into one broken header.
 fs.writeFileSync(
-  path.join(PAGES, '_headers'),
+  path.join(DIST, '_headers'),
   `/assets/*
   Cache-Control: public, max-age=31536000, immutable
 /utils/ort/*
@@ -259,11 +234,11 @@ let files = 0;
       biggest = Math.max(biggest, fs.statSync(full).size);
     }
   }
-})(PAGES);
+})(DIST);
 if (biggest > 25 * 1024 * 1024)
-  throw new Error('a file is over the 25 MiB Cloudflare Pages limit');
+  throw new Error('a file is over the 25 MiB Cloudflare asset limit');
 
-// 7. --proxy: a Worker that serves the pages and forwards API calls to the tunnel, plus its wrangler config
+// 7. --proxy: a Worker that serves frontend-dist and forwards API calls to the tunnel.
 const proxyArg = process.argv.find(a => a.startsWith('--proxy='));
 if (proxyArg) {
   const origin = proxyArg.slice(8).replace(/\/+$/, '');
@@ -273,10 +248,6 @@ if (proxyArg) {
     );
     process.exit(1);
   }
-  if (apiBase)
-    console.warn(
-      'Note: with --proxy the pages call their own address, so --api is not needed.',
-    );
   const WORKER = path.join(ROOT, 'pages-worker');
   fs.rmSync(WORKER, { recursive: true, force: true });
   fs.mkdirSync(WORKER);
@@ -286,14 +257,10 @@ if (proxyArg) {
 // The browser only talks to this address, so there is no cross-origin check and no ngrok/zrok warning page
 // (this request comes from Cloudflare, not a browser, and carries the skip headers).
 const API = /^\\/(api|results|socket\\.io)\\//;
-// The face files normally come from the CDN. If the CDN is blocked the page asks for them here, and they are
-// fetched from your server (they are not in the uploaded files when --assets is used).
-const HEAVY = new Set(${JSON.stringify(HEAVY)});
-
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (!API.test(url.pathname) && !HEAVY.has(url.pathname)) return env.ASSETS.fetch(request);
+    if (!API.test(url.pathname)) return env.ASSETS.fetch(request);
     const upstream = new Request(new URL(url.pathname + url.search, env.ORIGIN), request);
     upstream.headers.set('ngrok-skip-browser-warning', '1');
     upstream.headers.set('skip_zrok_interstitial', '1');
@@ -317,14 +284,9 @@ export default {
         main: 'worker.js',
         compatibility_date: '2026-10-01',
         assets: {
-          directory: '../pages-deploy',
+          directory: '../frontend-dist',
           binding: 'ASSETS',
-          run_worker_first: [
-            '/api/*',
-            '/results/*',
-            '/socket.io/*',
-            ...(assetBase ? HEAVY : []),
-          ],
+          run_worker_first: ['/api/*', '/results/*', '/socket.io/*'],
         },
         vars: { ORIGIN: origin },
       },
@@ -333,17 +295,17 @@ export default {
     ) + '\n',
   );
   console.log(
-    `Made pages-worker/ (API traffic is passed on to ${origin}). Deploy with: cd pages-worker && npx wrangler deploy`,
+    `Made pages-worker/ (API traffic is passed on to ${origin}; assets come from frontend-dist/). Deploy with: cd pages-worker && npx wrangler deploy`,
   );
 }
 
 const kb = n => (n / 1024).toFixed(1) + ' KB';
-console.log(`Built frontend-dist (${count} brotli files).`);
+console.log(`Built frontend-dist (${count} brotli files; ready for local hosting and Cloudflare).`);
 for (const [file, o] of Object.entries(outputs))
   console.log(
     `  ${path.relative(DIST, path.join(ROOT, file))}  ${kb(o.bytes)}`,
   );
 console.log('Start the server with SERVE_DIST=1 to use frontend-dist.');
 console.log(
-  `Made pages-deploy (${files} files, largest ${kb(biggest)}), API_BASE = ${apiBase ? apiBase : "'' (not set: the pages would call their own address)"}, face files from ${assetBase || 'the same host as the pages'}`,
+  `frontend-dist contains ${files} deployable files (largest ${kb(biggest)}); API_BASE is same-origin, face files prefer ${assetBase || 'the same host'}.`,
 );

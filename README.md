@@ -57,13 +57,25 @@ pip install insightface openvino opencv-python numpy gdown uvicorn
 ```bash
 cd backend
 node scripts/build-frontend.mjs --proxy=https://scrimmage-unlucky-dispersed.ngrok-free.dev --assets=https://cdn.jsdelivr.net/gh/malak-ul-maut/qr-attendance@v1/frontend
+```
 
-Deploy (optional):
+The build creates one `frontend-dist` folder with the optimized site, local Brotli files, Cloudflare headers, and an `index.html`. The three large face-engine WASM/model files are omitted from the build and fetched from the CDN only, so `--assets` is required and the built site needs CDN access for face verification. The generated Cloudflare Worker serves this same folder and forwards API traffic to the tunnel.
+
+To deploy the build to Cloudflare:
+
+```bash
 cd ../pages-worker
 npx wrangler@latest deploy
 ```
 
-### 4. Start the server
+To run the built frontend locally from the project root in PowerShell:
+
+```powershell
+$env:SERVE_DIST = '1'
+npm start
+```
+
+### 5. Start the server
 
 ```bash
 npm start
@@ -77,7 +89,7 @@ Connected to SQLite database
 Tunnel established at: https://<random-subdomain>.ngrok-free.dev
 ```
 
-### 4. Access the system
+### 6. Access the system
 
 Open your web browser and go here to use the system
 

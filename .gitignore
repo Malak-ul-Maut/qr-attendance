@@ -14,4 +14,4 @@ backend/crop-staging
 
 # Build
 frontend-dist
-pages-deploy
+pages-worker

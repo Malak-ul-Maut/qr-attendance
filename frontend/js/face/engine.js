@@ -19,9 +19,13 @@ const FILES = {
   det: { path: '/utils/models/det_500m.onnx', bytes: 2524817 },
   rec: { path: '/utils/models/w600k_mbf.onnx', bytes: 13616099 },
 };
-// url: preferred address (the CDN when ASSET_BASE is set). fallback: the API server, which always has the files.
+// Built sites use the CDN only; source/dev sites can load the files from their server.
 const ASSETS = Object.fromEntries(
-  Object.entries(FILES).map(([name, f]) => [name, { url: ASSET_BASE + f.path, fallback: (window.API_BASE || '') + f.path, bytes: f.bytes }]),
+  Object.entries(FILES).map(([name, f]) => [name, {
+    url: ASSET_BASE + f.path,
+    fallback: ASSET_BASE ? '' : (window.API_BASE || '') + f.path,
+    bytes: f.bytes,
+  }]),
 );
 const DETECT_LONG_SIDE = 320; // the detector sees the frame shrunk to this many pixels on its long side
 const CALL_TIMEOUT_MS = 10000; // a worker call that takes longer than this means the worker is stuck

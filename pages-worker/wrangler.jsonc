@@ -3,15 +3,12 @@
   "main": "worker.js",
   "compatibility_date": "2026-10-01",
   "assets": {
-    "directory": "../pages-deploy",
+    "directory": "../frontend-dist",
     "binding": "ASSETS",
     "run_worker_first": [
       "/api/*",
       "/results/*",
-      "/socket.io/*",
-      "/utils/ort/ort-wasm-simd-threaded.wasm",
-      "/utils/models/det_500m.onnx",
-      "/utils/models/w600k_mbf.onnx"
+      "/socket.io/*"
     ]
   },
   "vars": {
