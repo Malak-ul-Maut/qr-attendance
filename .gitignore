@@ -11,9 +11,9 @@ backend/cache/
 backend/results/
 backend/*.avi
 backend/crop-staging
+backend/bakeoff_work
 
 # Build
 frontend-dist
-pages-worker
 
 bakeoff_work
