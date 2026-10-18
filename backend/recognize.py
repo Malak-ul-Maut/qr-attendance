@@ -143,10 +143,11 @@ def default_crop_config(profile_crop=None):
         config = crop_ops.CropConfig(**{**config.as_dict(), "keypoints": keypoint_mode_setting()})
     return config
 GALLERY_DET_SIZE = (640, 640)
+DEFAULT_DET_FILENAME = "10g_bnkps.onnx"
 DEFAULT_REC_FILENAME = "adaface_ir101_webface4m.onnx"
 RECOGNIZE_BATCH_SIZE = 16  # most faces sent to AdaFace in one model call (keeps memory use modest)
 MODEL_URLS = {
-    "det_10g.onnx": "https://drive.google.com/file/d/1Y10_5Eb8lk8wfMOv9AZIjQb_qqyVpkry/view?usp=sharing",
+    DEFAULT_DET_FILENAME: "https://drive.google.com/file/d/1Y10_5Eb8lk8wfMOv9AZIjQb_qqyVpkry/view?usp=sharing",
     DEFAULT_REC_FILENAME: "https://drive.google.com/file/d/19brStYrgePk_SW3PNLb2emre-R_mRIeo/view?usp=drive_link",
 }
 
@@ -481,7 +482,7 @@ class FaceModel:
 
     def __init__(self, models_dir, det_size, det_thresh, rec_filename=DEFAULT_REC_FILENAME, log=print, crop_config=None):
         models_dir = Path(models_dir)
-        det_path = download_if_missing(models_dir / "det_10g.onnx", MODEL_URLS["det_10g.onnx"])
+        det_path = download_if_missing(models_dir / DEFAULT_DET_FILENAME, MODEL_URLS[DEFAULT_DET_FILENAME])
         rec_path = download_if_missing(models_dir / rec_filename, MODEL_URLS.get(rec_filename))
 
         self.det_size = det_size
