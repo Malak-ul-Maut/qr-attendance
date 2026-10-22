@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <style>.i{stroke:#202328}.f{fill:#202328}@media (prefers-color-scheme:dark){.i{stroke:#f1f3f5}.f{fill:#f1f3f5}}</style>
+  <g class="i" stroke-width="4"><rect x="5.5" y="5.5" width="13" height="13" rx="3.2"/><rect x="29.5" y="5.5" width="13" height="13" rx="3.2"/><rect x="5.5" y="29.5" width="13" height="13" rx="3.2"/></g>
+  <g class="f"><rect x="9.8" y="9.8" width="4.4" height="4.4" rx="1"/><rect x="33.8" y="9.8" width="4.4" height="4.4" rx="1"/><rect x="9.8" y="33.8" width="4.4" height="4.4" rx="1"/></g>
+  <rect x="27.5" y="27.5" width="17" height="17" rx="4.5" fill="#d1222e"/>
+  <path d="M31.4 36.4l3.8 3.8 6.4-7.6" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

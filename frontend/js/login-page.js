@@ -6,6 +6,22 @@ import { showToast } from './ui.js';
 const roleFromUrl = new URLSearchParams(window.location.search).get('role');
 const allowedRoles = ['admin', 'student', 'faculty'];
 
+// The line shown beside the form on wide screens: what this role does in the system.
+const ROLE_COPY = {
+  student: {
+    headline: 'Scan the class QR. Verify your face. You’re marked.',
+    sub: 'Your attendance and the 75% line, always up to date.',
+  },
+  faculty: {
+    headline: 'Start a session in two taps.',
+    sub: 'Show the QR code or use the classroom camera, and watch the roster fill live.',
+  },
+  admin: {
+    headline: 'Every term, timetable and record in one place.',
+    sub: 'Set up classes, check face photos and review attendance.',
+  },
+};
+
 if (allowedRoles.includes(roleFromUrl)) {
   setUpLoginForm(roleFromUrl);
 } else {
@@ -26,14 +42,26 @@ function setUpLoginForm(role) {
   const errorMessage = document.querySelector('#login-msg');
 
   heading.textContent = `Sign in as ${roleLabel}`;
-  document.title = `Sign in as ${roleLabel} | Attendance System`;
+  const product = window.BRAND?.product?.name || 'Smart Attendance Marker';
+  document.title = `Sign in as ${roleLabel} | ${product}`;
+
+  // Role copy and illustration (hidden on phones by the stylesheet)
+  const copy = ROLE_COPY[role];
+  document.querySelector('[data-role-headline]').textContent = copy.headline;
+  document.querySelector('[data-role-sub]').textContent = copy.sub;
+  // (SVG elements have no .hidden property, so the attribute is removed directly)
+  document.querySelector(`[data-art="${role}"]`).removeAttribute('hidden');
 
   // ---------- Show / hide password ----------
+  const eyeOn = togglePasswordBtn.querySelector('.eye-on');
+  const eyeOff = togglePasswordBtn.querySelector('.eye-off');
   togglePasswordBtn.addEventListener('click', () => {
-    const isHidden = passwordInput.type === 'password';
-    passwordInput.type = isHidden ? 'text' : 'password';
-    togglePasswordBtn.textContent = isHidden ? 'Hide' : 'Show';
-    togglePasswordBtn.setAttribute('aria-pressed', String(isHidden));
+    const show = passwordInput.type === 'password';
+    passwordInput.type = show ? 'text' : 'password';
+    eyeOn.toggleAttribute('hidden', show); // the open eye means "tap to show"
+    eyeOff.toggleAttribute('hidden', !show); // the crossed eye means "tap to hide"
+    togglePasswordBtn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    togglePasswordBtn.setAttribute('aria-pressed', String(show));
   });
 
   // ---------- Forgot password ----------

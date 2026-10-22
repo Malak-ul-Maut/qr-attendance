@@ -2,6 +2,7 @@
 import { getCurrentUser } from '../utils/storage.js';
 import { session } from './state.js';
 import { showToast } from './ui.js';
+import { mountAccountMenu } from './account-menu.js';
 import './today.js';
 import './attendance.js';
 import './profile.js';
@@ -9,7 +10,15 @@ import './profile.js';
 // Today tab. They load the first time they are asked for, or in the background once the page has settled.
 
 const user = getCurrentUser() ?? {}; // auth-guard.js redirects when nobody is signed in
-document.querySelector('.user-name b').textContent = user.name || '';
+mountAccountMenu(document.querySelector('#accountMenu'), {
+  user,
+  role: 'student',
+  // Until the password form becomes a dialog (Stage 5), this opens it on the Profile tab
+  onChangePassword: () => {
+    window.dispatchEvent(new Event('student:change-password'));
+    window.dispatchEvent(new CustomEvent('student:goto', { detail: 'profile' }));
+  },
+});
 
 const tabs = [...document.querySelectorAll('.nav-item')];
 

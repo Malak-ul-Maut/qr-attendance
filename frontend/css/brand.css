@@ -1,0 +1,216 @@
+/* brand.css - the product header, logo mark and campus backdrop shared by the homepage and the login page. */
+
+/* ---------- Page frame: one screen tall, never shorter than the window ---------- */
+.page {
+  position: relative;
+  isolation: isolate; /* keeps the photo's blend mode inside this box */
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--canvas);
+}
+.page > :not(.scene) {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------- Header ---------- */
+.top-inner {
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  color: var(--ink-900);
+  text-decoration: none;
+}
+.brand-mark {
+  flex: none;
+  width: 2.25rem;
+  height: 2.25rem;
+  color: var(--ink-900);
+}
+.brand-name {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+}
+.top-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* The mark is inline SVG so it follows the theme: ink for the QR, the brand red for the checked cell */
+.mk-ring {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3.4;
+}
+.mk-dot {
+  fill: currentColor;
+}
+.mk-cell {
+  fill: var(--red-600);
+}
+.mk-tick {
+  fill: none;
+  stroke: var(--on-red, #fff);
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------- The college, always visible ---------- */
+.institute {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding-right: var(--space-4);
+  border-right: 1px solid var(--line-strong);
+}
+.institute-logo {
+  flex: none;
+  height: 2.25rem;
+  width: auto;
+  padding: 2px;
+  background: #fff; /* the logo is not transparent-friendly; a white chip keeps it clean in dark mode */
+  border-radius: var(--radius-sm);
+}
+.institute-name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--ink-700);
+}
+.inst-short {
+  display: none;
+}
+
+/* ---------- Campus photo that rises out of the page ----------
+   The photo's sky is almost white, so in light mode it is multiplied into the page colour and the sky simply
+   disappears. In dark mode it is dimmed instead. Two masks fade the edges so there is no visible rectangle. */
+.scene {
+  position: absolute;
+  z-index: 0;
+  right: -2vw;
+  bottom: 0;
+  width: min(62vw, 58rem);
+  height: min(86%, 40rem);
+  background: url('../icons/campus.webp') center bottom / cover no-repeat;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  -webkit-mask-image:
+    linear-gradient(to right, transparent 0%, #000 38%),
+    linear-gradient(to bottom, transparent 0%, #000 40%);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to right, transparent 0%, #000 38%),
+    linear-gradient(to bottom, transparent 0%, #000 40%);
+  mask-composite: intersect;
+}
+.scene-left {
+  display: none; /* login: only on tall screens, where it sits below the text (see loginpage.css) */
+  right: auto;
+  left: -2vw;
+  height: min(26%, 14rem);
+  -webkit-mask-image:
+    linear-gradient(to left, transparent 0%, #000 38%),
+    linear-gradient(to bottom, transparent 0%, #000 40%);
+  mask-image:
+    linear-gradient(to left, transparent 0%, #000 38%),
+    linear-gradient(to bottom, transparent 0%, #000 40%);
+}
+:root[data-theme='dark'] .scene {
+  mix-blend-mode: normal;
+  opacity: 0.32;
+  filter: brightness(0.55) saturate(0.8);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .scene {
+    mix-blend-mode: normal;
+    opacity: 0.32;
+    filter: brightness(0.55) saturate(0.8);
+  }
+}
+
+/* ---------- Phones ---------- */
+@media (max-width: 720px) {
+  .top-inner {
+    padding: var(--space-3) var(--space-4);
+  }
+  .top .brand-mark {
+    width: 2rem;
+    height: 2rem;
+  }
+  .top .brand-name {
+    font-size: var(--text-base);
+  }
+  .top .institute {
+    padding-right: var(--space-3);
+  }
+  .top .institute-logo {
+    height: 1.75rem;
+  }
+  .top .inst-full {
+    display: none;
+  }
+  .top .inst-short {
+    display: inline;
+  }
+  .scene {
+    width: 100vw;
+    right: 0;
+    height: 46%;
+    opacity: 0.55;
+  }
+  .page-foot {
+    background: var(--canvas); /* solid first; the translucent version below needs a newer browser */
+    background: color-mix(in srgb, var(--canvas) 88%, transparent);
+    backdrop-filter: blur(4px);
+    max-width: none;
+    padding-top: var(--space-3);
+  }
+}
+@media (max-width: 460px) {
+  /* Two rows: the product and the theme switch on top, the full college name underneath */
+  .top-inner {
+    flex-wrap: wrap;
+    row-gap: var(--space-2);
+  }
+  .top-right {
+    display: contents;
+  }
+  .top .brand {
+    order: 1;
+  }
+  .top .theme-switch {
+    order: 2;
+    margin-left: auto;
+  }
+  .top .institute {
+    order: 3;
+    flex-basis: 100%;
+    padding: 0;
+    border-right: none;
+  }
+  .top .inst-full {
+    display: inline;
+  }
+  .top .inst-short {
+    display: none;
+  }
+}

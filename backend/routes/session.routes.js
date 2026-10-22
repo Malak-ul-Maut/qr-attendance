@@ -184,7 +184,7 @@ async function roomBusy(roomId, date, slotId, sessionCode) {
 
 // targets: [{ timetableId|null, slotId, subjectId, roomId|null, kind, classes: [{ class_id, batch }] }]
 // All targets share one session code (one QR, one submit), e.g. a double lecture.
-async function startSessions({ date, facultyDbId, method, targets, mergeClassIds = [] }) {
+async function startSessions({ date, facultyDbId, method, targets }) {
   // Sessions already open for these periods (the faculty is resuming after a reload).
   for (const target of targets) {
     const classMarks = target.classes.map(() => '?').join(', ');
@@ -249,16 +249,6 @@ async function startSessions({ date, facultyDbId, method, targets, mergeClassIds
             [session.lastID, cls.class_id, cls.batch ?? null],
           );
         }
-        // Merged classes join the first period of a brand new session (whole class).
-        if (index === 0 && !resumed) {
-          const own = new Set(target.classes.map(cls => cls.class_id));
-          for (const classId of mergeClassIds.filter(id => !own.has(id))) {
-            await dbRun(
-              `INSERT INTO session_classes (session_id, class_id, batch, merged) VALUES (?, ?, NULL, 1)`,
-              [session.lastID, classId],
-            );
-          }
-        }
         // Everyone in the covered class(es)/batch starts as "not marked yet" (= absent).
         await dbRun(
           `
@@ -289,7 +279,7 @@ async function startSessions({ date, facultyDbId, method, targets, mergeClassIds
     if (SLOT_CLASH.test(err.message)) {
       // Say who holds the period instead of a bare error.
       for (const target of missing) {
-        const ids = [...target.classes.map(c => c.class_id), ...mergeClassIds];
+        const ids = target.classes.map(c => c.class_id);
         const holder = await findSlotHolder(date, target.slotId, ids, facultyDbId);
         if (holder) throw fail(409, 'slot_taken', { takenBy: holder.name });
       }
@@ -375,7 +365,7 @@ async function readRoomChoice(value) {
 // Start session for one of the faculty's own planned periods.
 // The timetable row decides which classes and batch the session is for. Optional extras:
 //   roomId         the room it is really held in (defaults to the timetable's room; CCTV uses its camera)
-//   mergeClassIds  other classes sitting in on this period (their own faculty can no longer start it)
+// Merging other classes is done with an Extra session (POST /arranged), not here.
 // Starting the same period again on the same day resumes the open session.
 router.post('/start', async (req, res) => {
   const { date, slotId, facultyId, method = 'qr' } = req.body;
@@ -394,7 +384,6 @@ router.post('/start', async (req, res) => {
 
   try {
     const roomChoice = await readRoomChoice(req.body.roomId);
-    const mergeClassIds = uniqueIds(req.body.mergeClassIds).slice(0, 8);
 
     const facultyDbId = await resolveFacultyId(facultyId);
     if (!facultyDbId)
@@ -427,7 +416,7 @@ router.post('/start', async (req, res) => {
     }
 
     return res.json(
-      await startSessions({ date, facultyDbId, method, targets, mergeClassIds }),
+      await startSessions({ date, facultyDbId, method, targets }),
     );
   } catch (err) {
     return sendStartError(res, err);
@@ -498,6 +487,8 @@ router.post('/arranged', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'invalid_slot' });
 
     const plannedDay = weekdayName(date); // null on a Saturday: nothing is planned
+    // Only a period with a faculty and a subject that takes attendance counts as "planned". A row with no
+    // faculty (TRAINING, PLACEMENT PREP) or a subject without attendance is free for an Extra session.
     const targets = [];
     for (const slotId of slotIds) {
       const rows = plannedDay
@@ -505,7 +496,10 @@ router.post('/arranged', async (req, res) => {
             `SELECT DISTINCT timetable.id, timetable.faculty_id, timetable.subject_id, timetable.room_id
              FROM timetable
              JOIN timetable_classes ON timetable_classes.timetable_id = timetable.id
-             WHERE timetable.day = ? AND timetable.slot_id = ? AND timetable.valid_from <= ?
+             JOIN subjects ON subjects.id = timetable.subject_id
+             WHERE timetable.day = ? AND timetable.slot_id = ?
+               AND timetable.faculty_id IS NOT NULL AND subjects.takes_attendance = 1
+               AND timetable.valid_from <= ?
                AND (timetable.valid_to IS NULL OR timetable.valid_to >= ?)
                AND timetable_classes.class_id IN (${classMarks})
              ORDER BY timetable.id`,
@@ -597,60 +591,6 @@ router.get('/rooms', async (req, res) => {
   }
 });
 
-// Classes that could sit in on the faculty's period (merge): the other classes of the same term,
-// with who the timetable plans for them in that period and whether someone has already taken them.
-router.get('/merge-options', async (req, res) => {
-  const { date, slotId, faculty_id } = req.query;
-  const day = weekdayName(date);
-  const slot = Number(slotId);
-  if (!day || !Number.isInteger(slot)) return res.json([]);
-  try {
-    const facultyDbId = await resolveFacultyId(faculty_id);
-    if (!facultyDbId) return res.json([]);
-    const base = await dbAll(
-      `SELECT DISTINCT timetable_classes.class_id AS id
-       FROM timetable JOIN timetable_classes ON timetable_classes.timetable_id = timetable.id
-       WHERE timetable.faculty_id = ? AND timetable.day = ? AND timetable.slot_id = ?
-         AND timetable.valid_from <= ? AND (timetable.valid_to IS NULL OR timetable.valid_to >= ?)`,
-      [facultyDbId, day, slot, date, date],
-    );
-    if (base.length === 0) return res.json([]);
-    const baseIds = base.map(row => row.id);
-    const marks = baseIds.map(() => '?').join(', ');
-    const rows = await dbAll(
-      `
-      SELECT classes.id AS class_id, courses.abbr AS course, branches.abbr AS branch,
-        classes.semester, classes.section,
-        (SELECT faculties.name FROM sessions
-           JOIN session_classes ON session_classes.session_id = sessions.id
-           LEFT JOIN faculties ON faculties.id = sessions.faculty_id
-          WHERE session_classes.class_id = classes.id AND sessions.date = ? AND sessions.slot_id = ?
-          LIMIT 1) AS busy_by,
-        (SELECT subjects.abbr || ' · ' || COALESCE(faculties.abbr, '?')
-           FROM timetable
-           JOIN timetable_classes ON timetable_classes.timetable_id = timetable.id
-            AND timetable_classes.class_id = classes.id
-           JOIN subjects ON subjects.id = timetable.subject_id
-           LEFT JOIN faculties ON faculties.id = timetable.faculty_id
-          WHERE timetable.day = ? AND timetable.slot_id = ? AND timetable.valid_from <= ?
-            AND (timetable.valid_to IS NULL OR timetable.valid_to >= ?)
-          LIMIT 1) AS planned
-      FROM classes
-      JOIN branches ON branches.id = classes.branch_id
-      JOIN courses ON courses.id = branches.course_id
-      WHERE classes.academic_session IN (SELECT academic_session FROM classes WHERE id IN (${marks}))
-        AND classes.id NOT IN (${marks})
-      ORDER BY courses.abbr, branches.abbr, classes.semester, classes.section
-      `,
-      [date, slot, day, slot, date, date, ...baseIds, ...baseIds],
-    );
-    return res.json(rows);
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ ok: false, error: 'database_error' });
-  }
-});
-
 // Arranged class, step 1: the classes and subjects this faculty teaches (with each class's home room).
 router.get('/arranged/options', async (req, res) => {
   const { date, faculty_id } = req.query;
@@ -711,7 +651,8 @@ router.get('/arranged/slots', async (req, res) => {
     const planned = day
       ? await dbAll(
           `SELECT DISTINCT timetable.id, timetable.slot_id, timetable.faculty_id,
-                  faculties.name AS faculty, subjects.abbr AS subject
+                  faculties.name AS faculty, subjects.abbr AS subject,
+                  (timetable.faculty_id IS NOT NULL AND subjects.takes_attendance = 1) AS counts
            FROM timetable
            JOIN timetable_classes ON timetable_classes.timetable_id = timetable.id
            JOIN subjects ON subjects.id = timetable.subject_id
@@ -723,7 +664,7 @@ router.get('/arranged/slots', async (req, res) => {
         )
       : [];
     const partial = new Set();
-    for (const row of planned) {
+    for (const row of planned.filter(row => row.counts)) {
       const outside = await dbGet(
         `SELECT 1 AS found FROM timetable_classes
          WHERE timetable_id = ? AND class_id NOT IN (${marks}) LIMIT 1`,
@@ -743,7 +684,9 @@ router.get('/arranged/slots', async (req, res) => {
     return res.json(
       slots.map(slot => {
         const holders = held.filter(row => row.slot_id === slot.id);
-        const rows = planned.filter(row => row.slot_id === slot.id);
+        const all = planned.filter(row => row.slot_id === slot.id);
+        // A period with no faculty, or a subject that takes no attendance, is free to use.
+        const rows = all.filter(row => row.counts);
         const lender = rows.filter(row => row.faculty_id !== facultyDbId);
         const names = [...new Set(lender.map(row => row.faculty || 'another faculty'))].join(', ');
         const subjects = [...new Set(rows.map(row => row.subject))].join(', ');
@@ -757,7 +700,8 @@ router.get('/arranged/slots', async (req, res) => {
         if (lender.length)
           return { ...slot, status: 'borrow', note: `Borrow from ${names} (${subjects})` };
         if (rows.length) return { ...slot, status: 'own', note: `Your period (${subjects})` };
-        return { ...slot, status: 'free', note: 'Free' };
+        const idle = [...new Set(all.map(row => row.subject))].join(', ');
+        return { ...slot, status: 'free', note: idle ? `Free (${idle}, no attendance)` : 'Free' };
       }),
     );
   } catch (err) {

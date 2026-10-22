@@ -55,8 +55,7 @@ pip install insightface openvino opencv-python numpy gdown uvicorn
 ### 4. Build frontend:
 
 ```bash
-cd backend
-node scripts/build-frontend.mjs --proxy=https://scrimmage-unlucky-dispersed.ngrok-free.dev --assets=https://cdn.jsdelivr.net/gh/malak-ul-maut/qr-attendance@v1/frontend
+npm run build
 ```
 
 The build creates one `frontend-dist` folder with the optimized site, local Brotli files, Cloudflare headers, and an `index.html`. The three large face-engine WASM/model files are omitted from the build and fetched from the CDN only, so `--assets` is required and the built site needs CDN access for face verification. The generated Cloudflare Worker serves this same folder and forwards API traffic to the tunnel.

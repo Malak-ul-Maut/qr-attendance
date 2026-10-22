@@ -121,7 +121,7 @@
 
 .slider-row { display: flex; align-items: center; gap: var(--space-3); max-width: 32rem; width: 100%; margin: 0 auto; }
 .slider-row[hidden] { display: none; }
-.slider-icon { flex: none; width: var(--touch-target); height: var(--touch-target); display: grid; place-items: center; padding: 0; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 50%; cursor: pointer; }
+.slider-icon { flex: none; width: var(--touch-target); height: var(--touch-target); display: grid; place-items: center; padding: 0; background: var(--surface); border: 1px solid var(--control-edge); border-radius: 50%; cursor: pointer; }
 .slider-icon img { width: 20px; height: 20px; }
 :root[data-theme='dark'] .slider-icon img { filter: invert(1); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme='light']) .slider-icon img { filter: invert(1); } }

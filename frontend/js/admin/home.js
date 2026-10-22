@@ -1,5 +1,6 @@
 // home.js - analytics: attendance trend, per-class / per-subject bars, low attendance, recent sessions.
 import { $, h, api, createDataTable, downloadCsv, showToast, announce, errorText } from './core.js';
+import { fmtClock, fmtDate, fmtDayMonth } from '../format.js';
 
 const pct = (present, total) => (total ? Math.round((present / total) * 100) : 0);
 const level = value => (value >= 75 ? 'good' : value >= 60 ? 'mid' : 'low');
@@ -47,12 +48,11 @@ function barList(mount, rows, empty, onOpen) {
       })));
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const longDate = iso => `${iso.slice(8, 10)} ${MONTHS[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}`;
+const longDate = fmtDate; // DD/MM/YYYY
 // Times are saved by SQLite in UTC ("2026-10-07 09:15:00"); show them in the viewer's own time zone
 const toDate = sql => (sql ? new Date(String(sql).replace(' ', 'T') + 'Z') : null);
-const timeOf = sql => { const d = toDate(sql); return d && !Number.isNaN(d.getTime()) ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''; };
-const shortDate = iso => `${iso.slice(8, 10)} ${MONTHS[Number(iso.slice(5, 7)) - 1]}`;
+const timeOf = sql => { const d = toDate(sql); return d && !Number.isNaN(d.getTime()) ? fmtClock(d) : ''; };
+const shortDate = iso => fmtDayMonth(iso, false); // chart axis: "5 Oct"
 
 // The chart is drawn at the width it is shown at, so text stays a real 12px on phones
 // (a fixed 640px drawing shrinks to about 6px text on a 360px screen).

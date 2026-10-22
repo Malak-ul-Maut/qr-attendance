@@ -3,70 +3,124 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Sign in | Attendance System</title>
-
+    <meta name="theme-color" content="#f4f5f7" />
+    <link rel="icon" href="brand/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="icons/qr-code.png" />
     <script src="/utils/runtime-config.js"></script>
+    <script src="utils/brand-config.js"></script>
     <script src="js/theme.js"></script>
+    <link rel="preload" href="fonts/inter-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="css/tokens.css" />
     <link rel="stylesheet" href="css/components.css" />
+    <link rel="stylesheet" href="css/brand.css" />
+    <title>Sign in | Smart Attendance Marker</title>
     <link rel="stylesheet" href="css/loginpage.css" />
 
     <link rel="modulepreload" href="js/login-page.js" />
     <link rel="modulepreload" href="utils/fetch.js" />
     <link rel="modulepreload" href="utils/storage.js" />
     <link rel="modulepreload" href="js/ui.js" />
+    <script defer src="js/brand.js"></script>
     <script defer src="js/login-page.js" type="module"></script>
   </head>
 
-  <body>
-    <main class="login-page">
-      <button
-        class="icon-btn theme-toggle login-theme-toggle"
-        type="button"
-        aria-pressed="false"
-        aria-label="Switch to dark theme">
-        <svg
-          class="icon-moon"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.8"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true">
-          <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" />
-        </svg>
-        <svg
-          class="icon-sun"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.8"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true">
-          <circle cx="12" cy="12" r="4" />
-          <path
-            d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-        </svg>
-      </button>
-      <a class="login-brand" href="homepage.html">
-        <img
-          src="icons/mit-logo.webp"
-          alt="Meerut Institute of Technology, back to home" />
-      </a>
+  <body class="auth-page">
+    <div class="page">
+      <div class="scene scene-left" aria-hidden="true"></div>
 
-      <section class="login-card card">
-        <div class="login-banner" aria-hidden="true"></div>
+    <header class="top">
+      <div class="top-inner">
+        <a class="brand" href="homepage.html">
+          <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+            <g class="mk-ring"><rect x="5.7" y="5.7" width="12.6" height="12.6" rx="3" /><rect x="29.7" y="5.7" width="12.6" height="12.6" rx="3" /><rect x="5.7" y="29.7" width="12.6" height="12.6" rx="3" /></g>
+            <g class="mk-dot"><rect x="9.6" y="9.6" width="4.8" height="4.8" rx="1.2" /><rect x="33.6" y="9.6" width="4.8" height="4.8" rx="1.2" /><rect x="9.6" y="33.6" width="4.8" height="4.8" rx="1.2" /></g>
+            <rect class="mk-cell" x="28" y="28" width="16" height="16" rx="4" />
+            <path class="mk-tick" d="M31.6 36.4l3.6 3.6 6-7.2" />
+          </svg>
+          <span class="brand-name" data-brand="product-name">Smart Attendance Marker</span>
+        </a>
+        <div class="top-right">
+          <div class="institute">
+            <img class="institute-logo" data-brand-logo src="icons/mit-logo.webp" alt="" width="46" height="36" />
+            <span class="institute-name">
+              <span class="inst-full" data-brand="institute-name">Meerut Institute of Technology</span>
+              <span class="inst-short" data-brand="institute-short">MIT Meerut</span>
+            </span>
+          </div>
+          <button class="theme-switch" type="button" role="switch" aria-checked="false" aria-label="Dark theme">
+            <span class="theme-switch-track" aria-hidden="true">
+              <svg class="ts-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>
+              <svg class="ts-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" /></svg>
+              <span class="theme-switch-thumb"></span>
+            </span>
+          </button>
+        </div>
+      </div>
+    </header>
 
-        <div class="login-body">
+      <main class="auth">
+        <section class="auth-hero" aria-labelledby="heroTitle">
+          <div class="art-wrap">
+          <svg class="art" data-art="student" viewBox="0 0 360 260" aria-hidden="true" hidden>
+            <circle cx="180" cy="132" r="108" class="il-soft" />
+            <rect x="128" y="26" width="104" height="208" rx="20" class="il-panel" />
+            <rect x="163" y="37" width="34" height="5" rx="2.5" class="il-bar" />
+            <g class="il-bracket"><path d="M148 74V71Q148 62 157 62H160"/><path d="M200 62H203Q212 62 212 71V74"/><path d="M212 114V117Q212 126 203 126H200"/><path d="M160 126H157Q148 126 148 117V114"/></g>
+            <rect x="159.6" y="73.6" width="12.8" height="12.8" rx="2.3" class="il-qr-ring"/><rect x="163.9" y="77.9" width="4.3" height="4.3" class="il-qr"/><rect x="187.6" y="73.6" width="12.8" height="12.8" rx="2.3" class="il-qr-ring"/><rect x="191.9" y="77.9" width="4.3" height="4.3" class="il-qr"/><rect x="159.6" y="101.6" width="12.8" height="12.8" rx="2.3" class="il-qr-ring"/><rect x="163.9" y="105.9" width="4.3" height="4.3" class="il-qr"/><rect x="159.7" y="97.0" width="3.3" height="3.3" rx="1" class="il-qr"/><rect x="173.7" y="92.4" width="3.3" height="3.3" rx="1" class="il-qr"/><rect x="173.7" y="106.4" width="3.3" height="3.3" rx="1" class="il-qr"/><rect x="173.7" y="111.0" width="3.3" height="3.3" rx="1" class="il-qr"/><rect x="178.4" y="83.0" width="3.3" height="3.3" rx="1" class="il-qr"/><rect x="178.4" y="92.4" width="3.3" height="3.3" rx="1" class="il-qr"/><rect x="183.0" y="73.7" width="3.3" height="3.3" rx="1" class="il-qr"/><rect x="183.0" y="87.7" width="3.3" height="3.3" rx="1" class="il-qr"/><rect x="187.7" y="87.7" width="3.3" height="3.3" rx="1" class="il-qr"/><rect x="192.4" y="87.7" width="3.3" height="3.3" rx="1" class="il-qr"/><rect x="192.4" y="92.4" width="3.3" height="3.3" rx="1" class="il-qr"/><rect x="192.4" y="111.0" width="3.3" height="3.3" rx="1" class="il-qr"/><rect x="197.0" y="87.7" width="3.3" height="3.3" rx="1" class="il-qr"/><rect x="197.0" y="97.0" width="3.3" height="3.3" rx="1" class="il-qr"/><rect x="197.0" y="111.0" width="3.3" height="3.3" rx="1" class="il-qr"/>
+            <rect x="146" y="148" width="68" height="26" rx="13" class="il-ok-soft" />
+            <path d="M158 161l5 5 9-10" class="il-ok-stroke" />
+            <rect x="180" y="157" width="24" height="8" rx="4" class="il-bar" />
+            <rect x="150" y="188" width="60" height="8" rx="4" class="il-bar" />
+            <rect x="158" y="204" width="44" height="8" rx="4" class="il-bar" />
+            <g transform="translate(250 64)">
+              <rect width="80" height="80" rx="16" class="il-panel" />
+              <g class="il-bracket"><path d="M14 24V21Q14 14 21 14H24"/><path d="M56 14H59Q66 14 66 21V24"/><path d="M66 56V59Q66 66 59 66H56"/><path d="M24 66H21Q14 66 14 59V56"/></g>
+              <circle cx="40" cy="34" r="9" class="il-ink" />
+              <path d="M24 56c2-8 8-11 16-11s14 3 16 11" class="il-ink" />
+              <circle cx="66" cy="66" r="13" class="il-ok" />
+              <path d="M60 66l4.200 4.200 7.800-8.500" class="il-tick" />
+            </g>
+            <g transform="translate(30 142)">
+              <rect width="80" height="80" rx="16" class="il-panel" />
+              <circle cx="40" cy="40" r="20" class="il-track" />
+              <circle cx="40" cy="40" r="20" class="il-ring" stroke-dasharray="98 126" transform="rotate(-90 40 40)" />
+              <rect x="26" y="66" width="28" height="5" rx="2.5" class="il-bar" />
+            </g>
+          </svg>
+          <svg class="art" data-art="faculty" viewBox="0 0 360 260" aria-hidden="true" hidden>
+            <circle cx="180" cy="128" r="108" class="il-soft" />
+            <rect x="34" y="36" width="292" height="176" rx="14" class="il-panel" />
+            <path d="M34 62h292" class="il-rule" />
+            <circle cx="52" cy="49" r="4" class="il-red" /><rect x="64" y="45" width="56" height="8" rx="4" class="il-bar" />
+            <rect x="268" y="43" width="44" height="12" rx="6" class="il-ok-soft" />
+            <g class="il-bracket"><path d="M50 94V88Q50 78 60 78H66"/><path d="M158 78H164Q174 78 174 88V94"/><path d="M174 186V192Q174 202 164 202H158"/><path d="M66 202H60Q50 202 50 192V186"/></g>
+            <rect x="62.6" y="90.6" width="32.1" height="32.1" rx="5.6" class="il-qr-ring"/><rect x="73.3" y="101.3" width="10.7" height="10.7" class="il-qr"/><rect x="129.3" y="90.6" width="32.1" height="32.1" rx="5.6" class="il-qr-ring"/><rect x="140.0" y="101.3" width="10.7" height="10.7" class="il-qr"/><rect x="62.6" y="157.3" width="32.1" height="32.1" rx="5.6" class="il-qr-ring"/><rect x="73.3" y="168.0" width="10.7" height="10.7" class="il-qr"/><rect x="62.7" y="146.3" width="9.7" height="9.7" rx="1" class="il-qr"/><rect x="84.9" y="146.3" width="9.7" height="9.7" rx="1" class="il-qr"/><rect x="96.0" y="90.7" width="9.7" height="9.7" rx="1" class="il-qr"/><rect x="96.0" y="135.1" width="9.7" height="9.7" rx="1" class="il-qr"/><rect x="96.0" y="146.3" width="9.7" height="9.7" rx="1" class="il-qr"/><rect x="96.0" y="168.5" width="9.7" height="9.7" rx="1" class="il-qr"/><rect x="96.0" y="179.6" width="9.7" height="9.7" rx="1" class="il-qr"/><rect x="107.1" y="90.7" width="9.7" height="9.7" rx="1" class="il-qr"/><rect x="118.3" y="112.9" width="9.7" height="9.7" rx="1" class="il-qr"/><rect x="118.3" y="135.1" width="9.7" height="9.7" rx="1" class="il-qr"/><rect x="118.3" y="157.4" width="9.7" height="9.7" rx="1" class="il-qr"/><rect x="129.4" y="124.0" width="9.7" height="9.7" rx="1" class="il-qr"/><rect x="129.4" y="135.1" width="9.7" height="9.7" rx="1" class="il-qr"/><rect x="129.4" y="146.3" width="9.7" height="9.7" rx="1" class="il-qr"/><rect x="129.4" y="157.4" width="9.7" height="9.7" rx="1" class="il-qr"/><rect x="140.5" y="146.3" width="9.7" height="9.7" rx="1" class="il-qr"/><rect x="140.5" y="168.5" width="9.7" height="9.7" rx="1" class="il-qr"/><rect x="151.6" y="124.0" width="9.7" height="9.7" rx="1" class="il-qr"/><rect x="151.6" y="135.1" width="9.7" height="9.7" rx="1" class="il-qr"/><rect x="151.6" y="168.5" width="9.7" height="9.7" rx="1" class="il-qr"/>
+            <circle cx="200" cy="88" r="8" class="il-avatar" /><rect x="216" y="83" width="58" height="10" rx="5" class="il-bar" /><circle cx="302" cy="88" r="9" class="il-ok" /><path d="M297.500 88l3 3 5.500-6" class="il-tick" /><circle cx="200" cy="118" r="8" class="il-avatar" /><rect x="216" y="113" width="46" height="10" rx="5" class="il-bar" /><circle cx="302" cy="118" r="9" class="il-ok" /><path d="M297.500 88l3 3 5.500-6" class="il-tick" /><circle cx="200" cy="148" r="8" class="il-avatar" /><rect x="216" y="143" width="58" height="10" rx="5" class="il-bar" /><circle cx="302" cy="148" r="9" class="il-ok" /><path d="M297.500 88l3 3 5.500-6" class="il-tick" /><circle cx="200" cy="178" r="8" class="il-avatar" /><rect x="216" y="173" width="46" height="10" rx="5" class="il-bar" /><circle cx="302" cy="178" r="9" class="il-track" />
+            <path d="M178 212v18M138 232h80" class="il-ink" />
+          </svg>
+          <svg class="art" data-art="admin" viewBox="0 0 360 260" aria-hidden="true" hidden>
+            <circle cx="180" cy="130" r="108" class="il-soft" />
+            <rect x="30" y="34" width="300" height="192" rx="14" class="il-panel" />
+            <path d="M30 34h56v192H44a14 14 0 0 1-14-14z" class="il-side" />
+            <rect x="42" y="52" width="32" height="8" rx="4" class="il-red" />
+            <rect x="42" y="74" width="32" height="6" rx="3" class="il-bar" /><rect x="42" y="90" width="26" height="6" rx="3" class="il-bar" /><rect x="42" y="106" width="30" height="6" rx="3" class="il-bar" />
+            <rect x="104" y="50" width="86" height="9" rx="4.500" class="il-ink-fill" />
+            <rect x="106" y="100" width="13" height="96" rx="3" class="il-red" /><rect x="127" y="138" width="13" height="58" rx="3" class="il-bar" /><rect x="148" y="112" width="13" height="84" rx="3" class="il-red" /><rect x="169" y="92" width="13" height="104" rx="3" class="il-red" /><rect x="190" y="126" width="13" height="70" rx="3" class="il-bar" />
+            <path d="M104 142H206" class="il-dash" />
+            <rect x="214" y="50" width="100" height="9" rx="4.500" class="il-bar" />
+            <rect x="214" y="92" width="28" height="20" rx="4" class="il-red-soft" /><rect x="248" y="92" width="28" height="20" rx="4" class="il-cell" /><rect x="282" y="92" width="28" height="20" rx="4" class="il-cell" /><rect x="214" y="120" width="28" height="20" rx="4" class="il-cell" /><rect x="248" y="120" width="28" height="20" rx="4" class="il-red-soft" /><rect x="282" y="120" width="28" height="20" rx="4" class="il-cell" /><rect x="214" y="148" width="28" height="20" rx="4" class="il-cell" /><rect x="248" y="148" width="28" height="20" rx="4" class="il-red-soft" /><rect x="282" y="148" width="28" height="20" rx="4" class="il-cell" /><rect x="214" y="176" width="28" height="20" rx="4" class="il-cell" /><rect x="248" y="176" width="28" height="20" rx="4" class="il-red-soft" /><rect x="282" y="176" width="28" height="20" rx="4" class="il-cell" />
+            <path d="M104 204h102" class="il-rule" />
+          </svg>
+          </div>
+          <h2 id="heroTitle" data-role-headline></h2>
+          <p data-role-sub></p>
+        </section>
+
+        <section class="login-card card" aria-labelledby="signInTitle">
           <a class="back-link" href="homepage.html">Change role</a>
 
-          <h1 class="signInMsg">Sign in</h1>
-          <p class="login-sub">
-            Use the username and password given by your college.
-          </p>
+          <h1 id="signInTitle" class="signInMsg">Sign in</h1>
+          <p class="login-sub">Use the username and password from your college.</p>
 
           <form id="loginForm" novalidate>
             <div class="field">
@@ -92,8 +146,10 @@
                   class="input-toggle"
                   id="togglePassword"
                   type="button"
+                  aria-label="Show password"
                   aria-pressed="false">
-                  Show
+                  <svg class="eye-on" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>
+                  <svg class="eye-off" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><path d="M3 3l18 18" /><path d="M10.600 5.100A10.500 10.500 0 0 1 12 5c6.400 0 10 7 10 7a17 17 0 0 1-3.200 4.200M6.600 6.600A16.600 16.600 0 0 0 2 12s3.600 7 10 7a9.800 9.800 0 0 0 4.200-.9" /><path d="M9.900 9.900a3 3 0 0 0 4.200 4.200" /></svg>
                 </button>
               </div>
             </div>
@@ -115,8 +171,8 @@
               Forgot password?
             </button>
           </form>
-        </div>
-      </section>
-    </main>
+        </section>
+      </main>
+    </div>
   </body>
 </html>

@@ -285,7 +285,7 @@ fieldset.field legend { padding: 0; font-weight: 600; font-size: var(--text-sm);
 #ttPrintArea { display: none; }
 @media print {
   @page { size: A4 landscape; margin: 8mm; }
-  .app-header, header, nav, .adm-head, #ttFilters, .adm-help, .adm-add, .adm-add-mini, .adm-shared, .toast, .logout-btn { display: none !important; }
+  .app-header, header, nav, .adm-head, #ttFilters, .adm-help, .adm-add, .adm-add-mini, .adm-shared, .toast, .account { display: none !important; }
   body.tt-printing > *:not(#ttPrintArea) { display: none !important; }
   body.tt-printing #ttPrintArea { display: block; }
   body, .adm-tt-wrap { background: #fff !important; }
@@ -335,8 +335,6 @@ fieldset.field legend { padding: 0; font-weight: 600; font-size: var(--text-sm);
 /* ---- Tap targets: 44px on phones and touch screens ---- */
 @media (max-width: 600px), (pointer: coarse) {
   .btn-sm { min-height: var(--touch-target); }
-  .app-header .logout-btn { min-height: var(--touch-target); }
-  .app-header .theme-toggle { width: var(--touch-target); height: var(--touch-target); }
 }
 
 /* ---- Home: five stat cards on two columns leave a gap; the last odd card takes the full row ---- */

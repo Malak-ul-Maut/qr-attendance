@@ -59,6 +59,11 @@ a {
 }
 
 /* Lets keyboard users jump past the header */
+/* The browser's built-in [hidden] rule only covers HTML elements, so SVG icons need their own */
+svg[hidden] {
+  display: none;
+}
+
 .skip-link {
   position: absolute;
   left: var(--space-4);
@@ -105,7 +110,7 @@ a {
 .btn-secondary {
   background: var(--surface);
   color: var(--ink-900);
-  border-color: var(--line-strong);
+  border-color: var(--control-edge);
   --spinner-color: var(--ink-900);
 }
 .btn-secondary:hover {
@@ -171,7 +176,7 @@ a {
   font: inherit;
   color: var(--ink-900);
   background: var(--surface);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--control-edge);
   border-radius: var(--radius-md);
   transition: border-color 0.15s;
 }
@@ -190,36 +195,37 @@ a {
   border-color: var(--danger-600);
 }
 
-/* Input with a button on its right edge (used for show/hide password) */
+/* Input with an icon button inside its right edge (show / hide password) */
 .input-group {
   position: relative;
 }
 .input-group .input {
-  padding-right: 4.5rem;
+  padding-right: calc(var(--touch-target) + var(--space-1));
 }
 .input-group .input-toggle {
   position: absolute;
   top: 0;
   right: 0;
+  width: var(--touch-target);
   height: 100%;
-  padding: 0 var(--space-4);
-  font: inherit;
-  font-size: var(--text-sm);
-  font-weight: 600;
+  display: grid;
+  place-items: center;
+  padding: 0;
   color: var(--ink-500);
   background: none;
   border: none;
   border-radius: 0 var(--radius-md) var(--radius-md) 0;
   cursor: pointer;
 }
-.input-group .input-toggle:hover {
+.input-group .input-toggle:hover,
+.input-group .input-toggle[aria-pressed='true'] {
   color: var(--ink-900);
 }
 
 /* ---------- Cards ---------- */
 .card {
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1px solid var(--card-edge);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
 }
@@ -251,6 +257,24 @@ a {
   font-size: 0.8rem;
   color: var(--on-red, #fff);
   background: var(--danger-600);
+  border-radius: 50%;
+}
+
+.alert-warning {
+  color: var(--warning-600);
+  background: var(--warning-50);
+}
+.alert-warning::before {
+  content: '!';
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: var(--surface);
+  background: var(--warning-600);
   border-radius: 50%;
 }
 
@@ -350,7 +374,7 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 
 /* Either/or choice built from radio buttons: label > input + span */
-.segmented { display: flex; border: 1px solid var(--line-strong); border-radius: var(--radius-md); overflow: hidden; }
+.segmented { display: flex; border: 1px solid var(--control-edge); border-radius: var(--radius-md); overflow: hidden; }
 .segmented label { position: relative; flex: 1; }
 .segmented input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .segmented span { display: grid; place-items: center; min-height: var(--touch-target); font-weight: 600; color: var(--ink-700); }
@@ -398,8 +422,16 @@ select.input { padding-right: var(--space-3); }
 /* Placeholder-sized focus: dialogs and cards that receive programmatic focus show no stray ring */
 dialog:focus { outline: none; }
 
+/* While a dialog is open the page behind it stays put (needs :has; older browsers simply scroll behind it) */
+body:has(dialog[open]) { overflow: hidden; }
+dialog.dialog { overscroll-behavior: contain; }
+/* A form dialog with unsaved edits shakes instead of closing when the dark area is clicked (utils/dialog.js) */
+@keyframes dialog-nudge { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+dialog.dialog[data-nudge] { animation: dialog-nudge 0.3s ease; }
+@media (prefers-reduced-motion: reduce) { dialog.dialog[data-nudge] { animation: none; outline: 2px solid var(--red-600); } }
+
 /* Icon-only or small controls get a full-size tap area */
-.icon-btn { display: inline-grid; place-items: center; width: var(--touch-target); height: var(--touch-target); padding: 0; color: var(--ink-700); background: none; border: 1px solid var(--line-strong); border-radius: var(--radius-md); cursor: pointer; }
+.icon-btn { display: inline-grid; place-items: center; width: var(--touch-target); height: var(--touch-target); padding: 0; color: var(--ink-700); background: none; border: 1px solid var(--control-edge); border-radius: var(--radius-md); cursor: pointer; }
 .icon-btn:hover { background: var(--canvas); color: var(--ink-900); }
 .icon-btn svg { width: 20px; height: 20px; }
 .theme-toggle .icon-sun { display: none; }
@@ -408,6 +440,63 @@ dialog:focus { outline: none; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) .theme-toggle .icon-sun { display: block; }
   :root:not([data-theme='light']) .theme-toggle .icon-moon { display: none; }
+}
+
+/* ---------- Theme switch ----------
+   A real on/off switch (role="switch", aria-checked). On means dark. The sun and moon sit inside the track
+   and the thumb slides over the one that is not active. theme.js keeps aria-checked in step with the theme. */
+.theme-switch {
+  display: inline-flex;
+  align-items: center;
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.theme-switch-track {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 3.5rem;
+  height: 1.875rem;
+  padding: 0 0.4rem;
+  color: var(--ink-500);
+  background: var(--surface);
+  border: 1px solid var(--control-edge);
+  border-radius: 999px;
+}
+.theme-switch-track svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+.theme-switch-thumb {
+  position: absolute;
+  top: 50%;
+  left: 0.2rem;
+  width: 1.875rem;
+  height: 1.375rem;
+  margin-top: -0.6875rem;
+  background: var(--ink-900);
+  border-radius: 999px;
+  transition: transform 0.18s ease;
+}
+.theme-switch[aria-checked='true'] .theme-switch-thumb {
+  transform: translateX(1.2rem);
+}
+/* The icon under the thumb is hidden; the other one stays visible as the label for the other state */
+.theme-switch[aria-checked='false'] .ts-sun,
+.theme-switch[aria-checked='true'] .ts-moon {
+  visibility: hidden;
+}
+.theme-switch:focus-visible .theme-switch-track {
+  outline: 3px solid var(--ink-900);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .theme-switch-thumb { transition: none; }
 }
 
 /* Long words/emails never push a card wider than the screen */

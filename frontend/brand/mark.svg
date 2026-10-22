@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <title>Smart Attendance Marker: QR with a checked corner</title>
+  <g stroke="#202328" stroke-width="3.4"><rect x="5.7" y="5.7" width="12.6" height="12.6" rx="3"/><rect x="29.7" y="5.7" width="12.6" height="12.6" rx="3"/><rect x="5.7" y="29.7" width="12.6" height="12.6" rx="3"/></g>
+  <g fill="#202328"><rect x="9.6" y="9.6" width="4.8" height="4.8" rx="1.2"/><rect x="33.6" y="9.6" width="4.8" height="4.8" rx="1.2"/><rect x="9.6" y="33.6" width="4.8" height="4.8" rx="1.2"/></g>
+  <rect x="28" y="28" width="16" height="16" rx="4" fill="#d1222e"/>
+  <path d="M31.6 36.4l3.6 3.6 6-7.2" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,6 +1,9 @@
-import { getCurrentUser, logout } from '/utils/storage.js';
+import { getCurrentUser } from '/utils/storage.js';
+import { enableLightDismissAll } from '/utils/dialog.js';
+import { mountAccountMenu } from './account-menu.js';
 import postData from '/utils/fetch.js';
 import { showToast } from './ui.js';
+import { fmtClock, fmtDayDate, fmtTime, parseISODate } from './format.js';
 
 const $ = sel => document.querySelector(sel);
 const currentUser = getCurrentUser() || {};
@@ -19,20 +22,9 @@ function localISODate(d = new Date()) {
 }
 
 // One time format everywhere (QR, CCTV and manual all used different ones)
-const formatTime = (d = new Date()) =>
-  d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-function formatDate(iso) {
-  const d = new Date(`${iso}T00:00:00`);
-  return Number.isNaN(d.getTime())
-    ? iso
-    : d.toLocaleDateString([], {
-        weekday: 'short',
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      });
-}
+// Dates and times come from format.js, so they read the same on every device (DD/MM/YYYY, "10:42 am").
+const formatTime = (d = new Date()) => fmtClock(d);
+const formatDate = fmtDayDate;
 
 // "10:30", "10:30:00" or "10:30 AM" -> minutes since midnight (null if unreadable)
 function toMinutes(text) {
@@ -122,9 +114,8 @@ function setNameCell(el, name, roll) {
 const byName = (a, b) => a.name.localeCompare(b.name);
 
 // ---------- Page basics ----------
-$('.user-name b').textContent = currentUser.name || 'Teacher';
-$('#sub-name').textContent = defaultSubjectLabel;
-$('.logout-btn').addEventListener('click', () => logout());
+mountAccountMenu($('#accountMenu'), { user: currentUser, role: 'faculty' });
+enableLightDismissAll(); // dialogs say how they behave with data-modal (see utils/dialog.js)
 
 // Tabs: Session / History
 document.querySelectorAll('.nav-item').forEach(tab => {
@@ -239,16 +230,20 @@ const rowEls = new Map(); // studentId -> <li> currently in the list
 const getMethod = () => $('input[name="method"]:checked').value;
 const getSlotId = () => $('input[name="slot"]:checked')?.value;
 const selectedSlot = () => slotInfo.get(String(getSlotId()));
-const sessionType = () => $('input[name="session-type"]:checked').value;
+const sessionType = () => $('input[name="session-type"]:checked').value; // 'regular' | 'extra'
+// "Pick a class" until something is chosen, then the subject's name.
 const updateSubjectHeader = () => {
-  $('#sub-name').textContent =
-    sessionType() === 'arranged'
-      ? $('#arrSubject').selectedOptions[0]?.textContent || defaultSubjectLabel
-      : selectedSlot()?.subject_label || defaultSubjectLabel;
+  const subject =
+    sessionType() === 'extra'
+      ? chosenArrClassIds().length && $('#arrSubject').selectedOptions[0]?.textContent
+      : selectedSlot()?.subject_label;
+  const title = $('#sub-name');
+  title.textContent = subject || 'Pick a class';
+  title.classList.toggle('is-placeholder', !subject);
 };
 
-// ---------- Setup: date, slots, classes ----------
-dateInput.value ||= localISODate(); // today; teacher can change it
+// ---------- Setup: date, periods, classes ----------
+dateInput.value ||= localISODate(); // today; the faculty can change it
 
 function updateDateWarning() {
   const today = localISODate();
@@ -258,10 +253,6 @@ function updateDateWarning() {
   if (warn.hidden) return;
   const when = chosen < today ? 'in the past' : 'in the future';
   warn.textContent = `This date is ${when}. Attendance will be recorded for ${formatDate(chosen)}.`;
-}
-
-function updateStartLabel() {
-  startBtn.textContent = `Start ${getMethod() === 'qr' ? 'QR' : 'CCTV'} session`;
 }
 
 // Pre-select the class happening now (or the next one) when taking today's attendance
@@ -301,10 +292,10 @@ async function loadSlots() {
   );
   $('#slotMsg').hidden = true;
   $('#slotEmpty').hidden = true;
+  slotInfo.clear();
   updateSubjectHeader();
-  startBtn.disabled = true;
+  setStartLoading();
   updateDateWarning();
-  $('#mergeBox').hidden = true;
 
   try {
     const res = await fetch(
@@ -333,30 +324,36 @@ async function loadSlots() {
         label.dataset.status = slot.taken_by ? 'taken' : 'own';
         input.addEventListener('change', () => {
           updateSubjectHeader();
+          updateStartState();
           loadClasses();
           loadRooms();
-          loadMerge();
         });
         const time = label.querySelector('.slot-time');
-        time.textContent = `${slot.start_time} - ${slot.end_time}`;
+        time.innerHTML = '<span class="t-start"></span><span class="t-end"></span>';
+        time.querySelector('.t-start').textContent = fmtTime(slot.start_time);
+        time.querySelector('.t-end').textContent = ` – ${fmtTime(slot.end_time)}`;
+        label.title = timeRange(slot);
         if (nowId !== null && String(slot.id) === String(nowId)) {
           const badge = document.createElement('span');
           badge.className = 'badge badge-success slot-badge';
           badge.textContent = 'Now';
-          time.append(' ', badge);
+          label.append(badge);
         }
         label.querySelector('.slot-details').textContent = slot.taken_by
           ? `${slot.subject_abbr}: taken by ${slot.taken_by}`
-          : `${slot.subject_abbr} (${slot.block}-${slot.room_number})`;
+          : `${slot.subject_abbr}${slot.block ? ` · ${slot.block}-${slot.room_number}` : ''}`;
         return label;
       }),
     );
     $('#slotEmpty').hidden = slots.length > 0;
+    updateSubjectHeader();
     updateStartState();
-    await Promise.all([loadClasses(), loadRooms(), loadMerge()]);
+    await Promise.all([loadClasses(), loadRooms()]);
   } catch {
     if (requestId !== slotRequestId) return;
     slotList.replaceChildren();
+    slotInfo.clear();
+    updateStartState();
     $('#slotMsg').textContent =
       'Could not load your timetable. Check your connection and change the date to retry.';
     $('#slotMsg').hidden = false;
@@ -387,34 +384,48 @@ async function loadClasses() {
   }
 }
 
-// ---------- Room, merged classes and arranged classes ----------
+// ---------- Room, Extra sessions and the start button ----------
 const roomSelect = $('#roomSelect');
 const roomInfo = new Map(); // roomId -> room from the server
 let roomRequestId = 0;
-let mergeRequestId = 0;
 let arrangedRequestId = 0;
-let arrangedClasses = []; // classes this faculty teaches (arranged mode)
+let arrangedClasses = []; // classes this faculty teaches (Extra sessions)
+let extraSlots = []; // periods the server described for the chosen classes
 
 const enc = encodeURIComponent;
 const roomName = room => `${room.block}-${room.number}`;
+const shortPeriod = label => String(label ?? '').replace(/^Period\s*/i, 'P');
+const timeRange = slot => `${fmtTime(slot.start_time)} – ${fmtTime(slot.end_time)}`;
 const chosenArrClassIds = () =>
   [...document.querySelectorAll('#arrClasses input:checked')].map(i => Number(i.value));
 const chosenArrSlotIds = () =>
   [...document.querySelectorAll('#arrSlots input:checked')].map(i => Number(i.value));
-const chosenMergeIds = () =>
-  sessionType() === 'regular'
-    ? [...document.querySelectorAll('#mergeList input:checked')].map(i => Number(i.value))
-    : [];
 const setupSlotIds = () =>
   sessionType() === 'regular'
     ? getSlotId() ? [Number(getSlotId())] : []
     : chosenArrSlotIds();
 
+// Why the Start button is off, in a few words ('' when it can start).
+function startBlocker() {
+  if (sessionType() === 'extra') {
+    if (!chosenArrClassIds().length) return 'Pick a class';
+    if (!$('#arrSubject').value) return 'Pick a subject';
+    if (!chosenArrSlotIds().length) return 'Pick a period';
+    return '';
+  }
+  if (!slotInfo.size) return 'No class on this date';
+  return getSlotId() ? '' : 'Pick a period';
+}
+
 function updateStartState() {
-  startBtn.disabled =
-    sessionType() === 'arranged'
-      ? !(chosenArrClassIds().length && chosenArrSlotIds().length && $('#arrSubject').value)
-      : !getSlotId();
+  const why = startBlocker();
+  startBtn.disabled = Boolean(why);
+  $('#startReason').textContent = why;
+}
+
+function setStartLoading() {
+  startBtn.disabled = true;
+  $('#startReason').textContent = 'Loading…';
 }
 
 // The room the faculty most likely means: the timetable's room for the period, or the class's home room.
@@ -435,6 +446,7 @@ async function loadRooms() {
     const rooms = await res.json();
     if (requestId !== roomRequestId) return;
     const preferred = defaultRoomId();
+    const kept = roomSelect.value;
     roomInfo.clear();
     roomSelect.replaceChildren(
       ...rooms.map(room => {
@@ -455,7 +467,9 @@ async function loadRooms() {
         return option;
       }),
     );
-    const usable = rooms.find(r => r.id === preferred && !r.in_use_by) || rooms.find(r => !r.in_use_by);
+    // Keep what the faculty already chose while the period changes, if that room is still free
+    const free = id => rooms.find(r => String(r.id) === String(id) && !r.in_use_by);
+    const usable = (userPickedRoom && free(kept)) || free(preferred) || rooms.find(r => !r.in_use_by);
     if (usable) roomSelect.value = usable.id;
     updateRoomHint();
   } catch {
@@ -466,16 +480,17 @@ async function loadRooms() {
   }
 }
 
-// Tells the faculty what a room choice means, before they start.
+// The chip reads "Room F-307 · change"; this also tells the faculty what a room choice means.
 function updateRoomHint() {
   const hint = $('#roomHint');
   const room = roomInfo.get(String(roomSelect.value));
+  $('#roomText').textContent = room ? `Room ${roomName(room)}` : 'Pick a room';
   hint.classList.remove('warn');
   hint.hidden = true;
   if (!room) return;
   if (getMethod() === 'cctv' && !room.has_camera) {
     hint.textContent =
-      'This room has no camera set up, so CCTV cannot see your class here. Pick a room with a camera, or use QR.';
+      'This room has no camera, so CCTV cannot see your class. Pick a room with a camera, or use QR.';
     hint.classList.add('warn');
     hint.hidden = false;
   } else if (room.planned && String(room.id) !== String(defaultRoomId())) {
@@ -483,66 +498,34 @@ function updateRoomHint() {
     hint.hidden = false;
   }
 }
-roomSelect.addEventListener('change', updateRoomHint);
+let userPickedRoom = false; // true once the faculty uses the chip; until then the period decides the room
+roomSelect.addEventListener('change', () => {
+  userPickedRoom = true;
+  updateRoomHint();
+});
 
-function pickRow(value, text, hint, { busy = false, name } = {}) {
+function chipRow(value, text, small, name) {
   const label = document.createElement('label');
-  label.className = 'check-row';
-  label.dataset.busy = busy ? 'true' : 'false';
-  label.innerHTML = '<input type="checkbox"><span class="pick-text"></span><span class="pick-hint"></span>';
+  label.className = 'pick-chip';
+  label.innerHTML = '<input type="checkbox"><span></span>';
   const input = label.querySelector('input');
   input.value = value;
-  input.disabled = busy;
-  if (name) input.name = name;
-  label.querySelector('.pick-text').textContent = text;
-  label.querySelector('.pick-hint').textContent = hint || '';
+  input.name = name;
+  label.querySelector('span').append(text);
+  if (small) {
+    const note = document.createElement('small');
+    note.textContent = small;
+    label.querySelector('span').append(note);
+  }
   return label;
 }
 
-// Regular mode: other classes that can sit in on this period.
-async function loadMerge() {
-  const requestId = ++mergeRequestId;
-  const box = $('#mergeBox');
-  $('#mergeList').replaceChildren();
-  box.open = false;
-  updateMergeSummary();
-  if (sessionType() !== 'regular' || !getSlotId()) {
-    box.hidden = true;
-    return;
-  }
-  try {
-    const res = await fetch(
-      `/api/session/merge-options?date=${enc(dateInput.value)}&slotId=${enc(getSlotId())}&faculty_id=${enc(facultyId)}`,
-    );
-    if (!res.ok) throw new Error();
-    const options = await res.json();
-    if (requestId !== mergeRequestId) return;
-    $('#mergeList').replaceChildren(
-      ...options.map(c => {
-        const hint = c.busy_by ? `taken by ${c.busy_by}` : c.planned ? `planned: ${c.planned}` : 'free';
-        const row = pickRow(c.class_id, classLabel(c), hint, { busy: Boolean(c.busy_by) });
-        row.querySelector('input').addEventListener('change', updateMergeSummary);
-        return row;
-      }),
-    );
-    box.hidden = options.length === 0;
-  } catch {
-    if (requestId === mergeRequestId) box.hidden = true;
-  }
-}
-function updateMergeSummary() {
-  const n = chosenMergeIds().length;
-  $('#mergeSummary').textContent = n
-    ? `Merging ${n} other ${n === 1 ? 'class' : 'classes'} into this period`
-    : 'Merge other classes into this period';
-}
-
-// Arranged mode: the faculty's classes and subjects, then the periods for the chosen classes.
+// Extra: the faculty's own classes and subjects, then the periods for the chosen classes.
 async function loadArranged() {
   const requestId = ++arrangedRequestId;
   $('#arrMsg').hidden = true;
   updateDateWarning();
-  startBtn.disabled = true;
+  setStartLoading();
   const keptClasses = new Set(chosenArrClassIds());
   const keptSubject = $('#arrSubject').value;
   try {
@@ -559,10 +542,13 @@ async function loadArranged() {
     }
     $('#arrClasses').replaceChildren(
       ...arrangedClasses.map(c => {
-        const row = pickRow(c.class_id, classLabel(c), c.room || '', { name: 'arr-class' });
+        const row = chipRow(c.class_id, compactClassLabel(c), c.room || '', 'arr-class');
         const input = row.querySelector('input');
         input.checked = keptClasses.has(c.class_id) || arrangedClasses.length === 1;
-        input.addEventListener('change', () => loadArrangedSlots());
+        input.addEventListener('change', () => {
+          updateSubjectHeader();
+          loadArrangedSlots();
+        });
         return row;
       }),
     );
@@ -585,6 +571,22 @@ async function loadArranged() {
   }
 }
 
+const STATE_WORD = { own: 'Yours', borrow: 'Borrow', mine: 'Resume', taken: 'Taken', blocked: 'Combined' };
+
+// Explains the periods that are not plain "free": what picking a borrowed one means, and why some are greyed out.
+function updateArrNote() {
+  const picked = new Set(chosenArrSlotIds());
+  const lines = [];
+  for (const slot of extraSlots) {
+    const name = shortPeriod(slot.label);
+    if (picked.has(slot.id) && slot.status === 'borrow')
+      lines.push(`${name}: ${slot.note}. They can no longer take attendance for it.`);
+    else if (picked.has(slot.id) && slot.status === 'mine') lines.push(`${name} was already started. It will resume.`);
+    else if (slot.status === 'taken' || slot.status === 'blocked') lines.push(`${name}: ${slot.note}.`);
+  }
+  $('#arrNote').textContent = lines.join('\n');
+}
+
 async function loadArrangedSlots() {
   const requestId = ++arrangedRequestId;
   const classIdsChosen = chosenArrClassIds();
@@ -596,28 +598,32 @@ async function loadArrangedSlots() {
     if (!res.ok) throw new Error();
     const slots = await res.json();
     if (requestId !== arrangedRequestId) return;
+    extraSlots = slots;
     $('#arrSlots').replaceChildren(
       ...slots.map(slot => {
         const label = document.createElement('label');
         label.className = 'slot-card';
         label.dataset.status = slot.status;
+        label.title = `${timeRange(slot)}${classIdsChosen.length ? `. ${slot.note}` : ''}`;
         label.innerHTML =
-          '<input type="checkbox" name="arr-slot"><span class="slot-body"><span class="slot-time"></span><span class="slot-details"></span></span>';
+          '<input type="checkbox" name="arr-slot"><span class="slot-body"><span class="slot-time"></span><span class="slot-details"></span><span class="slot-state"></span></span>';
         const input = label.querySelector('input');
         input.value = slot.id;
         input.disabled = slot.status === 'taken' || slot.status === 'blocked' || classIdsChosen.length === 0;
         input.checked = keptSlots.has(slot.id) && !input.disabled;
         input.addEventListener('change', () => {
           updateStartState();
+          updateArrNote();
           loadRooms();
         });
-        label.querySelector('.slot-time').textContent = `${slot.start_time} - ${slot.end_time}`;
-        label.querySelector('.slot-details').textContent = classIdsChosen.length
-          ? slot.note
-          : 'Pick a class first';
+        label.querySelector('.slot-time').textContent = shortPeriod(slot.label);
+        label.querySelector('.slot-details').textContent = fmtTime(slot.start_time);
+        label.querySelector('.slot-state').textContent = STATE_WORD[slot.status] || '';
         return label;
       }),
     );
+    if (classIdsChosen.length === 0) $('#arrNote').textContent = 'Pick a class first.';
+    else updateArrNote();
     updateStartState();
     await loadRooms();
   } catch {
@@ -633,30 +639,50 @@ $('#arrSubject').addEventListener('change', () => {
 
 function refreshSetup() {
   updateSubjectHeader();
-  return sessionType() === 'arranged' ? loadArranged() : loadSlots();
+  return sessionType() === 'extra' ? loadArranged() : loadSlots();
 }
 
 function applySessionType() {
-  const arranged = sessionType() === 'arranged';
-  $('#regularSetup').hidden = arranged;
-  $('#arrangedSetup').hidden = !arranged;
-  if (arranged) $('#mergeBox').hidden = true;
+  const extra = sessionType() === 'extra';
+  $('#regularSetup').hidden = extra;
+  $('#extraSetup').hidden = !extra;
+  userPickedRoom = false;
   refreshSetup();
 }
 document
   .querySelectorAll('input[name="session-type"]')
   .forEach(r => r.addEventListener('change', applySessionType));
 
-dateInput.addEventListener('change', () => {
+// ---------- Date chip ----------
+function syncDateChip() {
+  $('#dateText').textContent = formatDate(dateInput.value);
+}
+function dateChanged() {
   if (!dateInput.value) dateInput.value = localISODate(); // cleared with the picker's "Clear"
+  syncDateChip();
+  userPickedRoom = false;
   refreshSetup();
+}
+// Previous / next day, skipping Sundays (there are no classes)
+function stepDate(delta) {
+  const d = parseISODate(dateInput.value) || new Date();
+  do d.setDate(d.getDate() + delta);
+  while (d.getDay() === 0);
+  dateInput.value = localISODate(d);
+  dateChanged();
+}
+$('#datePrev').addEventListener('click', () => stepDate(-1));
+$('#dateNext').addEventListener('click', () => stepDate(1));
+$('#dateChip').addEventListener('click', () => {
+  try {
+    dateInput.showPicker();
+  } catch {
+    dateInput.focus();
+    dateInput.click();
+  }
 });
-document.querySelectorAll('input[name="method"]').forEach(r =>
-  r.addEventListener('change', () => {
-    updateStartLabel();
-    updateRoomHint();
-  }),
-);
+dateInput.addEventListener('change', dateChanged);
+document.querySelectorAll('input[name="method"]').forEach(r => r.addEventListener('change', updateRoomHint));
 
 // ---------- Roster ----------
 const presentCount = () => {
@@ -715,6 +741,15 @@ function classLabel(c) {
   return c.batch ? `${base} · ${c.batch}` : base;
 }
 
+function compactClassLabel(c) {
+  const branch = c.branch_abbr || c.branchAbbr || c.branch || '';
+  const sem = c.semester ?? c.sem ?? '';
+  const section = c.section ?? '';
+  return branch && sem !== ''
+    ? `${branch}-${sem}${section}`
+    : classLabel(c);
+}
+
 // Present / total for one class. Needs students that say which class they belong to;
 // otherwise falls back to a headcount from the class record, if the server sent one.
 function classCounts(c, isIn = isPresent) {
@@ -733,8 +768,27 @@ function classCounts(c, isIn = isPresent) {
 }
 
 let headerKey = '';
+// The live chip in the top bar: subject, classes and the running count, so it shows on every tab.
+// Tapping it opens the Session tab. It is not a live region: the count changes too often to announce.
+function updateHeaderStatus() {
+  const chip = $('#headerStatus');
+  if (!headerInfo) {
+    chip.hidden = true;
+    return;
+  }
+  const { classes } = headerInfo;
+  const what = classes.map(compactClassLabel).filter(Boolean).join(' + ');
+  const count = `${presentCount()}${allStudents.size ? ` / ${allStudents.size}` : ''}`;
+  $('#headerStatusWhat').textContent = what;
+  $('#headerStatusCount').textContent = count;
+  chip.setAttribute('aria-label', `Live session: ${what}. ${count.replace(' / ', ' of ')} present. Open the session.`);
+  chip.hidden = false;
+}
+$('#headerStatus').addEventListener('click', () => document.querySelector('.nav-item[data-view="session"]').click());
+
 function renderSessionHeader() {
   const header = $('#sessionHeader');
+  updateHeaderStatus();
   if (!headerInfo) {
     header.hidden = true;
     return;
@@ -1033,20 +1087,17 @@ socket.on('connect', () => {
 
 // ---------- Start session ----------
 startBtn.addEventListener('click', async () => {
-  const arranged = sessionType() === 'arranged';
+  const extra = sessionType() === 'extra';
   const slotId = getSlotId();
-  if (!arranged && !slotId) return notify('Pick a class slot first.', 'error');
-  if (arranged && !chosenArrClassIds().length)
-    return notify('Pick at least one class.', 'error');
-  if (arranged && !chosenArrSlotIds().length)
-    return notify('Pick at least one period.', 'error');
+  const blocker = startBlocker();
+  if (blocker) return notify(`${blocker} first.`, 'error');
   const method = getMethod();
   const roomId = roomSelect.value ? Number(roomSelect.value) : undefined;
 
   startBtn.setAttribute('aria-busy', 'true');
   startBtn.disabled = true;
   try {
-    const response = arranged
+    const response = extra
       ? await postData('/api/session/arranged', {
           date: dateInput.value,
           facultyId,
@@ -1062,7 +1113,6 @@ startBtn.addEventListener('click', async () => {
           facultyId,
           method,
           roomId,
-          mergeClassIds: chosenMergeIds(),
           classIds,
           sessionType: sessionType(),
         });
@@ -1135,7 +1185,7 @@ startBtn.addEventListener('click', async () => {
     notify('Could not reach the server. Try again.', 'error');
   } finally {
     startBtn.removeAttribute('aria-busy');
-    startBtn.disabled = false;
+    updateStartState();
   }
 });
 
@@ -1760,6 +1810,6 @@ function endSessionUI() {
   refreshSetup(); // periods taken or borrowed in the meantime show up right away
 }
 
-updateStartLabel();
+syncDateChip();
 renderHistory(loadHistory());
 loadSlots();

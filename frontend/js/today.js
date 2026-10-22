@@ -3,6 +3,7 @@
 import { apiGet } from './api.js';
 import { h } from './dom.js';
 import { session } from './state.js';
+import { fmtDayMonth } from './format.js';
 import {
   chipFor, classLabel, countdownText, fmtTime, greetingFor, groupRows, groupState,
   lunchBetween, minutesUntil, pickNow, toMin,
@@ -119,8 +120,7 @@ function build(data) {
 function setHeader(data) {
   const first = String(me.name || '').trim().split(/\s+/)[0] || 'there';
   greetingEl.textContent = `${greetingFor(data.nowTime || '09:00')}, ${first}`;
-  const date = new Date(`${data.today}T00:00:00`);
-  const dateText = date.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' });
+  const dateText = fmtDayMonth(data.today, 'long');
   const k = data.class;
   const bits = k ? [classLabel(k), k.homeRoom ? `Room ${k.homeRoom}` : null, k.batch ? `Batch ${k.batch}` : null] : [];
   subEl.replaceChildren(
@@ -269,9 +269,7 @@ function weekChip(group) {
   return h('span', { class: `chip chip-${chip.tone}` }, h('span', { 'aria-hidden': 'true', text: chip.icon }), ` ${chip.text}`);
 }
 
-function formatDay(iso) {
-  return new Date(`${iso}T00:00:00`).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
-}
+const formatDay = iso => fmtDayMonth(iso);
 
 function skeleton() {
   return h('div', { class: 'skeleton-stack', 'aria-hidden': 'true' },

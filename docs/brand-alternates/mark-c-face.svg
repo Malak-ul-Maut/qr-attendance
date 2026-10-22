@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <title>Smart Attendance Marker: face in a viewfinder with a check</title>
+  <g stroke="#202328" stroke-width="3.6">
+    <path d="M6 16V11a5 5 0 0 1 5-5h5"/><path d="M32 6h5a5 5 0 0 1 5 5v5"/><path d="M6 32v5a5 5 0 0 0 5 5h5"/>
+    <circle cx="24" cy="20" r="5.5"/><path d="M13.5 35c1.6-5 5.6-7.5 10.5-7.5s8.9 2.500 10.5 7.500"/>
+  </g>
+  <circle cx="37" cy="37" r="8" fill="#d1222e"/>
+  <path d="M33.2 37.2l2.8 2.8 4.8-5.6" stroke="#fff" stroke-width="2.8"/>
+</svg>

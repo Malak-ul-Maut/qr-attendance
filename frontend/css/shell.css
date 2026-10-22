@@ -14,12 +14,119 @@
   background: var(--surface);
   border-bottom: 1px solid var(--line);
 }
-.app-header .brand img { height: 32px; width: auto; }
-.app-header .user-name { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); color: var(--ink-700); }
-/* Phones: the header is tight, so the logout button shrinks a little */
-.app-header .btn { flex: none; min-height: 40px; padding: 0 var(--space-4); }
-.app-header .theme-toggle { flex: none; width: 40px; height: 40px; }
-.app-header .user-name b { color: var(--ink-900); }
+.app-header .brand { flex: none; }
+.app-header .brand-mark { width: 1.75rem; height: 1.75rem; }
+.app-header .brand-name { font-size: var(--text-base); }
+.header-fill { flex: 1; }
+.header-right { display: flex; align-items: center; gap: var(--space-3); margin-left: auto; flex: none; }
+
+/* The college: logo always, short name on wide screens */
+.app-header .institute { padding-right: var(--space-3); }
+.app-header .institute-logo { height: 1.75rem; }
+.app-header .institute-name { display: none; }
+.app-header .inst-full { display: none; }
+.app-header .inst-short { display: inline; }
+@media (min-width: 900px) { .app-header .institute-name { display: block; } }
+@media (max-width: 639px) { .app-header .brand-name { display: none; } }
+
+/* Live session chip (faculty): visible on every tab while a session runs; tapping it opens the Session tab */
+.header-status {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-inline: auto;
+  padding: 0.3rem var(--space-3);
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--ink-900);
+  background: var(--red-50);
+  border: 1px solid var(--red-600);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.header-status[hidden] { display: none; }
+.live-dot { flex: none; width: 0.6rem; height: 0.6rem; border-radius: 50%; background: var(--red-600); animation: live-pulse 1.6s ease-in-out infinite; }
+.live-label { flex: none; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--red-600); }
+.live-what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-count { flex: none; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+@keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (max-width: 639px) { .live-what { display: none; } }
+@media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
+
+/* Avatar button and the account panel (js/account-menu.js) */
+.account { position: relative; flex: none; }
+.account-btn {
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  border: 1px solid var(--control-edge);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.account-btn[aria-expanded='true'] { border-color: var(--ink-900); }
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--ink-900);
+  background: var(--canvas);
+  border-radius: 50%;
+}
+.avatar-lg { flex: none; width: 2.75rem; height: 2.75rem; font-size: var(--text-base); border: 1px solid var(--card-edge); }
+.account-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + var(--space-2));
+  z-index: 40;
+  width: min(18rem, calc(100vw - 2rem));
+  padding: var(--space-2);
+  display: grid;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--card-edge);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+.account-panel[hidden] { display: none; }
+.account-who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-1);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+.account-id { min-width: 0; display: grid; }
+.account-id strong { color: var(--ink-900); overflow-wrap: anywhere; }
+.account-id span { font-size: var(--text-sm); color: var(--ink-500); overflow-wrap: anywhere; }
+.account-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--touch-target);
+  padding: 0 var(--space-3);
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink-900);
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.account-item:hover { background: var(--canvas); }
+.account-item:focus-visible { outline: 3px solid var(--ink-900); outline-offset: -3px; }
+.account-logout { color: var(--danger-600); }
 
 .app-nav {
   position: fixed;
@@ -46,20 +153,16 @@
   border-top: 3px solid transparent;
   cursor: pointer;
 }
-.nav-item img { width: 22px; height: 22px; opacity: 0.6; }
-/* The SVG icons are dark; flip them to light on the dark theme */
-:root[data-theme='dark'] .nav-item img { filter: invert(1); }
-@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) .nav-item img { filter: invert(1); } }
+.nav-item .nav-icon { flex: none; width: 22px; height: 22px; } /* inline SVG: takes the label's colour, so the active tab is red */
 .nav-item:hover { color: var(--ink-900); }
 /* Phones held sideways: the bottom bar eats a lot of height, so make it slimmer */
 @media (max-height: 480px) and (orientation: landscape) {
   .app-header { height: 3rem; }
   .nav-item { min-height: 2.75rem; flex-direction: row; justify-content: center; align-items: center; gap: var(--space-2); }
-  .nav-item img { width: 18px; height: 18px; }
+  .nav-item .nav-icon { width: 18px; height: 18px; }
   .app-main { padding-bottom: 4.5rem; }
 }
 .nav-item[aria-current='page'] { color: var(--red-600); border-top-color: var(--red-600); }
-.nav-item[aria-current='page'] img { opacity: 1; }
 
 .app-main {
   max-width: var(--main-max, 40rem); /* wider pages set --main-max */

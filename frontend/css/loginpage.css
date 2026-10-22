@@ -1,47 +1,58 @@
-/* loginpage.css - styles used only by login-page.html */
+/* loginpage.css - styles used only by login-page.html.
+   Wide screens: the role's illustration and one line of copy on the left, the form on the right.
+   Phones: the form alone. Either way it fits one screen. */
 
-.login-page {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
+.auth {
+  flex: 1;
+  width: 100%;
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: var(--space-4) var(--space-5) var(--space-6);
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 26rem);
   align-items: center;
-  justify-content: center;
-  gap: var(--space-5);
-  padding: var(--space-5) var(--space-4);
-}
-.login-theme-toggle {
-  position: fixed;
-  top: var(--space-4);
-  right: var(--space-4);
-  z-index: 10;
+  gap: var(--space-8);
 }
 
-.login-brand img {
-  height: 56px;
-  width: auto;
+/* ---------- Left: what this role does here ---------- */
+.auth-hero {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+.art-wrap {
+  width: min(100%, 24rem);
+  margin-bottom: var(--space-3);
+}
+.art {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.art[hidden] {
+  display: none;
+}
+.auth-hero h2 {
+  max-width: 20ch;
+  font-size: var(--text-3xl);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+.auth-hero p {
+  max-width: 32ch;
+  font-size: var(--text-lg);
+  color: var(--ink-700);
 }
 
+/* ---------- Right: the form ---------- */
 .login-card {
   width: 100%;
-  max-width: 26rem;
-  overflow: hidden; /* keeps the photo strip inside the rounded corners */
-  box-shadow: var(--shadow-md);
-}
-
-/* Campus photo strip at the top of the card */
-.login-banner {
-  height: 7rem;
-  background-image: url('../icons/mit-building.webp');
-  background-size: cover;
-  background-position: center 70%;
-}
-
-.login-body {
-  padding: var(--space-5) var(--space-5) var(--space-6);
+  padding: var(--space-6);
   display: grid;
   gap: var(--space-2);
+  box-shadow: var(--shadow-md);
 }
-
 .back-link {
   justify-self: start;
   font-size: var(--text-sm);
@@ -53,22 +64,72 @@
   color: var(--ink-900);
   text-decoration: underline;
 }
-
 .signInMsg {
   margin-top: var(--space-2);
   font-size: var(--text-2xl);
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
 }
 .login-sub {
   color: var(--ink-500);
   margin-bottom: var(--space-3);
 }
-
 #loginForm {
   display: grid;
   gap: var(--space-4);
 }
 #forgotPassword {
   justify-self: center;
+}
+
+/* ---------- Illustrations: flat shapes that read the theme's colours ---------- */
+.il-soft { fill: var(--red-50); }
+.il-panel { fill: var(--surface); stroke: var(--card-edge); stroke-width: 1.5; }
+.il-side { fill: var(--canvas); stroke: var(--card-edge); stroke-width: 1.5; }
+.il-bar { fill: var(--line-strong); }
+.il-rule { fill: none; stroke: var(--line); stroke-width: 1.5; }
+.il-dash { fill: none; stroke: var(--ink-500); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.il-bracket { fill: none; stroke: var(--red-600); stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
+.il-qr { fill: var(--ink-900); }
+.il-qr-ring { fill: none; stroke: var(--ink-900); stroke-width: 1.8; }
+.il-ink { fill: none; stroke: var(--ink-900); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.il-ink-fill { fill: var(--ink-900); }
+.il-red { fill: var(--red-600); }
+.il-red-soft { fill: var(--red-50); stroke: var(--red-600); stroke-width: 1.2; }
+.il-cell { fill: var(--canvas); stroke: var(--line-strong); stroke-width: 1.2; }
+.il-ok { fill: var(--success-600); }
+.il-ok-soft { fill: var(--success-50); }
+.il-ok-stroke { fill: none; stroke: var(--success-600); stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; }
+.il-tick { fill: none; stroke: var(--surface); stroke-width: 2.8; stroke-linecap: round; stroke-linejoin: round; }
+.il-avatar { fill: var(--line-strong); }
+.il-track { fill: none; stroke: var(--line-strong); stroke-width: 6; }
+.il-ring { fill: none; stroke: var(--success-600); stroke-width: 6; stroke-linecap: round; }
+.il-track[r] { fill: none; }
+
+/* Tall desktop screens: both columns sit near the top and the campus photo fills the space below the text */
+@media (min-width: 901px) and (min-height: 820px) {
+  .auth {
+    align-items: start;
+    padding-top: 7vh;
+  }
+  .scene-left {
+    display: block;
+  }
+}
+
+/* ---------- Narrow screens: just the form ---------- */
+@media (max-width: 900px) {
+  .auth {
+    grid-template-columns: minmax(0, 26rem);
+    justify-content: center;
+    padding-top: var(--space-3);
+    gap: 0;
+  }
+  .auth-hero,
+  .scene-left {
+    display: none;
+  }
+  .login-card {
+    padding: var(--space-5);
+  }
 }

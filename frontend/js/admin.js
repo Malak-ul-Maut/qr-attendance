@@ -1,13 +1,15 @@
 // admin.js - the admin portal shell: four tabs (Home, Setup, Timetable, Face photos).
 import { $, $$, currentUser, showToast } from './admin/core.js';
-import { logout, adminTokenExpiry } from '/utils/storage.js';
+import { adminTokenExpiry } from '/utils/storage.js';
+import { enableLightDismissAll } from '/utils/dialog.js';
+import { mountAccountMenu } from './account-menu.js';
 import { loadHome } from './admin/home.js';
 import { loadMaster } from './admin/master.js';
 import { loadTimetable } from './admin/timetable.js';
 import { loadEnrollment } from './admin/enrollment.js';
 
-$('.user-name b').textContent = currentUser.name || 'Admin';
-$('.logout-btn').addEventListener('click', () => logout());
+mountAccountMenu($('#accountMenu'), { user: currentUser, role: 'admin' });
+enableLightDismissAll(); // dialogs say how they behave with data-modal (see utils/dialog.js)
 
 const VIEWS = {
   home: { title: 'Home', load: loadHome },

@@ -3,15 +3,20 @@
 import { apiGet, apiPost } from './api.js';
 import { h } from './dom.js';
 import { classLabel } from './today-logic.js';
-import { getCurrentUser, logout } from '../utils/storage.js';
+import { getCurrentUser } from '../utils/storage.js';
 import { showToast } from './ui.js';
 import { session } from './state.js';
+import { fmtDate } from './format.js';
 
 const root = document.querySelector('#profileRoot');
 let me = null;
 let face = null; // GET /face: photo count and date, once enrolled
 let failed = null;
 let passwordOpen = false; // the change-password form stays closed until the student asks for it
+// The account menu's "Change password" asks for the form to be open when the Profile tab shows
+window.addEventListener('student:change-password', () => {
+  passwordOpen = true;
+});
 
 const PASSWORD_ERRORS = {
   wrong_password: 'The current password is not right.',
@@ -57,10 +62,7 @@ function render() {
         row('Batch', k.batch), row('Home room', k.homeRoom), row('Class counsellor', k.counsellor))
         : h('p', { class: 'meta', text: "You're not assigned to a class yet. Contact the admin office." })),
     faceCard(),
-    passwordCard(),
-    h('section', { class: 'card profile-card' },
-      h('h2', { text: 'Session' }),
-      h('button', { class: 'btn btn-secondary', type: 'button', onclick: () => logout(), text: 'Log out' })));
+    passwordCard());
 }
 
 function faceCard() {
@@ -68,7 +70,7 @@ function faceCard() {
   if (me.faceStatus === 'pending') {
     body.push(h('p', {}, h('span', { class: 'chip chip-warning', text: 'Waiting for approval' }), ' Your photos are saved. Until the admin office approves them, ask your teacher to mark you present.'));
   } else if (me.faceEnrolled) {
-    const when = face?.enrolledAt ? new Date(face.enrolledAt).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : null;
+    const when = face?.enrolledAt ? fmtDate(face.enrolledAt) : null;
     body.push(
       h('p', {}, h('span', { class: 'chip chip-success', text: '✓ Enrolled' }), when ? ` Saved on ${when}. To change your photos, ask the admin office to reset them.` : ' To change your photos, ask the admin office to reset them.'),
       h('button', { class: 'btn btn-secondary', type: 'button', onclick: () => window.dispatchEvent(new CustomEvent('student:selftest')), text: 'Test my camera and lighting' }));

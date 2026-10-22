@@ -1,22 +1,13 @@
 // Pure helpers for the Today tab (no DOM), so they can be tested on their own.
+import { fmtClock, fmtTime } from './format.js';
+
+// '13:30' -> '1:30 pm'; an ISO instant -> '10:42 am' in the phone's own time zone (both live in format.js)
+export { fmtTime };
+export const fmtLocalTime = fmtClock;
 
 export const LUNCH_GAP_MIN = 20; // a gap this long between two periods is the lunch break
 
 export const toMin = hhmm => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
-
-// '13:30' -> '1:30 pm'
-export function fmtTime(hhmm) {
-  const h = Number(hhmm.slice(0, 2));
-  const suffix = h >= 12 ? 'pm' : 'am';
-  return `${h % 12 || 12}:${hhmm.slice(3, 5)} ${suffix}`;
-}
-
-// ISO UTC ('...Z') -> '10:42 am' in the phone's own time zone
-export function fmtLocalTime(iso) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase();
-}
 
 // One period per row from the API. Consecutive periods of the same subject, teacher, room and
 // batch with no lunch break between them become one card (a two-period lab is one card).
