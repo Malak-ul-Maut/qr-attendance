@@ -2,7 +2,7 @@
 """
 bakeoff.py (v2) - which recognizer, and which settings, work best on YOUR cameras and YOUR students? Measure, don't guess.
 
-    python scripts/bakeoff.py all --videos ./clips/*.avi --models-to-test A.onnx B.onnx C.onnx      (the whole study)
+    python scripts/bakeoff.py all --videos ./*.avi --models-to-test A.onnx B.onnx C.onnx      (the whole study)
     python scripts/bakeoff.py plan --videos ...      what will be embedded, and roughly how long it takes (no models are run)
     python scripts/bakeoff.py selftest               known-answer checks of the statistics: run this FIRST, it takes seconds
 
