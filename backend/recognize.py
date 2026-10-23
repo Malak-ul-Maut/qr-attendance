@@ -144,11 +144,11 @@ def default_crop_config(profile_crop=None):
     return config
 GALLERY_DET_SIZE = (640, 640)
 DEFAULT_DET_FILENAME = "10g_bnkps.onnx"
-DEFAULT_REC_FILENAME = "adaface_ir101_webface4m.onnx"
+DEFAULT_REC_FILENAME = "adaface_ir101_webface12m.onnx"
 RECOGNIZE_BATCH_SIZE = 16  # most faces sent to AdaFace in one model call (keeps memory use modest)
 MODEL_URLS = {
-    DEFAULT_DET_FILENAME: "https://drive.google.com/file/d/1Y10_5Eb8lk8wfMOv9AZIjQb_qqyVpkry/view?usp=sharing",
-    DEFAULT_REC_FILENAME: "https://drive.google.com/file/d/19brStYrgePk_SW3PNLb2emre-R_mRIeo/view?usp=drive_link",
+    DEFAULT_DET_FILENAME: "https://drive.google.com/file/d/1rLV-F8MG4hXlTzaUfFrfOCH1LQDp8BHr",
+    DEFAULT_REC_FILENAME: "https://drive.google.com/file/d/1dGzgy7cNdWYXrX4FLAGeMSEOXfD8g28j",
 }
 
 # Every per-run setting and its default, in ONE place. The command line (parse_args) and the
