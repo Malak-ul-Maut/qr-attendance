@@ -72,3 +72,52 @@ export async function api(path, { method = 'GET', body, timeoutMs = 0 } = {}) {
 
 export const apiGet = path => api(path);
 export const apiPost = (path, body, options = {}) => api(path, { method: 'POST', body, ...options });
+
+// A POST that reports how much has been sent, for the photo upload (fetch cannot do that). Same result shape as api():
+// { ok, status, error, ...body }, never throws. Gives up when nothing has moved for `stallMs`, or after `maxMs` in all.
+//   onProgress(fraction 0..1, sentBytes, totalBytes)
+export function apiUpload(path, body, { onProgress = () => {}, stallMs = 30000, maxMs = 300000 } = {}) {
+  const token = getCurrentUser()?.token;
+  if (!token) {
+    signOut();
+    return Promise.resolve({ ok: false, status: 401, error: 'student_login_required' });
+  }
+  const payload = JSON.stringify(body);
+  return new Promise(resolve => {
+    const xhr = new XMLHttpRequest();
+    let stall = 0;
+    let hardStop = 0;
+    let finished = false;
+    const done = result => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(stall);
+      clearTimeout(hardStop);
+      resolve(result);
+    };
+    const armStall = () => {
+      clearTimeout(stall);
+      stall = setTimeout(() => { xhr.abort(); done({ ok: false, status: 0, error: 'timeout' }); }, stallMs);
+    };
+    xhr.open('POST', window.apiUrl ? window.apiUrl(path) : path);
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.upload.onprogress = event => {
+      armStall();
+      if (event.lengthComputable) onProgress(event.loaded / event.total, event.loaded, event.total);
+    };
+    xhr.upload.onload = () => { onProgress(1, payload.length, payload.length); armStall(); }; // all sent; the server is working
+    xhr.onerror = () => done({ ok: false, status: 0, error: 'network' });
+    xhr.onabort = () => done({ ok: false, status: 0, error: 'network' });
+    xhr.onload = () => {
+      let data = null;
+      try { data = JSON.parse(xhr.responseText); } catch { /* not JSON (an HTML error page) */ }
+      if (xhr.status === 401) { signOut(); return done({ ok: false, status: 401, error: data?.error || 'invalid_student_token' }); }
+      if (xhr.status >= 200 && xhr.status < 300 && data && data.ok !== false) return done({ ...data, ok: true, status: xhr.status });
+      done({ ...(data && typeof data === 'object' && !Array.isArray(data) ? data : {}), ok: false, status: xhr.status, error: data?.error || (xhr.status >= 500 ? 'server_error' : 'unknown') });
+    };
+    armStall();
+    hardStop = setTimeout(() => { xhr.abort(); done({ ok: false, status: 0, error: 'timeout' }); }, maxMs);
+    xhr.send(payload);
+  });
+}

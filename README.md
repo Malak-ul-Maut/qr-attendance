@@ -76,6 +76,14 @@ npm start
 
 ### 5. Start the server
 
+By default, the Node server starts the memory-intensive CCTV Python service too. To skip it when you do not need the CCTV pipeline, add this to your existing `.env` file:
+
+```env
+CCTV_SPAWN_SERVICE=false
+```
+
+Restart the server after changing `.env`. Set `CCTV_SPAWN_SERVICE=true` (or remove the setting) to start the service again. With the service disabled, QR attendance continues to work, but CCTV recognition requests will not be available.
+
 ```bash
 npm start
 ```

@@ -1,10 +1,8 @@
-// The Profile tab: who the student is, how their account is set up, password, log out.
-// (Face photo enrolment arrives in a later stage.)
+// The Profile tab: who the student is, how their account is set up, face photos, and the password row.
+// Changing the password happens in the dialog in password-dialog.js.
 import { apiGet, apiPost } from './api.js';
 import { h } from './dom.js';
 import { classLabel } from './today-logic.js';
-import { getCurrentUser } from '../utils/storage.js';
-import { showToast } from './ui.js';
 import { session } from './state.js';
 import { fmtDate } from './format.js';
 
@@ -12,21 +10,6 @@ const root = document.querySelector('#profileRoot');
 let me = null;
 let face = null; // GET /face: photo count and date, once enrolled
 let failed = null;
-let passwordOpen = false; // the change-password form stays closed until the student asks for it
-// The account menu's "Change password" asks for the form to be open when the Profile tab shows
-window.addEventListener('student:change-password', () => {
-  passwordOpen = true;
-});
-
-const PASSWORD_ERRORS = {
-  wrong_password: 'The current password is not right.',
-  password_too_short: 'Use at least 8 characters.',
-  password_unchanged: 'The new password must be different from the current one.',
-  password_is_default: 'Choose something other than the default password.',
-  password_is_username: 'Your password cannot be your username.',
-  password_is_roll_number: 'Your password cannot be your roll number.',
-  network: 'No connection to the server. Try again.',
-};
 
 export async function refresh() {
   const res = await apiGet('/api/student/me');
@@ -54,15 +37,15 @@ function render() {
       h('h2', { text: 'You' }),
       h('dl', { class: 'facts' },
         row('Name', me.name), row('Roll number', me.rollNumber), row('Username', me.username),
-        row('Email', me.email), row('Phone', me.phone), row('Year of passing', me.yearOfPassing))),
+        row('Email', me.email), row('Phone', me.phone), row('Year of passing', me.yearOfPassing)),
+      passwordRow()),
     h('section', { class: 'card profile-card' },
       h('h2', { text: 'Your class' }),
       k ? h('dl', { class: 'facts' },
         row('Class', classLabel(k)), row('Course', k.courseName), row('Academic session', k.academicSession),
         row('Batch', k.batch), row('Home room', k.homeRoom), row('Class counsellor', k.counsellor))
         : h('p', { class: 'meta', text: "You're not assigned to a class yet. Contact the admin office." })),
-    faceCard(),
-    passwordCard());
+    faceCard());
 }
 
 function faceCard() {
@@ -89,62 +72,15 @@ function faceCard() {
   return h('section', { class: 'card profile-card' }, h('h2', { text: 'Face photos' }), ...body);
 }
 
-function passwordCard() {
-  const msg = h('p', { class: 'field-msg err', role: 'alert', hidden: true });
-  const field = (id, label, auto) => h('div', { class: 'field' },
-    h('label', { for: id, text: label }),
-    h('input', { class: 'input', id, type: 'password', autocomplete: auto, required: true }));
-  const form = h('form', { novalidate: true },
-    me.mustChangePassword && h('p', { class: 'note note-warning', text: 'You are still using the default password. Please change it.' }),
-    field('pwCurrent', 'Current password', 'current-password'),
-    field('pwNew', 'New password (at least 8 characters)', 'new-password'),
-    field('pwConfirm', 'Repeat new password', 'new-password'),
-    msg,
-    h('div', { class: 'form-actions' },
-      h('button', { class: 'btn btn-primary', type: 'submit', text: 'Save new password' }),
-      h('button', { class: 'btn btn-secondary', type: 'button', onclick: () => setOpen(false), text: 'Cancel' })));
-
-  // A student on the default password must change it, so the form starts open for them
-  const startOpen = passwordOpen || me.mustChangePassword;
-  form.hidden = !startOpen;
-  const openButton = h('button', { class: 'btn btn-secondary', type: 'button', 'aria-expanded': String(startOpen), 'aria-controls': 'pwForm', onclick: () => setOpen(true), text: 'Change password' });
-  form.id = 'pwForm';
-  openButton.hidden = startOpen;
-  function setOpen(open) {
-    passwordOpen = open;
-    form.hidden = !open;
-    openButton.hidden = open;
-    openButton.setAttribute('aria-expanded', String(open));
-    if (open) form.querySelector('input')?.focus(); else { form.reset(); msg.hidden = true; openButton.focus(); }
-  }
-
-  form.addEventListener('submit', async ev => {
-    ev.preventDefault();
-    msg.hidden = true;
-    const v = id => form.querySelector(`#${id}`).value;
-    const fail = text => { msg.textContent = text; msg.hidden = false; };
-    if (!v('pwCurrent')) return fail('Enter your current password.');
-    if (v('pwNew').length < 8) return fail(PASSWORD_ERRORS.password_too_short);
-    if (v('pwNew') !== v('pwConfirm')) return fail('The two new passwords do not match.');
-
-    const button = form.querySelector('button[type=submit]');
-    button.setAttribute('aria-busy', 'true'); button.disabled = true;
-    const res = await apiPost('/api/student/password', { currentPassword: v('pwCurrent'), newPassword: v('pwNew') });
-    button.removeAttribute('aria-busy'); button.disabled = false;
-    if (!res.ok) return fail(PASSWORD_ERRORS[res.error] || 'Could not change the password. Try again.');
-
-    // Keep the saved sign-in in step, so the "Finish setting up" card clears.
-    try {
-      const user = getCurrentUser();
-      if (user) localStorage.setItem('user', JSON.stringify({ ...user, mustChangePassword: false }));
-    } catch { /* storage blocked: the server value still wins on the next load */ }
-    showToast('Password changed.', 'success');
-    form.reset();
-    passwordOpen = false; // fold the form away again
-    await refresh();
-    window.dispatchEvent(new CustomEvent('student:changed'));
-  });
-  return h('section', { class: 'card profile-card' }, h('h2', { text: 'Password' }), openButton, form);
+// One row: the label, a note when it still needs changing, and the button that opens the dialog
+function passwordRow() {
+  return h('div', { class: 'password-row' },
+    h('div', { class: 'password-text' },
+      h('strong', { text: 'Password' }),
+      h('span', { class: me.mustChangePassword ? 'password-note warn' : 'password-note', text: me.mustChangePassword ? 'Still the default password' : 'Only you should know it' })),
+    h('button', { class: 'btn btn-secondary btn-sm', type: 'button', 'data-focus-key': 'change-password',
+      onclick: () => window.dispatchEvent(new CustomEvent('student:change-password', { detail: { first: false } })),
+      text: 'Change password' }));
 }
 
 window.addEventListener('student:tab', ev => { if (ev.detail === 'profile') refresh(); });

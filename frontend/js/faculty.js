@@ -1,5 +1,5 @@
 import { getCurrentUser } from '/utils/storage.js';
-import { enableLightDismissAll } from '/utils/dialog.js';
+import { enableLightDismiss, enableLightDismissAll } from '/utils/dialog.js';
 import { mountAccountMenu } from './account-menu.js';
 import postData from '/utils/fetch.js';
 import { showToast } from './ui.js';
@@ -66,7 +66,10 @@ const ERROR_TEXT = {
   invalid_class_or_room: 'A class or room you picked no longer exists. Reload and try again.',
   invalid_slot: 'That period could not be found. Reload and try again.',
   session_has_marks:
-    'Some students are already marked present, so this session cannot be discarded. Submit it instead.',
+    'Some students are already marked present. Confirm to discard the session and remove their marks.',
+  marks_changed:
+    'More students were marked while you were deciding. Check the count and confirm again.',
+  session_not_submitted: 'This session has not been submitted yet.',
   not_your_session: 'This session belongs to another faculty.',
   database_error: 'The server had a problem. Please try again.',
   session_insert_failed: 'The session could not be created. Please try again.',
@@ -115,6 +118,9 @@ const byName = (a, b) => a.name.localeCompare(b.name);
 
 // ---------- Page basics ----------
 mountAccountMenu($('#accountMenu'), { user: currentUser, role: 'faculty' });
+// Add manually closes on an outside click, except once someone is ticked (then it only nudges, so a stray click
+// cannot throw the choices away). manualSelected is declared further down; it is only read when someone clicks.
+enableLightDismiss($('#manual-attendance-dialog'), { canDismiss: () => manualSelected.size === 0 });
 enableLightDismissAll(); // dialogs say how they behave with data-modal (see utils/dialog.js)
 
 // Tabs: Session / History
@@ -127,7 +133,7 @@ document.querySelectorAll('.nav-item').forEach(tab => {
     document
       .querySelectorAll('.view')
       .forEach(v => (v.hidden = v.id !== `view-${tab.dataset.view}`));
-    if (tab.dataset.view === 'history') renderHistory(loadHistory());
+    if (tab.dataset.view === 'history') loadHistory();
     // Land on the new heading so screen-reader users hear where they are
     document
       .querySelector(`#view-${tab.dataset.view} h1.section-title`)
@@ -136,57 +142,178 @@ document.querySelectorAll('.nav-item').forEach(tab => {
 });
 
 // ---------- History ----------
-// The server cannot list past sessions yet, so submitted sessions are kept in
-// this browser. Swap loadHistory() for a fetch when an endpoint exists.
-const HISTORY_KEY = `faculty-history:${facultyId}`;
-const HISTORY_LIMIT = 50;
+// Submitted sessions come from the server (/api/session/history), so they follow the faculty to any device.
+const HISTORY_PAGE = 30;
+let historyItems = [];
+let historyMore = false;
+let historyBusy = false;
+let historyLoaded = false;
 
-function loadHistory() {
-  try {
-    return JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
-  } catch {
-    return [];
-  }
+const VIA = { qr: 'QR', cctv: 'CCTV', manual: 'Manual' };
+
+// "CSE · Sem 5 · A", or "CSE-5A + CSE-5B" when classes were taken together
+function classesText(classes) {
+  if (!classes?.length) return '';
+  return classes.length > 1 ? classes.map(compactClassLabel).join(' + ') : classLabel(classes[0]);
 }
 
-function saveHistory(entry) {
-  try {
-    localStorage.setItem(
-      HISTORY_KEY,
-      JSON.stringify([entry, ...loadHistory()].slice(0, HISTORY_LIMIT)),
-    );
-  } catch {
-    // Storage full or blocked: history is a nicety, never block submitting
-  }
+// What the server's session header says in words: room, periods and the time range
+function sessionFacts(header) {
+  const periods = header?.periods || [];
+  const first = periods[0];
+  const last = periods.at(-1);
+  return {
+    room: header?.block && header?.room_number ? `${header.block}-${header.room_number}` : '',
+    time: first ? `${fmtTime(first.start_time)} – ${fmtTime(last.end_time)}` : '',
+    periodText:
+      periods.length > 1
+        ? `${shortPeriod(first.label)}–${shortPeriod(last.label)}`
+        : first
+          ? shortPeriod(first.label)
+          : '',
+    count: periods.length,
+  };
 }
 
-// sessions: [{ date, slot, method, present, total, at }]
-export function renderHistory(sessions) {
-  $('#historyEmpty').hidden = sessions.length > 0;
+function renderHistory() {
+  $('#historyEmpty').hidden = !(historyLoaded && historyItems.length === 0);
+  $('#historyMoreBtn').hidden = !historyMore;
   $('#historyList').replaceChildren(
-    ...sessions.map(s => {
+    ...historyItems.map(item => {
+      const facts = sessionFacts(item.header);
       const li = document.createElement('li');
-      li.className = 'card list-row';
+      li.className = 'card history-item';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'history-row';
+      btn.dataset.code = item.sessionCode;
 
-      const info = document.createElement('div');
+      const info = document.createElement('span');
+      info.className = 'roster-info';
       const title = document.createElement('span');
       title.className = 'roster-name';
-      title.textContent = `${formatDate(s.date)} · ${s.slot}`;
+      title.textContent = `${formatDate(item.date)} · ${item.header?.subject_label || 'Class'}`;
       const meta = document.createElement('span');
       meta.className = 'roster-meta';
-      meta.textContent = [s.method.toUpperCase(), s.at && `Submitted ${s.at}`]
+      meta.textContent = [
+        classesText(item.header?.classes),
+        facts.periodText,
+        facts.time,
+        VIA[item.method],
+      ]
         .filter(Boolean)
         .join(' · ');
       info.append(title, meta);
 
       const badge = document.createElement('span');
       badge.className = 'badge badge-success';
-      badge.textContent = `${s.present}${s.total ? ` of ${s.total}` : ''} present`;
-      li.append(info, badge);
+      badge.textContent = `${item.present}${item.total ? ` of ${item.total}` : ''} present`;
+      btn.append(info, badge);
+      li.append(btn);
       return li;
     }),
   );
 }
+
+async function loadHistory({ more = false } = {}) {
+  if (historyBusy) return;
+  historyBusy = true;
+  $('#historyError').hidden = true;
+  $('#historyLoading').hidden = historyItems.length > 0;
+  $('#view-history').setAttribute('aria-busy', 'true');
+  try {
+    const offset = more ? historyItems.length : 0;
+    const res = await fetch(
+      `/api/session/history?facultyId=${enc(facultyId)}&limit=${HISTORY_PAGE}&offset=${offset}`,
+    );
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    const seen = new Set(more ? historyItems.map(i => i.sessionCode) : []);
+    historyItems = [
+      ...(more ? historyItems : []),
+      ...data.sessions.filter(i => !seen.has(i.sessionCode)),
+    ];
+    historyMore = data.hasMore;
+    historyLoaded = true;
+  } catch {
+    $('#historyError').hidden = false;
+  } finally {
+    historyBusy = false;
+    $('#historyLoading').hidden = true;
+    $('#view-history').removeAttribute('aria-busy');
+    renderHistory();
+  }
+}
+$('#historyRetryBtn').addEventListener('click', () => loadHistory({ more: historyItems.length > 0 && historyMore }));
+$('#historyMoreBtn').addEventListener('click', () => loadHistory({ more: true }));
+
+function studentGroup(title, students, showHow) {
+  const wrap = document.createElement('section');
+  const h = document.createElement('h3');
+  h.className = 'hd-heading';
+  h.textContent = `${title} (${students.length})`;
+  const ul = document.createElement('ul');
+  ul.className = 'hd-list';
+  for (const s of students) {
+    const li = document.createElement('li');
+    const name = document.createElement('span');
+    name.className = 'hd-name';
+    setNameCell(name, s.name, s.rollNumber || '');
+    li.append(name);
+    if (showHow && s.method) {
+      const how = document.createElement('span');
+      how.className = 'hd-how';
+      how.textContent = [VIA[s.method], s.markedAt && fmtClock(s.markedAt)].filter(Boolean).join(' · ');
+      li.append(how);
+    }
+    ul.append(li);
+  }
+  if (!students.length) {
+    const none = document.createElement('p');
+    none.className = 'muted';
+    none.textContent = showHow ? 'Nobody was marked present.' : 'Nobody was absent.';
+    wrap.append(h, none);
+  } else wrap.append(h, ul);
+  return wrap;
+}
+
+const historyDialog = $('#history-dialog');
+$('#hdClose').addEventListener('click', () => historyDialog.close());
+$('#historyList').addEventListener('click', async event => {
+  const btn = event.target.closest('.history-row');
+  if (!btn) return;
+  const item = historyItems.find(i => i.sessionCode === btn.dataset.code);
+  const facts = sessionFacts(item?.header);
+  $('#hdTitle').textContent = item?.header?.subject_label || 'Class';
+  $('#hdMeta').textContent = [
+    formatDate(item?.date),
+    classesText(item?.header?.classes),
+    facts.periodText,
+    facts.time,
+    facts.room,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  $('#hdSummary').textContent = 'Loading...';
+  $('#hdBody').replaceChildren();
+  historyDialog.showModal();
+  try {
+    const res = await fetch(`/api/session/history/${enc(btn.dataset.code)}?facultyId=${enc(facultyId)}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    const present = data.students.filter(s => s.present);
+    const absent = data.students.filter(s => !s.present);
+    $('#hdSummary').textContent =
+      `${present.length} of ${data.students.length} present` +
+      (data.endedAt ? ` · Submitted ${fmtClock(data.endedAt)}` : '');
+    $('#hdBody').replaceChildren(
+      studentGroup('Absent', absent, false),
+      studentGroup('Present', present, true),
+    );
+  } catch {
+    $('#hdSummary').textContent = 'Could not load this session. Close this and try again.';
+  }
+});
 
 // Errors during full screen would be hidden behind it, so leave full screen first
 function notify(message, type = 'info') {
@@ -212,12 +339,11 @@ const cctvResultImage = $('#cctvResultImage');
 
 let sessionCode = null;
 let sessionMethod = null;
-let sessionMeta = null; // { date, slot, method } saved to History on submit
 let qrTimer = null;
 let renderTimer = null;
 let classIds = [];
 let classInfo = []; // full class records for the selected slot (merged classes have several)
-let headerInfo = null; // what the session header shows; fixed when the session starts
+let headerInfo = null; // what the session bar shows; fixed when the session opens: { date, srv (the server's header), classes, method, kinds }
 let slotRequestId = 0;
 let classRequestId = 0;
 let rosterQuery = '';
@@ -722,19 +848,13 @@ function updateCounts() {
   renderSessionHeader();
 }
 
-// ---------- Session header: which class (or merged classes) this session is for ----------
-const titleCase = text => (text ? text[0].toUpperCase() + text.slice(1) : '');
-
-// "CSE · Sem 5 · Sec A". Reads whichever name fields the server sends for a class.
+// ---------- Session bar: which class (or merged classes) this session is for ----------
+// "CSE · Sem 5 · A" (and the batch, for a lab group). Reads whichever name fields the server sends for a class.
 function classLabel(c) {
   const branch = c.branch_abbr || c.branchAbbr || c.branch || '';
   const sem = c.semester ?? c.sem ?? '';
   const section = c.section ?? '';
-  const label = [
-    branch,
-    sem !== '' ? `Sem ${sem}` : '',
-    section !== '' ? `Sec ${section}` : '',
-  ]
+  const label = [branch, sem !== '' ? `Sem ${sem}` : '', section !== '' ? section : '']
     .filter(Boolean)
     .join(' · ');
   const base = label || c.label || c.name || `Class ${c.class_id ?? ''}`.trim();
@@ -787,63 +907,55 @@ function updateHeaderStatus() {
 $('#headerStatus').addEventListener('click', () => document.querySelector('.nav-item[data-view="session"]').click());
 
 function renderSessionHeader() {
-  const header = $('#sessionHeader');
+  const bar = $('#sessionHeader');
   updateHeaderStatus();
   if (!headerInfo) {
-    header.hidden = true;
+    bar.hidden = true;
     return;
   }
-  header.hidden = false;
-  const { slot, classes, date, method, sessionType, periods = 1, borrowed = false } = headerInfo;
+  bar.hidden = false;
+  const { srv, classes, date, kinds } = headerInfo;
   const merged = classes.length > 1;
   $('#shPresent').textContent = presentCount();
-  $('#shTotal').textContent = allStudents.size ? ` / ${allStudents.size}` : '';
+  $('#shTotal').textContent = allStudents.size ? `/${allStudents.size}` : '';
 
-  const rows = classes.map(c => ({ name: classLabel(c), ...classCounts(c) }));
-  const meta = [
-    formatDate(date),
-    slot ? `${slot.start_time} - ${slot.end_time}` : '',
-    slot?.block && slot?.room_number
-      ? `Room ${slot.block}-${slot.room_number}`
-      : '',
-    periods > 1 ? `${periods} periods` : '',
-    method === 'qr' ? 'QR session' : 'CCTV session',
-    sessionType ? `${titleCase(sessionType)} class` : '',
-    borrowed ? 'Includes a borrowed period' : '',
+  const facts = sessionFacts(srv);
+  const tags = [
+    kinds.includes('arranged') ? 'Extra' : '',
+    kinds.includes('borrowed') ? 'Borrowed' : '',
+    facts.count > 1 ? `Double · ${facts.periodText}` : '',
   ].filter(Boolean);
-  const key = JSON.stringify([meta, rows, merged, slot?.subject_label]);
+  const meta = [
+    date !== localISODate() ? formatDate(date) : '',
+    merged ? '' : classes[0] ? classLabel(classes[0]) : '',
+    facts.room,
+    facts.time,
+  ].filter(Boolean);
+  const rows = merged ? classes.map(c => ({ name: compactClassLabel(c), ...classCounts(c) })) : [];
+  const subject = srv?.subject_label || srv?.subject_abbr || defaultSubjectLabel || 'Class';
+  const key = JSON.stringify([subject, tags, meta, rows]);
   if (key === headerKey) return; // nothing new: leave the DOM alone
   headerKey = key;
 
-  $('#shKind').textContent = merged
-    ? `Merged class · ${classes.length} classes together`
-    : 'Single class';
-  header.dataset.merged = merged ? 'true' : 'false';
-  $('#shSubject').textContent =
-    slot?.subject_label || slot?.subject_abbr || defaultSubjectLabel || 'Class';
-  $('#shMeta').replaceChildren(
-    ...meta.map(text =>
-      Object.assign(document.createElement('li'), { textContent: text }),
-    ),
+  bar.dataset.merged = merged ? 'true' : 'false';
+  $('#shSubject').textContent = subject;
+  $('#shTags').replaceChildren(
+    ...tags.map(text => Object.assign(document.createElement('li'), { textContent: text })),
   );
-
-  $('#shClassesWrap').hidden = rows.length === 0;
-  $('#shClassesLabel').textContent = merged ? 'Merged classes' : 'Class';
+  $('#shMeta').textContent = meta.join(' · ');
+  $('#shClasses').hidden = rows.length === 0;
   $('#shClasses').replaceChildren(
     ...rows.map(row => {
       const li = document.createElement('li');
-      li.className = 'sh-class';
+      li.className = 'sb-chip';
       const name = document.createElement('span');
-      name.className = 'sh-class-name';
+      name.className = 'sb-chip-name';
       name.textContent = row.name;
       li.append(name);
       if (row.total !== null) {
         const count = document.createElement('span');
-        count.className = 'sh-class-count';
-        count.textContent =
-          row.present === null
-            ? `${row.total} students`
-            : `${row.present} / ${row.total}`;
+        count.className = 'sb-chip-count';
+        count.textContent = row.present === null ? `${row.total}` : `${row.present}/${row.total}`;
         li.append(count);
       }
       return li;
@@ -862,8 +974,8 @@ function buildRows() {
     label: idLabel(allStudents.get(id) || {}),
     present: s.present,
     meta: s.present
-      ? [via[s.source], s.time].filter(Boolean).join(' · ')
-      : 'Marked absent',
+      ? [idLabel(allStudents.get(id) || {}), via[s.source], s.time].filter(Boolean).join(' · ')
+      : ['Marked absent', idLabel(allStudents.get(id) || {})].filter(Boolean).join(' · '),
   }));
   return q
     ? rows.filter(
@@ -872,6 +984,11 @@ function buildRows() {
       )
     : rows;
 }
+
+const ICON_REMOVE =
+  '<svg class="ic-remove" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+const ICON_UNDO =
+  '<svg class="ic-undo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 7L4.5 11.5 9 16"/><path d="M5 11.5h8.5a5 5 0 0 1 0 10H11"/></svg>';
 
 function createRow() {
   const li = document.createElement('li');
@@ -885,7 +1002,8 @@ function createRow() {
   info.append(name, meta);
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.className = 'btn btn-secondary btn-sm row-action';
+  btn.className = 'row-action';
+  btn.innerHTML = ICON_REMOVE + ICON_UNDO;
   li.append(info, btn);
   return li;
 }
@@ -893,11 +1011,11 @@ function createRow() {
 function fillRow(li, row) {
   li.dataset.id = row.id;
   li.dataset.mode = row.present ? 'present' : 'absent';
-  setNameCell(li.querySelector('.roster-name'), row.name, row.label);
+  li.querySelector('.roster-name').textContent = row.name;
   li.querySelector('.roster-meta').textContent = row.meta;
   const action = row.present ? 'Mark absent' : 'Undo';
   const btn = li.querySelector('.row-action');
-  btn.textContent = action;
+  btn.title = action;
   btn.setAttribute(
     'aria-label',
     `${action}: ${row.name}${row.label ? `, roll number ${row.label}` : ''}`,
@@ -990,6 +1108,7 @@ studentList.addEventListener('click', async event => {
     const entry = roster.get(id); // Undo: back to how it was, no server call (Submit sends the final list)
     if (entry) Object.assign(entry, { present: true, removed: false });
   }
+  saveRemoved();
   renderRoster({ force: true });
   studentList.querySelector(`[data-id="${CSS.escape(id)}"] .row-action`)?.focus();
 });
@@ -1042,11 +1161,52 @@ function announcePresent(name) {
 }
 
 // ---------- Live updates ----------
-// Students scanning their QR arrive through the socket
-const socket = io(window.API_BASE || location.origin);
+// Students scanning their QR arrive through the socket. If the library did not load, or the connection drops, the
+// list is re-read from the server every few seconds instead, so nobody goes missing.
+const socket = typeof io === 'function' ? io(window.API_BASE || location.origin) : null;
+const onSocket = (event, handler) => socket?.on(event, handler);
 let socketWasDown = false;
+const POLL_MS = 8000;
 
-socket.on('attendance_update', data => {
+// Adds students the server has marked that this page does not know yet. Anyone already in the list, present or
+// taken off by the teacher, is left exactly as the teacher has it.
+function mergeServerMarks(marks) {
+  let added = 0;
+  for (const m of marks) {
+    const id = String(m.id);
+    if (roster.has(id)) continue;
+    const source = m.method === 'cctv' ? 'cctv' : m.method === 'manual' ? 'manual' : 'qr';
+    roster.set(id, { name: m.name, time: m.markedAt ? fmtClock(m.markedAt) : formatTime(), source, present: true });
+    added++;
+  }
+  return added;
+}
+
+// true: list is up to date. false: could not tell. The session being gone elsewhere ends it here too.
+async function syncMarks() {
+  const code = sessionCode;
+  if (!code) return false;
+  try {
+    const res = await fetch(`/api/session/active?facultyId=${enc(facultyId)}&code=${enc(code)}`);
+    const data = await res.json();
+    if (code !== sessionCode || !data.ok) return false;
+    if (!data.active) {
+      notify('This session was submitted or discarded somewhere else.', 'info');
+      endSessionUI();
+      return false;
+    }
+    if (mergeServerMarks(data.active.marks)) renderRoster();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+setInterval(() => {
+  if (sessionCode && (!socket || !socket.connected)) syncMarks();
+}, POLL_MS);
+
+onSocket('attendance_update', data => {
   if (String(data.sessionCode || data.sessionId) !== String(sessionCode))
     return;
   const source = data.method === 'manual' ? 'manual' : 'qr';
@@ -1064,26 +1224,126 @@ socket.on('attendance_update', data => {
   announcePresent(data.studentName);
 });
 
-socket.on('disconnect', () => {
+onSocket('disconnect', () => {
   socketWasDown = true;
   if (sessionCode) connBanner.hidden = false;
 });
-socket.on('connect_error', () => {
+onSocket('connect_error', () => {
   if (sessionCode) connBanner.hidden = false;
 });
-socket.on('connect', () => {
+onSocket('connect', async () => {
   if (!sessionCode) return;
   // After a reconnect the server has forgotten which room we were in
   socket.emit('join_session', sessionCode);
   connBanner.hidden = true;
   if (socketWasDown) {
     socketWasDown = false;
-    notify(
-      'Live updates are back. Anyone who scanned while you were offline may be missing, so use Add manually for anyone who is missing.',
-      'info',
-    );
+    const upToDate = await syncMarks();
+    if (sessionCode)
+      notify(
+        upToDate
+          ? 'Live updates are back. The list is up to date.'
+          : 'Live updates are back. Anyone who scanned while you were offline may be missing, so use Add manually for anyone who is missing.',
+        upToDate ? 'success' : 'info',
+      );
   }
 });
+
+// ---------- Which students were taken off the list ----------
+// "Taken off" lives only in this page until Submit. It is kept in the browser, so a refresh does not bring them back.
+const removedKey = code => `faculty-removed:${code}`;
+function saveRemoved() {
+  if (!sessionCode) return;
+  const ids = [...roster].filter(([, s]) => s.removed).map(([id]) => id);
+  try {
+    if (ids.length) localStorage.setItem(removedKey(sessionCode), JSON.stringify(ids));
+    else localStorage.removeItem(removedKey(sessionCode));
+  } catch {
+    // storage blocked: the list still works, a refresh just forgets who was taken off
+  }
+}
+function loadRemoved(code) {
+  try {
+    return JSON.parse(localStorage.getItem(removedKey(code))) || [];
+  } catch {
+    return [];
+  }
+}
+function forgetRemoved(code) {
+  try {
+    localStorage.removeItem(removedKey(code));
+  } catch {
+    // nothing to do
+  }
+}
+
+// ---------- Open the live view (a session just started, or one that is already running) ----------
+function fallbackHeader() {
+  const slot = selectedSlot();
+  return {
+    subject_label: slot?.subject_label,
+    subject_abbr: slot?.subject_abbr,
+    block: slot?.block,
+    room_number: slot?.room_number,
+    periods: slot ? [{ label: slot.label, start_time: slot.start_time, end_time: slot.end_time }] : [],
+    kinds: [],
+    classes: [...classInfo],
+  };
+}
+
+function openLive({ code, method, date, header, marks = [], token = null, resumed = false }) {
+  sessionCode = code;
+  sessionMethod = method;
+  const srv = header || fallbackHeader();
+  headerInfo = { date, srv, classes: srv.classes || [], method, kinds: srv.kinds || [] };
+  headerKey = '';
+  roster.clear();
+  allStudents.clear();
+  rowEls.clear();
+  studentList.replaceChildren();
+  rosterQuery = '';
+  $('#rosterSearch').value = '';
+  mergeServerMarks(marks);
+  for (const id of loadRemoved(code)) {
+    const entry = roster.get(String(id));
+    if (entry) Object.assign(entry, { present: false, removed: true });
+  }
+  socket?.emit('join_session', code);
+
+  beforeStart.hidden = true;
+  afterStart.hidden = false;
+  renderSessionHeader();
+  const isQr = method === 'qr';
+  qrStage.hidden = !isQr;
+  $('#qrLive').hidden = true;
+  $('#cctvPanel').hidden = isQr;
+  fullscreenBtn.hidden = !isQr || !document.fullscreenEnabled;
+  $('#panelTitle').textContent = isQr ? 'Scan to mark attendance' : 'CCTV result';
+  $('#panelTitle').focus({ preventScroll: true });
+  $('#liveStatus').textContent = '';
+  connBanner.textContent = socket
+    ? 'Live updates paused. Reconnecting; the list still refreshes every few seconds.'
+    : 'Live updates are not available on this page. The list refreshes every few seconds.';
+  connBanner.hidden = Boolean(socket);
+  setQrLive(true);
+  renderRoster({ force: true });
+  loadAllStudents(); // runs alongside; the list fills in when it arrives
+  if (isQr) renderQR({ token });
+  else if (resumed) showCctvAfterResume();
+}
+
+// A CCTV session that was already running: the scan is not repeated on its own. Show the last picture if the
+// server still has it, and leave "Scan again" for the teacher.
+function showCctvAfterResume() {
+  $('#cctvSkeleton').hidden = true;
+  $('#cctvRescan').hidden = false;
+  cctvResultImage.onload = () => {
+    cctvViewer.hidden = false;
+    resetView();
+  };
+  cctvResultImage.onerror = () => {};
+  cctvResultImage.src = window.apiUrl(`/results/${sessionCode}.jpg?t=${Date.now()}`);
+}
 
 // ---------- Start session ----------
 startBtn.addEventListener('click', async () => {
@@ -1124,63 +1384,14 @@ startBtn.addEventListener('click', async () => {
         'error',
       );
 
-    sessionCode = response.sessionCode;
-    sessionMethod = method;
-    // The server says what really started: subject, room, periods and every class (merged ones too).
-    const real = response.header;
-    const periods = real?.periods || [];
-    sessionMeta = {
-      date: dateInput.value,
-      slot: periods.length
-        ? periods.map(p => p.label).join(' + ')
-        : selectedSlot()?.label || 'Class',
+    openLive({
+      code: response.sessionCode,
       method,
-    };
-    headerInfo = {
       date: dateInput.value,
-      slot: real
-        ? {
-            start_time: periods[0]?.start_time,
-            end_time: periods[periods.length - 1]?.end_time,
-            block: real.block,
-            room_number: real.room_number,
-            subject_label: real.subject_label,
-            subject_abbr: real.subject_abbr,
-          }
-        : selectedSlot() ? { ...selectedSlot() } : null,
-      classes: real ? real.classes : [...classInfo],
-      periods: periods.length || 1,
-      borrowed: Boolean(real?.kinds?.includes('borrowed')),
-      method,
-      sessionType: sessionType(),
-    };
-    headerKey = '';
-    roster.clear();
-    allStudents.clear();
-    rowEls.clear();
-    studentList.replaceChildren();
-    rosterQuery = '';
-    $('#rosterSearch').value = '';
-    socket.emit('join_session', sessionCode);
-
-    beforeStart.hidden = true;
-    afterStart.hidden = false;
-    renderSessionHeader();
-    const isQr = method === 'qr';
-    qrCanvas.hidden = !isQr;
-    $('#qrLive').hidden = !isQr;
-    $('#cctvPanel').hidden = isQr;
-    fullscreenBtn.hidden = !isQr || !document.fullscreenEnabled;
-    $('#panelTitle').textContent = isQr
-      ? 'Scan to mark attendance'
-      : 'CCTV result';
-    $('#panelTitle').focus({ preventScroll: true });
-    $('#liveStatus').textContent = '';
-    setQrLive(true);
-    renderRoster({ force: true });
-    loadAllStudents(); // runs alongside; the list fills in when it arrives
-    if (isQr) renderQR(response);
-    else await runCCTV();
+      header: response.header,
+      token: response.token,
+    });
+    if (method === 'cctv') await runCCTV();
   } catch {
     notify('Could not reach the server. Try again.', 'error');
   } finally {
@@ -1188,6 +1399,28 @@ startBtn.addEventListener('click', async () => {
     updateStartState();
   }
 });
+
+// After a refresh (or on another device): pick the faculty's running session up again.
+async function resumeIfOpen() {
+  try {
+    const res = await fetch(`/api/session/active?facultyId=${enc(facultyId)}`);
+    const data = await res.json();
+    if (sessionCode || !data.ok || !data.active) return; // nothing running, or the faculty already started one
+    const a = data.active;
+    openLive({
+      code: a.sessionCode,
+      method: a.method,
+      date: a.date,
+      header: a.header,
+      marks: a.marks,
+      token: a.token,
+      resumed: true,
+    });
+    showToast('Your running session is open again.', 'info');
+  } catch {
+    // The setup screen is already showing; a failed check just means nothing to resume
+  }
+}
 
 // Closing the tab mid-class would lose the roster
 window.addEventListener('beforeunload', event => {
@@ -1198,38 +1431,69 @@ window.addEventListener('beforeunload', event => {
 
 // ---------- QR code ----------
 // Draw each new code off-screen and copy it over in one step, so the QR never blinks blank
+const qrStage = $('#qrStage');
 const offscreen = document.createElement('canvas');
 let qrLive = true;
 let refreshFailures = 0;
+let lastToken = null;
+let qrSpan = 0; // squares across, margin included. Same for every token of the same length.
+let qrSpanFor = 0;
 
+// The stop-refreshing warning is the only QR status line: nothing is shown while all is well.
 function setQrLive(live, message) {
-  if (qrLive === live && !message) return;
   qrLive = live;
   const el = $('#qrLive');
+  el.hidden = live && !message;
   el.dataset.state = live ? 'live' : 'stale';
-  el.textContent =
-    message ||
-    (live ? 'QR refreshes automatically' : 'QR is not refreshing. Retrying...');
+  el.textContent = message || (live ? '' : 'QR is not refreshing. Retrying...');
+}
+
+// Draws at the screen's real pixel density with a whole number of pixels per square, so the code is sharp and
+// evenly spaced at any window size (and when projected). The canvas is then shown at exactly that size.
+function drawQR(token) {
+  if (!sessionCode || !token) return;
+  if (typeof QRCode === 'undefined') return ($('#qrError').hidden = false);
+  const dpr = window.devicePixelRatio || 1;
+  const box = Math.floor(Math.min(qrStage.clientWidth, qrStage.clientHeight)) || 320;
+  const target = Math.max(160, Math.round(box * dpr));
+  const paint = () => {
+    const scale = Math.max(2, Math.floor(target / qrSpan));
+    QRCode.toCanvas(offscreen, token, { scale, margin: 1 }, err => {
+      if (err || !sessionCode) return;
+      // Changing a canvas's size clears it, so only do that when it really changed
+      if (qrCanvas.width !== offscreen.width || qrCanvas.height !== offscreen.height) {
+        qrCanvas.width = offscreen.width;
+        qrCanvas.height = offscreen.height;
+      }
+      qrCanvas.style.width = `${offscreen.width / dpr}px`;
+      qrCanvas.style.height = `${offscreen.height / dpr}px`;
+      qrCanvas.getContext('2d').drawImage(offscreen, 0, 0);
+    });
+  };
+  if (qrSpan && qrSpanFor === token.length) return paint();
+  // One-pixel squares tell how many squares this code has
+  QRCode.toCanvas(offscreen, token, { scale: 1, margin: 1 }, err => {
+    if (err) return;
+    qrSpan = offscreen.width;
+    qrSpanFor = token.length;
+    paint();
+  });
 }
 
 function renderQR(data) {
   if (!sessionCode) return;
-  if (typeof QRCode === 'undefined') return ($('#qrError').hidden = false);
-  // Draw at the screen's real pixel density so the code stays sharp when projected
-  const size = Math.round(
-    (qrCanvas.clientWidth || 320) * (window.devicePixelRatio || 1),
-  );
-  QRCode.toCanvas(offscreen, data.token, { width: size, margin: 1 }, err => {
-    if (err || !sessionCode) return;
-    // Changing a canvas's size clears it, so only do that when it really changed
-    if (qrCanvas.width !== offscreen.width) {
-      qrCanvas.width = offscreen.width;
-      qrCanvas.height = offscreen.height;
-    }
-    qrCanvas.getContext('2d').drawImage(offscreen, 0, 0);
-  });
+  lastToken = data.token;
+  drawQR(lastToken);
   scheduleTokenRefresh(500); // the QR changes constantly so screenshots stop working
 }
+
+// A resized window, a rotated phone or full screen: redraw at once, from the code already on screen
+let qrResizeFrame = 0;
+if (typeof ResizeObserver === 'function')
+  new ResizeObserver(() => {
+    cancelAnimationFrame(qrResizeFrame);
+    qrResizeFrame = requestAnimationFrame(() => drawQR(lastToken));
+  }).observe(qrStage);
 
 function scheduleTokenRefresh(delay) {
   clearTimeout(qrTimer);
@@ -1607,6 +1871,7 @@ $('#add-manually-btn').addEventListener('click', async () => {
   $('#manualSearch').value = '';
   renderManualList();
   manualDialog.showModal();
+  $('#manual-attendance-list').scrollTop = 0;
 });
 
 function renderManualList() {
@@ -1623,19 +1888,25 @@ function renderManualList() {
       s.name.toLowerCase().includes(q) ||
       idLabel(s).toLowerCase().includes(q),
   );
-  $('#manual-attendance-list').replaceChildren(
+  const list = $('#manual-attendance-list');
+  list.dataset.hasRoll = pending.some(s => idLabel(s)) ? 'true' : 'false';
+  list.replaceChildren(
     ...manualShown.map(student => {
       const li = document.createElement('li');
       const label = document.createElement('label');
-      label.className = 'check-row';
+      label.className = 'pick-row';
+      label.dataset.selected = manualSelected.has(student.id) ? 'true' : 'false';
+      const roll = document.createElement('span');
+      roll.className = 'pick-roll';
+      roll.textContent = idLabel(student);
       const box = document.createElement('input');
       box.type = 'checkbox';
       box.value = student.id;
       box.checked = manualSelected.has(student.id);
       const name = document.createElement('span');
-      name.className = 'roster-name';
-      setNameCell(name, student.name, idLabel(student));
-      label.append(box, name);
+      name.className = 'pick-name';
+      name.textContent = student.name;
+      label.append(roll, box, name);
       li.appendChild(label);
       return li;
     }),
@@ -1678,6 +1949,7 @@ $('#manual-attendance-list').addEventListener('change', event => {
   if (box.type !== 'checkbox') return;
   if (box.checked) manualSelected.add(box.value);
   else manualSelected.delete(box.value);
+  box.closest('.pick-row').dataset.selected = box.checked ? 'true' : 'false';
   updateManualControls();
 });
 
@@ -1750,13 +2022,6 @@ $('#confirmSubmitBtn').addEventListener('click', async event => {
     );
 
   const total = allStudents.size;
-  saveHistory({
-    ...sessionMeta,
-    present: presentStudentIds.length,
-    total,
-    at: formatTime(),
-  });
-  renderHistory(loadHistory());
   showToast(
     `Attendance submitted: ${presentStudentIds.length}${total ? ` of ${total}` : ''} present.`,
     'success',
@@ -1765,27 +2030,64 @@ $('#confirmSubmitBtn').addEventListener('click', async event => {
 });
 
 // Started by mistake: drop the session so the period is free again (for example for a faculty it was borrowed from).
-$('#discardBtn').addEventListener('click', () => $('#discard-dialog').showModal());
-$('#keepSessionBtn').addEventListener('click', () => $('#discard-dialog').close());
+// Works before Submit only. If students are already marked, the dialog says how many marks will go, and the server
+// refuses to delete more than that number.
+const discardDialog = $('#discard-dialog');
+let discardCount = 0;
+
+function describeDiscard(count, changed = false) {
+  discardCount = count;
+  $('#discardText').textContent =
+    'The period becomes free again, so another faculty (or you) can start it. This cannot be undone.';
+  const warn = $('#discardWarn');
+  warn.hidden = count === 0;
+  warn.textContent = count
+    ? `${changed ? 'More students were marked just now. ' : ''}${count} student${count === 1 ? '' : 's'} marked present will be removed.`
+    : '';
+}
+
+$('#discardBtn').addEventListener('click', () => {
+  describeDiscard(roster.size);
+  discardDialog.showModal();
+});
+$('#keepSessionBtn').addEventListener('click', () => discardDialog.close());
 $('#confirmDiscardBtn').addEventListener('click', async event => {
   const btn = event.currentTarget;
   btn.setAttribute('aria-busy', 'true');
-  const response = await postData('/api/session/cancel', { sessionCode, facultyId });
+  const response = await postData('/api/session/cancel', {
+    sessionCode,
+    facultyId,
+    force: discardCount > 0,
+    confirmMarked: discardCount,
+  });
   btn.removeAttribute('aria-busy');
-  $('#discard-dialog').close();
+  // More students scanned while the dialog was open: show the new count and ask again
+  if (response?.error === 'marks_changed' || response?.error === 'session_has_marks') {
+    describeDiscard(response.marked, true);
+    return;
+  }
+  discardDialog.close();
   if (!response?.ok)
     return notify(`Could not discard the session. ${friendlyError(response?.error, response)}`, 'error');
-  showToast('Session discarded. The period is free again.', 'success');
+  showToast(
+    response.removed
+      ? `Session discarded. ${response.removed} student${response.removed === 1 ? '' : 's'}' marks removed.`
+      : 'Session discarded. The period is free again.',
+    'success',
+  );
   endSessionUI();
 });
 
 function endSessionUI() {
   clearTimeout(qrTimer);
   clearTimeout(renderTimer);
+  if (sessionCode) forgetRemoved(sessionCode);
   sessionCode = null;
   sessionMethod = null;
-  sessionMeta = null;
   headerInfo = null;
+  lastToken = null;
+  $('#qrLive').hidden = true;
+  if (discardDialog.open) discardDialog.close();
   renderSessionHeader();
   roster.clear();
   allStudents.clear();
@@ -1811,5 +2113,5 @@ function endSessionUI() {
 }
 
 syncDateChip();
-renderHistory(loadHistory());
 loadSlots();
+resumeIfOpen();

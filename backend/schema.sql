@@ -303,3 +303,19 @@ CREATE TABLE IF NOT EXISTS timetable_draft (
   next_n INTEGER NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+-- Written whenever a faculty discards a live session (before submit). The session rows themselves are deleted.
+CREATE TABLE IF NOT EXISTS session_discard_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_code TEXT NOT NULL,
+  faculty_id INTEGER,
+  faculty_name TEXT,
+  session_date DATE,
+  subject TEXT,
+  classes TEXT,
+  method TEXT,
+  student_count INTEGER NOT NULL DEFAULT 0,
+  marked_count INTEGER NOT NULL DEFAULT 0,
+  forced INTEGER NOT NULL DEFAULT 0,
+  discarded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);

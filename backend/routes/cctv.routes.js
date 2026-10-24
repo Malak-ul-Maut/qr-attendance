@@ -32,8 +32,10 @@ const __dirname = path.dirname(__filename);
 const SERVICE_SCRIPT =
   process.env.CCTV_SERVICE_SCRIPT || path.resolve(__dirname, '../server.py');
 const SERVICE_URL = process.env.CCTV_SERVICE_URL || 'http://127.0.0.1:8765';
-// Set CCTV_SPAWN_SERVICE=false if you run `python server.py` yourself (or on another machine).
-const SPAWN_SERVICE = process.env.CCTV_SPAWN_SERVICE !== 'false';
+// Set CCTV_SPAWN_SERVICE=false (or 0) to avoid loading the memory-heavy Python service at Node startup.
+const SPAWN_SERVICE = !['false', '0'].includes(
+  (process.env.CCTV_SPAWN_SERVICE || '').toLowerCase(),
+);
 // How long the first request may wait for the service to finish loading its models.
 const SERVICE_STARTUP_WAIT_MS = Number(
   process.env.CCTV_SERVICE_STARTUP_WAIT_MS || 120_000,

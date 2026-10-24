@@ -28,7 +28,7 @@ export const clock = { now: () => new Date() };
 // ---- face enrolment settings ----
 export const FACE_MODEL = 'w600k_mbf'; // the browser model; the CCTV service makes its own embeddings from the photos
 const MIN_PHOTOS = 6;
-const MAX_PHOTOS = 24; // the app sends the best and the runner-up photo of each pose (7-8 poses)
+const MAX_PHOTOS = 24; // the app now sends one photo per pose (11-12); older copies of the page sent the best and the runner-up of each, so the limit stays
 // A new template this close to ANOTHER student's is treated as the same face enrolled twice.
 // Starting value: tune it on real data (the log line below shows near misses).
 const DUPLICATE_THRESHOLD = Number(process.env.FACE_DUPLICATE_THRESHOLD) || 0.6;

@@ -42,6 +42,7 @@
     <link rel="modulepreload" href="js/today.js" />
     <link rel="modulepreload" href="js/attendance.js" />
     <link rel="modulepreload" href="js/profile.js" />
+    <link rel="modulepreload" href="js/password-dialog.js" />
     <link rel="modulepreload" href="js/api.js" />
     <link rel="modulepreload" href="js/dom.js" />
     <link rel="modulepreload" href="js/state.js" />
@@ -186,6 +187,49 @@
       </div>
     </div>
 
+    <!-- Change password. Opens from the avatar menu, the Profile tab, the setup card, and once on first sign-in. -->
+    <dialog id="password-dialog" class="dialog" data-modal="strict" aria-labelledby="pwTitle">
+      <form id="pwForm" novalidate>
+        <h2 id="pwTitle">Change password</h2>
+        <p id="pwIntro" class="pw-intro" hidden>
+          You are still using the default password. Choose your own now, or do it later from your profile.
+        </p>
+        <div class="field">
+          <label for="pwCurrent">Current password</label>
+          <div class="input-group">
+            <input class="input" id="pwCurrent" type="password" autocomplete="current-password" required />
+            <button class="input-toggle" type="button" data-for="pwCurrent" aria-label="Show current password" aria-pressed="false"></button>
+          </div>
+          <p id="pwCurrentMsg" class="field-msg err" role="alert" hidden></p>
+        </div>
+        <div class="field">
+          <label for="pwNew">New password</label>
+          <div class="input-group">
+            <input class="input" id="pwNew" type="password" autocomplete="new-password" aria-describedby="pwRules" required />
+            <button class="input-toggle" type="button" data-for="pwNew" aria-label="Show new password" aria-pressed="false"></button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="pwConfirm">Repeat new password</label>
+          <div class="input-group">
+            <input class="input" id="pwConfirm" type="password" autocomplete="new-password" aria-describedby="pwRules" required />
+            <button class="input-toggle" type="button" data-for="pwConfirm" aria-label="Show repeated password" aria-pressed="false"></button>
+          </div>
+        </div>
+        <ul id="pwRules" class="pw-rules" aria-label="Password rules">
+          <li data-rule="length">At least 8 characters</li>
+          <li data-rule="plain">Not your username, roll number or &ldquo;password&rdquo;</li>
+          <li data-rule="different">Different from your current password</li>
+          <li data-rule="match">Both new passwords match</li>
+        </ul>
+        <p id="pwError" class="field-msg err" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button id="pwLater" class="btn btn-secondary" type="button">Cancel</button>
+          <button id="pwSave" class="btn btn-primary" type="submit" disabled>Save password</button>
+        </div>
+      </form>
+    </dialog>
+
     <!-- Face enrolment and camera self-test -->
     <div
       id="capture-section"
@@ -219,6 +263,8 @@
         <p id="captureLoadingNote"></p>
       </div>
       <p id="captureStatus" role="status"></p>
+      <!-- Coaching that names a direction ("a bit more to the left"): read out by screen readers, not shown -->
+      <p id="captureSR" class="visually-hidden" role="status" aria-live="polite"></p>
       <div id="capturePanel" class="card result-panel" hidden></div>
     </div>
   </body>

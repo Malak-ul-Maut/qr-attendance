@@ -159,34 +159,24 @@
         <section id="afterStart" hidden>
           <!-- Shown only while the live-update connection is down -->
           <p id="connBanner" class="alert alert-warning" role="status" hidden>
-            Live updates paused. Reconnecting... New scans will not appear until
-            it is back.
+            Live updates paused. Reconnecting; the list still refreshes every few
+            seconds.
           </p>
 
-          <!-- Which class this session is for (and which classes are merged), shown once a session starts -->
-          <section
-            id="sessionHeader"
-            class="card session-header"
-            aria-labelledby="shSubject"
-            hidden>
-            <div class="sh-top">
-              <div class="sh-title">
-                <p id="shKind" class="sh-kicker"></p>
-                <h2 id="shSubject" class="sh-subject"></h2>
+          <!-- One compact bar: subject, where and when, merged classes, and the present count -->
+          <section id="sessionHeader" class="card session-bar" aria-labelledby="shSubject" hidden>
+            <div class="sb-main">
+              <div class="sb-title">
+                <h2 id="shSubject" class="sb-subject"></h2>
+                <ul id="shTags" class="sb-tags" aria-label="Session type"></ul>
               </div>
-              <p class="sh-count" aria-live="polite">
-                <b id="shPresent">0</b><span id="shTotal"></span>
-                <span class="sh-count-label">present</span>
-              </p>
+              <p id="shMeta" class="sb-meta"></p>
+              <ul id="shClasses" class="sb-chips" aria-label="Classes taken together" hidden></ul>
             </div>
-            <ul id="shMeta" class="sh-meta" aria-label="Session details"></ul>
-            <div id="shClassesWrap" class="sh-classes" hidden>
-              <p id="shClassesLabel" class="sh-label"></p>
-              <ul
-                id="shClasses"
-                class="sh-class-list"
-                aria-labelledby="shClassesLabel"></ul>
-            </div>
+            <p class="sb-count">
+              <span class="sb-count-num"><b id="shPresent">0</b><span id="shTotal"></span></span>
+              <span class="sb-count-label">present</span>
+            </p>
           </section>
 
           <div class="live-grid">
@@ -198,6 +188,9 @@
                   <!-- CCTV only: how many faces the camera found, and how many of them were recognised -->
                   <p id="cctvSummary" class="cctv-summary" hidden></p>
                 </div>
+                <p class="fs-only fs-count" aria-hidden="true">
+                  <b id="fsCount">0</b> present
+                </p>
                 <button
                   id="fullscreenBtn"
                   class="btn btn-secondary"
@@ -205,13 +198,11 @@
                   Full screen
                 </button>
               </div>
-              <p class="fs-only fs-count" aria-hidden="true">
-                <b id="fsCount">0</b> present
-              </p>
-              <canvas id="qrCanvas" aria-label="Attendance QR code"></canvas>
-              <p id="qrLive" class="qr-live" data-state="live" role="status">
-                QR refreshes automatically
-              </p>
+              <div id="qrStage" class="qr-stage">
+                <canvas id="qrCanvas" aria-label="Attendance QR code"></canvas>
+                <!-- Hidden while the QR refreshes normally. Shown only when it stops refreshing. -->
+                <p id="qrLive" class="qr-live" data-state="stale" role="status" hidden></p>
+              </div>
               <p id="qrError" class="alert alert-danger" role="alert" hidden>
                 The QR library could not load. Check the network and reload.
               </p>
@@ -317,12 +308,32 @@
             </div>
 
             <div class="card roster-panel">
-              <div class="roster-actions">
+              <div class="roster-tools">
+                <input
+                  id="rosterSearch"
+                  class="input"
+                  type="search"
+                  placeholder="Search students"
+                  aria-label="Search students"
+                  autocomplete="off" />
                 <button
                   id="add-manually-btn"
                   class="btn btn-secondary"
                   type="button">
                   Add manually
+                </button>
+              </div>
+              <p id="liveStatus" class="live-status" role="status"></p>
+
+              <ul id="studentList" class="roster"></ul>
+              <p id="rosterEmpty" class="empty"></p>
+              <!-- Read aloud by screen readers when students are marked present -->
+              <p id="srAnnounce" class="visually-hidden" role="status"></p>
+
+              <!-- Discard is kept well away from Submit, and looks different -->
+              <div class="roster-foot">
+                <button id="discardBtn" class="btn btn-danger" type="button">
+                  Discard session
                 </button>
                 <button
                   id="submit-attendance-btn"
@@ -331,27 +342,6 @@
                   Submit attendance
                 </button>
               </div>
-              <p class="discard-row">
-                <button id="discardBtn" class="link-btn" type="button">
-                  Started by mistake? Discard this session
-                </button>
-              </p>
-
-              <p id="liveStatus" class="live-status" role="status"></p>
-              <div class="roster-filter">
-                <input
-                  id="rosterSearch"
-                  class="input"
-                  type="search"
-                  placeholder="Search students"
-                  aria-label="Search students"
-                  autocomplete="off" />
-              </div>
-
-              <ul id="studentList" class="roster"></ul>
-              <p id="rosterEmpty" class="empty"></p>
-              <!-- Read aloud by screen readers when students are marked present -->
-              <p id="srAnnounce" class="visually-hidden" role="status"></p>
             </div>
           </div>
         </section>
@@ -360,11 +350,15 @@
       <!-- History tab -->
       <section id="view-history" class="view" hidden>
         <h1 class="section-title" tabindex="-1">Past sessions</h1>
-        <p class="muted history-note">
-          Sessions you submitted from this browser.
-        </p>
-        <ul id="historyList" class="list"></ul>
-        <div id="historyEmpty" class="card empty">
+        <p class="muted history-note">Sessions you have submitted, newest first.</p>
+        <ul id="historyList" class="list history-list"></ul>
+        <p id="historyLoading" class="muted" role="status" hidden>Loading...</p>
+        <div id="historyError" class="alert alert-danger" role="alert" hidden>
+          <span>Could not load your past sessions.</span>
+          <button id="historyRetryBtn" class="btn btn-secondary btn-sm" type="button">Try again</button>
+        </div>
+        <button id="historyMoreBtn" class="btn btn-secondary" type="button" hidden>Show older sessions</button>
+        <div id="historyEmpty" class="card empty" hidden>
           <strong>No past sessions yet</strong><br />Sessions you submit will
           show up here.
         </div>
@@ -373,22 +367,23 @@
 
     <dialog
       id="manual-attendance-dialog"
-      class="dialog"
+      class="dialog dialog-tall"
       aria-labelledby="manualTitle">
       <h2 id="manualTitle">Add students manually</h2>
-      <p class="muted">Tick the students who are present.</p>
-      <input
-        id="manualSearch"
-        class="input"
-        type="search"
-        placeholder="Search by name"
-        aria-label="Search students"
-        autocomplete="off" />
-      <label class="check-row select-all">
-        <input id="manualSelectAll" type="checkbox" />
-        <span>Select all</span>
-      </label>
-      <ul id="manual-attendance-list"></ul>
+      <div class="pick-tools">
+        <input
+          id="manualSearch"
+          class="input"
+          type="search"
+          placeholder="Search by name or roll number"
+          aria-label="Search students"
+          autocomplete="off" />
+        <label class="pick-all">
+          <input id="manualSelectAll" type="checkbox" />
+          <span>Select all</span>
+        </label>
+      </div>
+      <ul id="manual-attendance-list" class="pick-list" data-checkbox="side"></ul>
       <p id="manualEmpty" class="muted" hidden></p>
       <div class="dialog-actions">
         <button id="closeDialog" class="btn btn-secondary" type="button">
@@ -406,18 +401,28 @@
 
     <dialog id="discard-dialog" class="dialog" aria-labelledby="discardTitle">
       <h2 id="discardTitle">Discard this session?</h2>
-      <p>
-        No attendance is saved and the period becomes free again, so another
-        faculty (or you) can start it. This only works while nobody is marked
-        present.
-      </p>
+      <p id="discardText"></p>
+      <p id="discardWarn" class="alert alert-danger" role="alert" hidden></p>
       <div class="dialog-actions">
         <button id="keepSessionBtn" class="btn btn-secondary" type="button">
           Keep session
         </button>
-        <button id="confirmDiscardBtn" class="btn btn-primary" type="button">
-          Discard
+        <button id="confirmDiscardBtn" class="btn btn-danger btn-solid" type="button">
+          Discard session
         </button>
+      </div>
+    </dialog>
+
+    <dialog
+      id="history-dialog"
+      class="dialog dialog-tall dialog-wide"
+      aria-labelledby="hdTitle">
+      <h2 id="hdTitle"></h2>
+      <p id="hdMeta" class="muted"></p>
+      <p id="hdSummary" class="hd-summary"></p>
+      <div id="hdBody" class="hd-body"></div>
+      <div class="dialog-actions">
+        <button id="hdClose" class="btn btn-secondary" type="button">Close</button>
       </div>
     </dialog>
 
@@ -441,8 +446,9 @@
 
     <!-- QR library: use the copy in utils/ (works on college networks that block CDNs). Only if that file is missing do we fall back to the CDN. -->
     <script src="/utils/qrcode.min.js"></script>
-    <!-- The socket.io client library comes from the API server, wherever that is -->
-    <script>document.write('<script src="' + window.API_BASE + '/socket.io/socket.io.js"><\/script>');</script>
+    <!-- The socket.io client library. The API server (or the Pages worker in front of it) answers /socket.io on the
+         same address as the page. Deferred, so it never blocks the page; faculty.js copes if it did not load. -->
+    <script defer src="/socket.io/socket.io.js"></script>
     <script src="js/faculty.js" type="module"></script>
   </body>
 </html>

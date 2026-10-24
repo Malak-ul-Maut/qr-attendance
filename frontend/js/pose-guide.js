@@ -13,8 +13,12 @@
 //      error on the second axis can no longer swing the arrow by 90 degrees.
 //   4. STEADY TEXT: graded messages (far / near / slow / stop / back) and a minimum time on screen for each.
 //
-// The acceptance rule is still checkPose() in pose.js, with the same windows, now fed with the filtered pose so
-// that what the guide shows and what is accepted always agree.
+// The acceptance rule is still checkPose() in pose.js, with the same windows, now fed with the filtered pose.
+//
+// TWO POSES, ON PURPOSE. The steady pose above decides when a photo is taken, so it is smoothed hard (1.1 Hz). That
+// smoothing is the right trade for "hold still", and the wrong one for the on-screen gauge: the dot trailed the real
+// head by a few tenths of a second, so it felt sluggish. The gauge now shows a DISPLAY pose: a light filter, plus a
+// short look-ahead from its own speed to cover the detection delay. It only draws; it never decides anything.
 import { checkPose, poseGuidance, poseMeters, poseCoach } from './pose.js';
 
 export const GUIDE_TUNING = {
@@ -33,6 +37,16 @@ export const GUIDE_TUNING = {
   axisDominance: 0.3, // an axis whose error is below this share of the other one is ignored for the arrow
   brakeStrength: 0.15, // arrow strength while the student should slow down / stop
   gapResetMs: 700, // no usable pose for this long (face lost, other face, bad light): forget the filter state, so old numbers cannot make the first frames after the gap look like fast movement
+};
+
+// The display pose (the gauge dot). Much lighter smoothing than GUIDE_TUNING; the look-ahead covers one detection round.
+export const DISPLAY_TUNING = {
+  minCutoff: 8, // Hz: almost no smoothing while still (jitter is small next to the gauge's width)
+  beta: 20, // opens up fast with speed, so there is almost no lag while turning
+  derivCutoff: 4, // Hz, smoothing of the speed estimate
+  leadMs: 90, // look-ahead: roughly the time from the camera frame to the dot being drawn
+  maxLead: 0.05, // never ahead by more than this many pose units (about a sixth of the narrowest yaw window)
+  minSpeed: 0.1, // below this (units per second) there is no look-ahead: it would only add jitter
 };
 
 // ---------- One-Euro filter ----------
@@ -77,56 +91,60 @@ function axisState(window, value, speed, run, tuning) {
   return { s, pLo, pHi, W, p, v, pred: p + lead };
 }
 
-// Wording per axis. [English, Hindi]
+// Wording per axis. These name a direction, so the page only reads them to screen readers (see `directional`).
 const WORDS = {
-  yawLeft: { far: ['Turn more to the left', 'और बाएँ घूमें'], near: ['A little more left', 'थोड़ा और बाएँ'] },
-  yawRight: { far: ['Turn more to the right', 'और दाएँ घूमें'], near: ['A little more right', 'थोड़ा और दाएँ'] },
-  down: { far: ['Chin down more', 'ठुड्डी और नीचे'], near: ['A little lower', 'थोड़ा और नीचे'], back: ['Too low, lift your chin a little', 'ज़्यादा नीचे, थोड़ा ऊपर'] },
-  up: { far: ['Raise the phone more', 'फ़ोन और ऊपर'], near: ['A little higher', 'थोड़ा और ऊपर'], back: ['Too high, lower it a little', 'ज़्यादा ऊपर, थोड़ा नीचे'] },
+  yawLeft: { far: 'Turn more to the left', near: 'A little more left' },
+  yawRight: { far: 'Turn more to the right', near: 'A little more right' },
+  down: { far: 'Chin down more', near: 'A little lower', back: 'Too low, lift your chin a little' },
+  up: { far: 'Raise the phone more', near: 'A little higher', back: 'Too high, lower it a little' },
 };
-const join = ([en, hi]) => `${en} · ${hi}`;
-const SLOW = 'Slowly… almost there · धीरे, बस थोड़ा';
-const STOP = 'Stop there · बस, रुकिए';
-const GOOD = 'Good, stay there · ठीक है, रुकिए';
-const TOUCH = 'Just a touch back · बस ज़रा वापस';
-const TOO_FAR = 'Too far, turn back a little · ज़्यादा हो गया, थोड़ा वापस';
+// These name no direction, so they stay on screen.
+const SLOW = 'Slowly… almost there';
+const STOP = 'Stop there';
+const GOOD = 'Good, stay there';
+const TOUCH = 'Just a touch back';
+const TOO_FAR = 'Too far, turn back a little';
+const say = (tone, text, directional) => ({ tone, text, directional });
 
 function graded(kind, a, tuning) {
   // kind: 'yawLeft' | 'yawRight' | 'down' | 'up'
   const words = WORDS[kind];
   if (a.p < a.pLo) { // not enough yet
     const remaining = a.pLo - a.p;
-    if (a.v > tuning.minSpeed && a.pred > a.pHi) return { tone: 'stop', text: STOP }; // moving, and about to fly past
-    if (a.v > tuning.minSpeed && a.pred >= a.pLo) return { tone: 'slow', text: SLOW }; // moving, and about to arrive
-    return { tone: 'little', text: join(remaining > tuning.nearFraction * a.W ? words.far : words.near) };
+    if (a.v > tuning.minSpeed && a.pred > a.pHi) return say('stop', STOP, false); // moving, and about to fly past
+    if (a.v > tuning.minSpeed && a.pred >= a.pLo) return say('slow', SLOW, false); // moving, and about to arrive
+    return say('little', remaining > tuning.nearFraction * a.W ? words.far : words.near, true);
   }
   if (a.p > a.pHi) { // past the window
     const over = a.p - a.pHi;
-    if (a.v < -tuning.minSpeed && a.pred <= a.pHi) return { tone: 'slow', text: GOOD }; // already coming back
-    if (over < tuning.touchFraction * a.W) return { tone: 'much', text: kind.startsWith('yaw') ? TOUCH : join(words.back) };
-    return { tone: 'much', text: kind.startsWith('yaw') ? TOO_FAR : join(words.back) };
+    if (a.v < -tuning.minSpeed && a.pred <= a.pHi) return say('slow', GOOD, false); // already coming back
+    if (over < tuning.touchFraction * a.W) return say('much', kind.startsWith('yaw') ? TOUCH : words.back, true);
+    return say('much', kind.startsWith('yaw') ? TOO_FAR : words.back, true);
   }
   return null;
 }
 
-export function createPoseGuide(tuning = GUIDE_TUNING) {
+export function createPoseGuide(tuning = GUIDE_TUNING, display = DISPLAY_TUNING) {
   const fYaw = createOneEuro(tuning);
   const fPitch = createOneEuro(tuning);
+  const dYaw = createOneEuro(display);
+  const dPitch = createOneEuro(display);
   let arrow = null; // current quantized direction (radians) or null
   let text = '';
   let tone = '';
+  let directional = false;
   let textSince = 0;
   let runYaw = { dir: 0, n: 0 }; // how many frames in a row the head has moved the same way (yaw / pitch)
   let runPitch = { dir: 0, n: 0 };
   let lastT = null; // time of the last frame that had a usable pose
 
-  const reset = () => { runYaw = { dir: 0, n: 0 }; runPitch = { dir: 0, n: 0 }; fYaw.reset(); fPitch.reset(); arrow = null; text = ''; tone = ''; textSince = 0; lastT = null; };
+  const reset = () => { runYaw = { dir: 0, n: 0 }; runPitch = { dir: 0, n: 0 }; fYaw.reset(); fPitch.reset(); dYaw.reset(); dPitch.reset(); arrow = null; text = ''; tone = ''; directional = false; textSince = 0; lastT = null; };
 
   // Smooth one frame. Returns a pose like estimatePose() but with filtered yaw/pitch, plus speeds.
   function filter(pose, t) {
     if (!pose) return null;
     if (lastT !== null && t - lastT > tuning.gapResetMs) { // the filter's dt is capped at 0.5 s, so a long gap would otherwise leave stale state behind
-      fYaw.reset(); fPitch.reset(); runYaw = { dir: 0, n: 0 }; runPitch = { dir: 0, n: 0 };
+      fYaw.reset(); fPitch.reset(); dYaw.reset(); dPitch.reset(); runYaw = { dir: 0, n: 0 }; runPitch = { dir: 0, n: 0 };
     }
     lastT = t;
     const y = fYaw.next(pose.yaw, t);
@@ -134,7 +152,12 @@ export function createPoseGuide(tuning = GUIDE_TUNING) {
     const track = (run, speed) => (Math.abs(speed) > tuning.minSpeed && (run.dir === 0 || Math.sign(speed) === run.dir) ? { dir: Math.sign(speed), n: run.n + 1 } : { dir: 0, n: 0 });
     runYaw = track(runYaw, y.speed);
     runPitch = track(runPitch, p.speed);
-    return { ...pose, yaw: y.value, pitch: p.value, yawSpeed: y.speed, pitchSpeed: p.speed, yawRun: runYaw.n, pitchRun: runPitch.n };
+    // the display pose: light smoothing, plus a short look-ahead from its own speed
+    const lead = (f, limit) => (Math.abs(f.speed) < display.minSpeed ? 0 : clamp((f.speed * display.leadMs) / 1000, -limit, limit));
+    const dy = dYaw.next(pose.yaw, t);
+    const dp = dPitch.next(pose.pitch, t);
+    const shown = { yaw: dy.value + lead(dy, display.maxLead), pitch: dp.value + lead(dp, display.maxLead) };
+    return { ...pose, yaw: y.value, pitch: p.value, yawSpeed: y.speed, pitchSpeed: p.speed, yawRun: runYaw.n, pitchRun: runPitch.n, shown };
   }
 
   function quantize(need) {
@@ -158,12 +181,12 @@ export function createPoseGuide(tuning = GUIDE_TUNING) {
       arrow = null;
       if (check.ok) { text = ''; tone = ''; }
       const moving = !!pose && (pose.yawRun >= tuning.movingFrames || pose.pitchRun >= tuning.movingFrames) && Math.max(Math.abs(pose.yawSpeed), Math.abs(pose.pitchSpeed)) > tuning.stillSpeed; // inside the window but still moving
-      return { pose, check, need: null, meters: null, text: null, tone: null, moving };
+      return { pose, check, need: null, meters: null, text: null, tone: null, directional: false, moving };
     }
 
     const general = poseCoach(shot, pose, baseline); // the original coach: also covers "straight" poses and the first photo
-    const meters = poseMeters(shot, pose, baseline);
-    let result = general ? { text: general.text, tone: general.tone } : { text: check.hint, tone: 'off' };
+    const meters = poseMeters(shot, { ...pose, ...pose.shown }, baseline); // the gauge follows the display pose
+    let result = general ? { text: general.text, tone: general.tone, directional: general.directional } : { text: check.hint, tone: 'off', directional: true };
 
     // Replace "a bit more" / "too far" with the graded, speed-aware wording of the axis that is further off.
     if (meters && general && (general.tone === 'little' || general.tone === 'much')) {
@@ -187,8 +210,8 @@ export function createPoseGuide(tuning = GUIDE_TUNING) {
 
     // a message stays long enough to be read; a stop/slow message may cut in at once
     const urgent = result.tone === 'stop' || result.tone === 'slow';
-    if (result.text !== text && (urgent || textSince === 0 || t - textSince >= tuning.textMinMs)) { text = result.text; tone = result.tone; textSince = t; }
-    return { pose, check, need, meters, text, tone, moving: false };
+    if (result.text !== text && (urgent || textSince === 0 || t - textSince >= tuning.textMinMs)) { text = result.text; tone = result.tone; directional = result.directional; textSince = t; }
+    return { pose, check, need, meters, text, tone, directional, moving: false };
   }
 
   return { step, reset, filter };

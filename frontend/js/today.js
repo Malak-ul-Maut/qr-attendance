@@ -5,8 +5,8 @@ import { h } from './dom.js';
 import { session } from './state.js';
 import { fmtDayMonth } from './format.js';
 import {
-  chipFor, classLabel, countdownText, fmtTime, greetingFor, groupRows, groupState,
-  lunchBetween, minutesUntil, pickNow, toMin,
+  chipFor, chipsFor, classLabel, countdownText, fmtTime, greetingFor, groupRows, groupState,
+  isDouble, lunchBetween, minutesUntil, periodTag, pickNow, roomNote, toMin,
 } from './today-logic.js';
 
 // Polling is the biggest source of requests from an open tab, so it is slow and cheap:
@@ -32,12 +32,12 @@ let loadError = null;
 let loading = false;
 let lastSignature = '';
 
-// First sign-in with the default password: send the student to Profile once, so the change is the first thing they do.
+// First sign-in with the default password: open the change-password dialog once, with a Later button.
 let forcedOnce = false;
 function forcePasswordChange() {
   if (forcedOnce || !me?.mustChangePassword) return;
   forcedOnce = true;
-  window.dispatchEvent(new CustomEvent('student:goto', { detail: 'profile' }));
+  window.dispatchEvent(new CustomEvent('student:change-password', { detail: { first: true } }));
 }
 
 // ---------- loading ----------
@@ -112,7 +112,7 @@ function build(data) {
   }
 
   nodes.push(...alerts(data));
-  nodes.push(modeSwitch());
+  nodes.push(titleRow(data));
   nodes.push(...(mode === 'week' ? buildWeek(data) : buildToday(data)));
   return nodes;
 }
@@ -120,13 +120,9 @@ function build(data) {
 function setHeader(data) {
   const first = String(me.name || '').trim().split(/\s+/)[0] || 'there';
   greetingEl.textContent = `${greetingFor(data.nowTime || '09:00')}, ${first}`;
-  const dateText = fmtDayMonth(data.today, 'long');
   const k = data.class;
   const bits = k ? [classLabel(k), k.homeRoom ? `Room ${k.homeRoom}` : null, k.batch ? `Batch ${k.batch}` : null] : [];
-  subEl.replaceChildren(
-    h('span', { text: dateText }),
-    ...bits.filter(Boolean).map(b => h('span', { class: 'class-chip', text: b })),
-  );
+  subEl.replaceChildren(...bits.filter(Boolean).map(b => h('span', { class: 'class-chip', text: b })));
 }
 
 function alerts(data) {
@@ -141,14 +137,27 @@ function alerts(data) {
     if (needsFace) items.push(me.faceStatus === 'pending' ? ['Face photos waiting for approval', 'The admin office is checking them. Until then, ask your teacher to mark you.']
       : me.faceStatus === 'rejected' ? ['Face photos were rejected', `${me.faceRejectReason || 'Please take them again.'} Take new photos in Profile.`]
       : ['Add your face photos', "You can't mark attendance until your face is enrolled."]);
+    const goProfile = () => window.dispatchEvent(new CustomEvent('student:goto', { detail: 'profile' }));
     out.push(h('section', { class: 'card checklist', 'aria-labelledby': 'setupTitle' },
       h('h2', { id: 'setupTitle', text: 'Finish setting up' }),
       h('ul', {}, items.map(([title, why]) => h('li', {}, h('strong', { text: title }), h('span', { text: why })))),
-      h('button', { class: 'btn btn-secondary', type: 'button', 'data-focus-key': 'goto-profile', onclick: () => window.dispatchEvent(new CustomEvent('student:goto', { detail: 'profile' })), text: needsFace ? (me.faceStatus === 'pending' ? 'View status' : 'Add face photos') : 'Change password' })));
+      h('div', { class: 'checklist-actions' },
+        me.mustChangePassword && h('button', { class: 'btn btn-secondary', type: 'button', 'data-focus-key': 'change-password',
+          onclick: () => window.dispatchEvent(new CustomEvent('student:change-password', { detail: { first: false } })), text: 'Change password' }),
+        needsFace && h('button', { class: 'btn btn-secondary', type: 'button', 'data-focus-key': 'goto-profile', onclick: goProfile,
+          text: me.faceStatus === 'pending' ? 'View status' : 'Add face photos' }))));
   }
   if (data.timetableChange)
     out.push(h('p', { class: 'note note-info', text: `Your timetable changes on ${formatDay(data.timetableChange.startsOn)}.` }));
   return out;
+}
+
+// "Today · Tue, 20 Oct" (or the week's dates) with the Today / Week switch beside it
+function titleRow(data) {
+  let title = `Today · ${fmtDayMonth(data.today)}`;
+  if (mode === 'week' && data.days?.length)
+    title = `This week · ${fmtDayMonth(data.days[0].date, false)} – ${fmtDayMonth(data.days.at(-1).date, false)}`;
+  return h('div', { class: 'title-row' }, h('h2', { class: 'view-title', text: title }), modeSwitch());
 }
 
 function modeSwitch() {
@@ -198,25 +207,30 @@ function buildToday(data) {
   return nodes;
 }
 
+// The same header on a card and on a week row: [P3] Subject ........ 9:30 am – 10:20 am
+// A double lecture shows "Double · P3–P4" where a single period shows "P3". The time never wraps.
+function slotHead(group, titleTag, { compact = false, featured = false } = {}) {
+  const timeRange = `${fmtTime(group.startTime)} – ${fmtTime(group.endTime)}`;
+  const badge = isDouble(group) && !compact;
+  const tag = badge
+    ? h('span', { class: 'badge-double', text: `Double · ${periodTag(group)}` })
+    : h('span', { class: 'period-tag', text: periodTag(group) });
+  return h('div', { class: `slot-head${badge || featured ? ' two-row' : ''}` }, tag, h(titleTag, { class: 'slot-title', text: group.subject.name }), h('span', { class: 'time', text: timeRange }));
+}
+
+const chipList = group => h('ul', { class: 'chips' }, chipsFor(group).map(({ label, chip }) =>
+  h('li', { class: `chip chip-${chip.tone}` }, h('span', { 'aria-hidden': 'true', text: chip.icon }), ` ${label ? `${label}: ` : ''}${chip.text}`)));
+
 function card(group, data, featured) {
   const state = groupState(group);
   const timeRange = `${fmtTime(group.startTime)} – ${fmtTime(group.endTime)}`;
-  const details = [group.room ? `Room ${group.room}` : null, group.faculty, group.forBatch ? 'Lab batch' : null].filter(Boolean).join(' · ');
+  const details = [roomNote(group.room, data.class?.homeRoom), group.faculty, group.forBatch ? 'Lab batch' : null].filter(Boolean).join(' · ');
 
-  const chips = h('ul', { class: 'chips' }, group.periods.map(p => {
-    const chip = chipFor(p);
-    const label = group.periods.length > 1 ? `${p.slot}: ` : '';
-    return h('li', { class: `chip chip-${chip.tone}` }, h('span', { 'aria-hidden': 'true', text: chip.icon }), ` ${label}${chip.text}`);
-  }));
-
-  const el = h('article', { class: `card class-card state-${state}${featured ? ' featured' : ''}`, 'aria-label': `${group.subject.name}, ${timeRange}` },
-    h('div', { class: 'class-head' },
-      h('h3', { text: group.subject.name }),
-      h('span', { class: 'time', text: timeRange })),
+  return h('article', { class: `card class-card state-${state}${featured ? ' featured' : ''}${isDouble(group) ? ' is-double' : ''}`, 'aria-label': `${group.subject.name}, ${timeRange}` },
+    slotHead(group, 'h3', { featured }),
     details && h('p', { class: 'meta', text: details }),
-    chips,
+    chipList(group),
     action(group, state, data));
-  return el;
 }
 
 // The one thing the student can do on this card.
@@ -249,12 +263,12 @@ function buildWeek(data) {
       groups.length
         ? h('ul', { class: 'week-list' }, groups.map((g, i) => {
             const prev = groups[i - 1];
-            return h('li', {},
+            const room = roomNote(g.room, data.class?.homeRoom);
+            const chip = weekChip(g);
+            return h('li', { class: `week-slot${isDouble(g) ? ' is-double' : ''}` },
               prev && lunchBetween(prev, g) && h('span', { class: 'lunch-line', text: 'Lunch' }),
-              h('span', { class: 'time', text: `${fmtTime(g.startTime)} – ${fmtTime(g.endTime)}` }),
-              h('span', { class: 'subject', text: g.subject.name }),
-              g.room && h('span', { class: 'meta', text: `Room ${g.room}` }),
-              weekChip(g));
+              slotHead(g, 'span', { compact: true }),
+              (room || chip) && h('div', { class: 'slot-sub' }, room && h('span', { class: 'meta', text: room }), chip));
           }))
         : h('p', { class: 'meta', text: 'No classes' })));
   }

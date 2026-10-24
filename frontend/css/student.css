@@ -2,7 +2,6 @@
 
 .view[hidden] { display: none; }
 .student-greeting { font-size: var(--text-2xl); font-weight: 700; margin-bottom: var(--space-1); }
-.student-sub { color: var(--ink-500); margin-bottom: var(--space-5); }
 
 /* Overall attendance ring (set --pct on .ring from JS) */
 .summary { display: flex; align-items: center; gap: var(--space-5); padding: var(--space-5); margin-bottom: var(--space-4); }
@@ -10,8 +9,14 @@
   --pct: 0;
   flex: none; width: 6.5rem; height: 6.5rem; border-radius: 50%;
   display: grid; place-items: center;
-  background: conic-gradient(var(--success-600) calc(var(--pct) * 1%), var(--line) 0);
+  --ring-color: var(--success-600);
+  background: conic-gradient(var(--ring-color) calc(var(--pct) * 1%), var(--line) 0);
 }
+/* Coloured by where the student stands against the 75% line. The sentence beside it says the same in words. */
+.ring-safe { --ring-color: var(--success-600); }
+.ring-close { --ring-color: var(--warning-600); }
+.ring-below { --ring-color: var(--danger-600); }
+.ring-none { --ring-color: var(--line-strong); }
 .ring span {
   width: 5rem; height: 5rem; border-radius: 50%; display: grid; place-items: center;
   background: var(--surface); font-size: var(--text-xl); font-weight: 700; color: var(--ink-900);
@@ -20,7 +25,8 @@
 .summary p { font-size: var(--text-sm); color: var(--ink-500); }
 
 /* ---- Today tab ---- */
-.student-sub { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.student-sub { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-4); }
+.student-sub:empty { display: none; }
 .class-chip { padding: 2px var(--space-3); border-radius: 999px; background: var(--surface); border: 1px solid var(--line-strong); font-size: var(--text-sm); font-weight: 600; color: var(--ink-700); }
 #todayRoot { display: grid; gap: var(--space-3); }
 .skeleton-stack { display: grid; gap: var(--space-3); }
@@ -28,7 +34,9 @@
 .note { margin: 0; padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); font-size: var(--text-sm); }
 .note-info { background: var(--info-50); color: var(--info-600); }
 .note-warning { background: var(--warning-50); color: var(--warning-600); }
-.mode-switch { max-width: 14rem; }
+.title-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3); }
+.view-title { margin: 0; font-size: var(--text-lg); }
+.mode-switch { flex: none; width: 11rem; }
 
 .checklist { padding: var(--space-4); display: grid; gap: var(--space-3); }
 .checklist h2 { font-size: var(--text-lg); margin: 0; }
@@ -41,9 +49,22 @@
 .class-card.featured { padding: var(--space-5); border-width: 2px; border-color: var(--red-600); }
 .class-card.featured h3 { font-size: var(--text-xl); }
 .class-card.state-not_tracked { background: var(--canvas); box-shadow: none; }
-.class-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; }
-.class-head h3 { margin: 0; font-size: var(--text-lg); }
-.class-card .time { font-size: var(--text-sm); font-weight: 600; color: var(--ink-700); }
+.class-card.featured .slot-title { font-size: var(--text-xl); }
+/* [P3] Subject ........ 9:30 am – 10:20 am. The same grid on a card and on a week row; the time never wraps. */
+.slot-head { --tag-col: auto; display: grid; grid-template-columns: var(--tag-col) minmax(0, 1fr) auto; align-items: baseline; column-gap: var(--space-3); }
+.slot-title { margin: 0; font-size: var(--text-base); font-weight: 700; line-height: 1.25; color: var(--ink-900); overflow-wrap: break-word; }
+.slot-head .time { white-space: nowrap; }
+/* Two rows: tag and time first, the subject at full width below. Used by double lectures (their badge is wider than a
+   period tag) and by the featured card (its bigger title would otherwise be squeezed into a narrow column). */
+.slot-head.two-row { row-gap: var(--space-1); }
+.slot-head.two-row > :first-child { grid-row: 1; grid-column: 1; }
+.slot-head.two-row .time { grid-row: 1; grid-column: 3; }
+.slot-head.two-row .slot-title { grid-row: 2; grid-column: 1 / -1; }
+.period-tag, .badge-double { justify-self: start; padding: 0 var(--space-2); border-radius: 6px; font-size: var(--text-sm); font-weight: 700; line-height: 1.5; white-space: nowrap; color: var(--ink-700); background: var(--canvas); border: 1px solid var(--line-strong); }
+.badge-double { color: var(--info-600); background: var(--info-50); border-color: var(--info-600); }
+/* A double lecture is one card with a stripe down its left edge */
+.class-card.is-double { border-left: 5px solid var(--info-600); }
+.class-card .time, .week-slot .time { font-size: var(--text-sm); font-weight: 600; color: var(--ink-700); }
 .class-card .meta, .week-day .meta { margin: 0; font-size: var(--text-sm); color: var(--ink-500); }
 .class-card .hint { margin: 0; font-size: var(--text-sm); color: var(--ink-700); }
 .scan-btn { width: 100%; min-height: 3.5rem; font-size: var(--text-lg); gap: var(--space-3); margin-top: var(--space-2); }
@@ -63,11 +84,14 @@
 .week-day { padding: var(--space-4); display: grid; gap: var(--space-2); }
 .week-day h2 { margin: 0; font-size: var(--text-base); display: flex; align-items: center; gap: var(--space-2); }
 .week-day.is-today { border-color: var(--red-600); }
-.week-list { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-2); }
-.week-list li { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: baseline; }
-.week-list .time { font-size: var(--text-sm); color: var(--ink-500); min-width: 9.5rem; }
-.week-list .subject { font-weight: 600; }
-.lunch-line { flex-basis: 100%; font-size: var(--text-sm); color: var(--ink-500); border-top: 1px dashed var(--line-strong); padding-top: var(--space-1); }
+.week-list { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-3); }
+/* Week rows use the card's header grid, with a fixed tag column so periods line up from one day to the next */
+.week-slot { --tag-col: 3.25rem; display: grid; gap: var(--space-1); padding-left: var(--space-3); border-left: 5px solid transparent; }
+.week-slot.is-double { border-left-color: var(--info-600); }
+.week-slot .slot-title { font-size: var(--text-base); }
+.slot-sub { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding-left: calc(3.25rem + var(--space-3)); }
+.slot-sub .meta { margin: 0; }
+.lunch-line { font-size: var(--text-sm); color: var(--ink-500); border-top: 1px dashed var(--line-strong); padding-top: var(--space-1); }
 
 /* ---- Attendance + Profile tabs ---- */
 .status-line { font-weight: 600; }
@@ -76,6 +100,24 @@
 .status-safe { color: var(--success-600); }
 .subject-figure { display: grid; justify-items: end; text-align: right; }
 .subject-figure small { color: var(--ink-500); }
+.subject-card { padding: 0; }
+.subject-toggle { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); width: 100%; min-height: var(--touch-target); padding: var(--space-4); font: inherit; color: inherit; text-align: left; background: none; border: 0; border-radius: var(--radius-lg); cursor: pointer; }
+.subject-toggle:hover { background: var(--canvas); }
+.subject-name { flex: 1; min-width: 0; }
+.subject-name small { color: var(--ink-500); }
+.chevron { flex: none; color: var(--ink-500); transition: transform 0.15s ease; }
+.subject-toggle[aria-expanded='true'] .chevron { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .chevron { transition: none; } }
+.records { display: grid; gap: var(--space-3); padding: 0 var(--space-4) var(--space-4); border-top: 1px solid var(--line); padding-top: var(--space-3); }
+.records[hidden] { display: none; }
+.records .meta { margin: 0; font-size: var(--text-sm); color: var(--ink-500); }
+.records-summary { margin: 0; font-size: var(--text-sm); font-weight: 600; color: var(--ink-700); }
+.record-list { margin: 0; padding: 0; list-style: none; display: grid; }
+.record { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-1) var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--line); }
+.record:last-child { border-bottom: 0; }
+.record-date { font-weight: 600; color: var(--ink-900); white-space: nowrap; }
+.record .chip { margin-left: auto; }
+.record-when { flex-basis: 100%; order: 3; }
 #attendanceRoot, #profileRoot { display: grid; gap: var(--space-3); }
 .profile-card { padding: var(--space-4); display: grid; gap: var(--space-3); }
 .profile-card h2 { margin: 0; font-size: var(--text-lg); }
@@ -184,6 +226,43 @@
 .thumbs { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-2); margin: 0; padding: 0; list-style: none; width: 100%; }
 .thumbs img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: var(--radius-sm); display: block; }
 #capturePanel p { margin: 0; }
+/* Photo upload: a ring that fills with the bytes sent, then turns while the server files the photos */
+.upload-ring { position: relative; width: 7rem; height: 7rem; margin: var(--space-3) auto; }
+.upload-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.upload-track, .upload-bar { fill: none; stroke-width: 4; }
+.upload-track { stroke: var(--line-strong); }
+.upload-bar { stroke: var(--red-600); stroke-linecap: round; transition: stroke-dashoffset 0.25s linear; }
+.upload-pct { position: absolute; inset: 0; display: grid; place-items: center; font-size: var(--text-xl); font-weight: 700; color: var(--ink-900); font-variant-numeric: tabular-nums; }
+.upload-ring.waiting svg { animation: upload-spin 1.1s linear infinite; }
+@keyframes upload-spin { to { transform: rotate(270deg); } }
+@media (prefers-reduced-motion: reduce) { .upload-bar { transition: none; } .upload-ring.waiting svg { animation: none; } }
+#captureDebug { margin: 0; padding: var(--space-2); font: 0.75rem/1.4 ui-monospace, monospace; color: var(--ink-700); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); white-space: pre-wrap; }
 .photo-plan { margin: 0; padding-left: var(--space-5); font-size: var(--text-sm); color: var(--ink-700); display: grid; gap: var(--space-1); }
 .check-row { display: flex; align-items: center; gap: var(--space-2); min-height: var(--touch-target); font-size: var(--text-base); }
 .check-row input { width: 1.25rem; height: 1.25rem; accent-color: var(--red-600); }
+
+/* ---- Password row (Profile) and dialog ---- */
+.password-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--line); }
+.password-text { display: grid; gap: 2px; min-width: 0; }
+.password-note { font-size: var(--text-sm); color: var(--ink-500); }
+.password-note.warn { color: var(--warning-600); font-weight: 600; }
+.checklist-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.checklist-actions:empty { display: none; }
+
+#password-dialog form { display: grid; gap: var(--space-3); }
+#password-dialog h2 { margin: 0; }
+.pw-intro { margin: 0; padding: var(--space-3); font-size: var(--text-sm); color: var(--warning-600); background: var(--warning-50); border-radius: var(--radius-md); }
+.pw-intro[hidden] { display: none; }
+#password-dialog .field { display: grid; gap: var(--space-1); }
+#password-dialog .dialog-actions { margin-top: var(--space-2); }
+.input-toggle .eye-on[hidden], .input-toggle .eye-off[hidden] { display: none; }
+/* The rules, checked live. A tick and a circle, so colour is never the only signal. */
+.pw-rules { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-1); font-size: var(--text-sm); color: var(--ink-700); }
+.pw-rules li { display: flex; align-items: baseline; gap: var(--space-2); }
+.pw-rules li::before { content: '\25CB'; flex: none; width: 1.25em; text-align: center; color: var(--ink-500); }
+.pw-rules li[data-met='true'] { color: var(--success-600); }
+.pw-rules li[data-met='true']::before { content: '\2713'; font-weight: 700; color: var(--success-600); }
+@media (max-width: 480px) {
+  dialog.dialog#password-dialog { width: calc(100vw - 1.5rem); padding: var(--space-4); }
+  #password-dialog .dialog-actions .btn { flex: 1; }
+}

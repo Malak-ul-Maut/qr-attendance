@@ -115,6 +115,20 @@ function frameBrightness(source) {
   return total / (32 * 24);
 }
 
+// The two checks that need no pixels, only the face box: too far, too close. Cheap enough to run on every frame, so
+// the enrolment can run the pixel-reading checks (light, blur, glare) less often. Returns a hint key or null.
+export function assessGeometry(video, face, settings = FACE_SETTINGS) {
+  const s = settings;
+  const boxWidth = face.box.x2 - face.box.x1;
+  const shorter = Math.min(video.videoWidth, video.videoHeight);
+  if (boxWidth < Math.max(s.minFaceWidth, shorter * s.minFaceFraction)) return 'far';
+  if (s.lightChecks) {
+    const touchesEdge = face.box.x1 < 2 || face.box.y1 < 2 || face.box.x2 > video.videoWidth - 2 || face.box.y2 > video.videoHeight - 2;
+    if (boxWidth > shorter * s.maxFaceFraction || touchesEdge) return 'close';
+  }
+  return null;
+}
+
 // { ok:true, quality } or { ok:false, hint } where hint is a key of HINT_TEXT.
 // Sharpness is mostly used to PICK the best frame, not to throw frames away: only a really blurry frame is refused.
 export function assessFrame(video, face, settings = FACE_SETTINGS) {

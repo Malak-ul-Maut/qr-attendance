@@ -710,11 +710,32 @@ router.get('/arranged/slots', async (req, res) => {
   }
 });
 
-// Discard a session that was started by mistake, so the period is free again (for example for the
-// faculty it was borrowed from). Only the faculty who started it, only before submitting, and only
-// while nobody has been marked present yet (after that, Submit it instead).
+// ---------------------------------------------------------------------------
+// Discard (before submit only). The period becomes free again.
+// Without `force`, a session with marks is refused (409 session_has_marks, with the count).
+// With `force: true` the client must also send `confirmMarked`, the number it told the faculty would be removed.
+// If more students were marked since then, nothing is deleted (409 marks_changed) so the faculty can confirm again.
+// Every discard, with or without marks, leaves a row in session_discard_log.
+// ---------------------------------------------------------------------------
+const ensureDiscardLog = () =>
+  dbRun(`CREATE TABLE IF NOT EXISTS session_discard_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_code TEXT NOT NULL,
+    faculty_id INTEGER,
+    faculty_name TEXT,
+    session_date DATE,
+    subject TEXT,
+    classes TEXT,
+    method TEXT,
+    student_count INTEGER NOT NULL DEFAULT 0,
+    marked_count INTEGER NOT NULL DEFAULT 0,
+    forced INTEGER NOT NULL DEFAULT 0,
+    discarded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+
 router.post('/cancel', async (req, res) => {
   const { sessionCode, facultyId } = req.body;
+  const force = req.body.force === true;
   if (!sessionCode) return res.status(400).json({ ok: false, error: 'missing_session_code' });
   try {
     const facultyDbId = await resolveFacultyId(facultyId);
@@ -726,25 +747,220 @@ router.post('/cancel', async (req, res) => {
     if (isSessionEnded(rows)) return res.status(400).json({ ok: false, error: 'session_ended' });
 
     const ids = `SELECT id FROM sessions WHERE session_code = ?`;
-    const marked = await dbGet(
-      `SELECT COUNT(*) AS count FROM attendance
-       WHERE session_id IN (${ids}) AND marked_at IS NOT NULL`,
+    const counts = await dbGet(
+      `SELECT COUNT(DISTINCT student_id) AS students,
+              COUNT(DISTINCT CASE WHEN marked_at IS NOT NULL THEN student_id END) AS marked
+       FROM attendance WHERE session_id IN (${ids})`,
       [sessionCode],
     );
-    if (marked.count > 0) return res.status(409).json({ ok: false, error: 'session_has_marks' });
+    const marked = counts.marked;
+    if (marked > 0 && !force)
+      return res.status(409).json({ ok: false, error: 'session_has_marks', marked });
+    if (marked > 0) {
+      const confirmed = Number(req.body.confirmMarked);
+      if (!Number.isSafeInteger(confirmed) || confirmed < 0 || marked > confirmed)
+        return res.status(409).json({ ok: false, error: 'marks_changed', marked });
+    }
+
+    const header = await getSessionHeader(sessionCode);
+    const faculty = await dbGet(`SELECT name FROM faculties WHERE id = ?`, [facultyDbId]);
+    const classes = (header?.classes || [])
+      .map(c => `${c.branch}-${c.semester}${c.section}${c.batch ? ` ${c.batch}` : ''}`)
+      .join(', ');
 
     // Close the room's camera connection first: once the session is gone there is no room to look up.
     await releaseSessionCamera(sessionCode);
+    await ensureDiscardLog(); // CREATE TABLE inside a transaction is fine, but keep it out of the queue
     await withTransaction(async () => {
+      await dbRun(
+        `INSERT INTO session_discard_log
+           (session_code, faculty_id, faculty_name, session_date, subject, classes, method, student_count, marked_count, forced)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          sessionCode,
+          facultyDbId,
+          faculty?.name ?? null,
+          rows[0].date,
+          header?.subject_label ?? null,
+          classes,
+          rows[0].method,
+          counts.students,
+          marked,
+          marked > 0 ? 1 : 0,
+        ],
+      );
       await dbRun(`DELETE FROM attendance WHERE session_id IN (${ids})`, [sessionCode]);
       await dbRun(`DELETE FROM session_classes WHERE session_id IN (${ids})`, [sessionCode]);
       await dbRun(`DELETE FROM sessions WHERE session_code = ?`, [sessionCode]);
     });
 
     getIO().to(sessionCode).emit('session_finalized', { sessionCode });
-    return res.json({ ok: true, message: 'Discarded' });
+    return res.json({ ok: true, message: 'Discarded', removed: marked });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ ok: false, error: err.message });
+    console.error(err);
+    return res.status(500).json({ ok: false, error: 'database_error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// The faculty's open session, so a refresh (or a second device) can pick it up again. Only sessions started in the
+// last 12 hours come back, so one that was forgotten days ago does not reopen every time the page loads.
+// Also the way to re-read who is marked after the live connection dropped: ?code=... returns the same marks
+// for that one session while it is still open.
+// ---------------------------------------------------------------------------
+const isoUtc = value => (value ? `${String(value).replace(' ', 'T')}Z` : null);
+
+async function sessionMarks(sessionCode) {
+  const rows = await dbAll(
+    `SELECT students.id AS id, students.name AS name, students.roll_number AS roll_number,
+            attendance.method AS method, MIN(attendance.marked_at) AS marked_at
+     FROM attendance
+     JOIN sessions ON sessions.id = attendance.session_id
+     JOIN students ON students.id = attendance.student_id
+     WHERE sessions.session_code = ? AND attendance.marked_at IS NOT NULL
+     GROUP BY students.id
+     ORDER BY MIN(attendance.marked_at), students.name`,
+    [sessionCode],
+  );
+  return rows.map(row => ({
+    id: row.id,
+    name: row.name,
+    rollNumber: row.roll_number,
+    method: row.method,
+    markedAt: isoUtc(row.marked_at),
+  }));
+}
+
+router.get('/active', async (req, res) => {
+  try {
+    const facultyDbId = await resolveFacultyId(req.query.facultyId);
+    if (!facultyDbId) return res.status(404).json({ ok: false, error: 'faculty_not_found' });
+
+    const code = String(req.query.code ?? '');
+    const open = await dbGet(
+      code
+        ? `SELECT session_code, method, date FROM sessions
+           WHERE faculty_id = ? AND session_code = ? AND end_time IS NULL LIMIT 1`
+        : `SELECT session_code, method, date FROM sessions
+           WHERE faculty_id = ? AND end_time IS NULL AND start_time >= datetime('now', '-12 hours')
+           ORDER BY id DESC LIMIT 1`,
+      code ? [facultyDbId, code] : [facultyDbId],
+    );
+    if (!open) return res.json({ ok: true, active: null });
+
+    const sessionCode = open.session_code;
+    const header = await getSessionHeader(sessionCode);
+    const response = {
+      ok: true,
+      active: {
+        sessionCode,
+        method: open.method,
+        date: open.date,
+        header,
+        marks: await sessionMarks(sessionCode),
+        token:
+          open.method === 'qr'
+            ? createSessionToken(sessionCode, TOKEN_LIFETIME_SECONDS, await getSessionSections(sessionCode))
+            : null,
+      },
+    };
+    return res.json(response);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ ok: false, error: 'database_error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// History: this faculty's submitted sessions, newest first, and one session in detail.
+// ---------------------------------------------------------------------------
+router.get('/history', async (req, res) => {
+  try {
+    const facultyDbId = await resolveFacultyId(req.query.facultyId);
+    if (!facultyDbId) return res.status(404).json({ ok: false, error: 'faculty_not_found' });
+    const limit = Math.min(Math.max(Number(req.query.limit) || 30, 1), 100);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+
+    const codes = await dbAll(
+      `SELECT session_code, MAX(id) AS last_id FROM sessions
+       WHERE faculty_id = ? AND end_time IS NOT NULL
+       GROUP BY session_code ORDER BY last_id DESC LIMIT ? OFFSET ?`,
+      [facultyDbId, limit + 1, offset],
+    );
+    const page = codes.slice(0, limit);
+    const items = [];
+    for (const { session_code: sessionCode } of page) {
+      const header = await getSessionHeader(sessionCode);
+      if (!header) continue;
+      const counts = await dbGet(
+        `SELECT COUNT(DISTINCT attendance.student_id) AS total,
+                COUNT(DISTINCT CASE WHEN attendance.marked_at IS NOT NULL THEN attendance.student_id END) AS present
+         FROM attendance JOIN sessions ON sessions.id = attendance.session_id
+         WHERE sessions.session_code = ?`,
+        [sessionCode],
+      );
+      const meta = await dbGet(
+        `SELECT MIN(date) AS date, MIN(method) AS method, MAX(end_time) AS ended FROM sessions WHERE session_code = ?`,
+        [sessionCode],
+      );
+      items.push({
+        sessionCode,
+        date: meta.date,
+        method: meta.method,
+        endedAt: isoUtc(meta.ended),
+        header,
+        present: counts.present,
+        total: counts.total,
+      });
+    }
+    return res.json({ ok: true, sessions: items, hasMore: codes.length > limit });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ ok: false, error: 'database_error' });
+  }
+});
+
+router.get('/history/:sessionCode', async (req, res) => {
+  try {
+    const facultyDbId = await resolveFacultyId(req.query.facultyId);
+    if (!facultyDbId) return res.status(404).json({ ok: false, error: 'faculty_not_found' });
+    const sessionCode = req.params.sessionCode;
+    const rows = await getSessionRows(sessionCode);
+    if (rows.length === 0) return res.status(404).json({ ok: false, error: 'session_not_found' });
+    if (rows.some(row => row.faculty_id !== facultyDbId))
+      return res.status(403).json({ ok: false, error: 'not_your_session' });
+    if (!isSessionEnded(rows)) return res.status(409).json({ ok: false, error: 'session_not_submitted' });
+
+    const students = await dbAll(
+      `SELECT students.id AS id, students.name AS name, students.roll_number AS roll_number,
+              MAX(attendance.marked_at IS NOT NULL) AS present, attendance.method AS method,
+              MIN(attendance.marked_at) AS marked_at
+       FROM attendance
+       JOIN sessions ON sessions.id = attendance.session_id
+       JOIN students ON students.id = attendance.student_id
+       WHERE sessions.session_code = ?
+       GROUP BY students.id
+       ORDER BY students.name, students.id`,
+      [sessionCode],
+    );
+    return res.json({
+      ok: true,
+      sessionCode,
+      date: rows[0].date,
+      method: rows[0].method,
+      endedAt: isoUtc(rows.map(r => r.end_time).sort().at(-1)),
+      header: await getSessionHeader(sessionCode),
+      students: students.map(s => ({
+        id: s.id,
+        name: s.name,
+        rollNumber: s.roll_number,
+        present: Boolean(s.present),
+        method: s.present ? s.method : null,
+        markedAt: isoUtc(s.marked_at),
+      })),
+    });
+  } catch (err) {
     console.error(err);
     return res.status(500).json({ ok: false, error: 'database_error' });
   }

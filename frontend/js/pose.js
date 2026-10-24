@@ -41,31 +41,61 @@ export function estimatePose(landmarks, rollRef = null) {
 // The detector sometimes fires on things that are not faces (a ceiling fan, a lamp). A real face has its
 // landmarks in a fixed arrangement: eyes level and apart, nose below the eyes, mouth below the nose.
 // Returns true when the five landmarks (and the box around them) are arranged like a face.
-export function plausibleFace(face) {
+//
+// `relax` (0..1) loosens the limits for poses where a real face is NOT arranged like a frontal one: a wide
+// head turn (the eyes get close together, the box gets narrow) or a deep chin-down (eyes, nose and mouth bunch up
+// vertically). 0 = the strict frontal check. A face that is clearly turned (the nose well off the middle of the
+// eyes) is relaxed a little automatically, so a turn never needs the shot to say so.
+const PLAUSIBLE = {
+  //                         strict  fully relaxed
+  eyeRatioMin: [0.25, 0.14], // eye distance / box width
+  eyeRatioMax: [0.75, 0.8],
+  mouthWider: [1.4, 1.9], // mouth width may be this many times the eye distance
+  vertMin: [0.2, 0.1], // (mouth - eyes) / box height
+  vertMax: [0.75, 0.88],
+  roll: [40, 40], // degrees: a turn or a chin-down does not tilt the eye line, so this is never loosened
+  aspectMin: [0.5, 0.33], // box width / height
+  aspectMax: [1.4, 1.6],
+  noseBelowMouth: [0, 0.06], // how far (share of box height) the nose may sit below the mouth line
+};
+const lerp = (pair, k) => pair[0] + (pair[1] - pair[0]) * k;
+
+export function plausibleFace(face, relax = 0) {
   const [le, re, nose, lm, rm] = face.landmarks;
   const eyeDist = re.x - le.x;
   const boxWidth = face.box.x2 - face.box.x1;
   const boxHeight = face.box.y2 - face.box.y1;
   if (!(eyeDist > 0) || boxWidth <= 0 || boxHeight <= 0) return false;
+  const turned = Math.abs(nose.x - (le.x + re.x) / 2) / eyeDist > 0.25;
+  const k = Math.min(1, Math.max(relax, turned ? 0.5 : 0));
   const eyeY = (le.y + re.y) / 2;
   const mouthY = (lm.y + rm.y) / 2;
   const mouthWidth = rm.x - lm.x;
-  const rollDeg =
-    (Math.abs(Math.atan2(re.y - le.y, re.x - le.x)) * 180) / Math.PI;
+  const rollDeg = (Math.abs(Math.atan2(re.y - le.y, re.x - le.x)) * 180) / Math.PI;
+  const vertical = (mouthY - eyeY) / boxHeight;
+  const aspect = boxWidth / boxHeight;
   return (
     eyeY < nose.y &&
-    nose.y < mouthY && // top to bottom: eyes, nose, mouth
-    eyeDist / boxWidth > 0.25 &&
-    eyeDist / boxWidth < 0.75 && // eyes about a third to a half of the box width
+    nose.y < mouthY + lerp(PLAUSIBLE.noseBelowMouth, k) * boxHeight && // top to bottom: eyes, nose, mouth
+    eyeDist / boxWidth > lerp(PLAUSIBLE.eyeRatioMin, k) &&
+    eyeDist / boxWidth < lerp(PLAUSIBLE.eyeRatioMax, k) &&
     mouthWidth > 0 &&
-    mouthWidth < eyeDist * 1.4 && // the mouth is not wider than the eyes
-    (mouthY - eyeY) / boxHeight > 0.2 && // eyes and mouth are well apart vertically
-    (mouthY - eyeY) / boxHeight < 0.75 &&
-    rollDeg < 40 &&
-    boxWidth / boxHeight > 0.5 &&
-    boxWidth / boxHeight < 1.4
+    mouthWidth < eyeDist * lerp(PLAUSIBLE.mouthWider, k) &&
+    vertical > lerp(PLAUSIBLE.vertMin, k) &&
+    vertical < lerp(PLAUSIBLE.vertMax, k) &&
+    rollDeg < lerp(PLAUSIBLE.roll, k) &&
+    aspect > lerp(PLAUSIBLE.aspectMin, k) &&
+    aspect < lerp(PLAUSIBLE.aspectMax, k)
   );
 }
+
+// Per shot (all optional): `threshold` is the detector's confidence limit (default SHOT_DEFAULTS.threshold) and
+// `relax` is passed to plausibleFace(). The wide turns and the deep chin-down are where the detector's confidence
+// drops and the five landmarks stop looking like a frontal face, so those three ask for less of both; the plausibility
+// check is what keeps a ceiling fan out when the confidence limit is lower. The target angles are unchanged.
+export const SHOT_DEFAULTS = { threshold: 0.7, relax: 0 };
+export const shotThreshold = shot => shot.threshold ?? SHOT_DEFAULTS.threshold;
+export const shotRelax = shot => shot.relax ?? SHOT_DEFAULTS.relax;
 
 // yaw: allowed window of the yaw ratio. dPitch: allowed window of (pitch - the student's own front pitch).
 // short: the two-language label shown big on screen (the long `title`/`hint` are kept for the review and for tests).
@@ -151,6 +181,8 @@ export const SHOTS = [
     short: '⇇ Turn more left · और बाएँ',
     yaw: [0.34, 0.55],
     dPitch: [-0.1, 0.1],
+    threshold: 0.5,
+    relax: 0.8,
   },
   {
     id: 'right-wide',
@@ -159,6 +191,8 @@ export const SHOTS = [
     short: 'Turn more right · और दाएँ ⇉',
     yaw: [-0.55, -0.34],
     dPitch: [-0.1, 0.1],
+    threshold: 0.5,
+    relax: 0.8,
   },
   {
     id: 'down-deep',
@@ -167,6 +201,8 @@ export const SHOTS = [
     short: '⇣ Look at your desk · मेज़ की ओर',
     yaw: [-0.1, 0.1],
     dPitch: [0.2, 0.34],
+    threshold: 0.5,
+    relax: 0.8,
   },
 ];
 export const GLASSES_OFF_SHOT = {
@@ -333,8 +369,10 @@ export function poseMeters(shot, pose, baseline) {
   return { yaw, pitch };
 }
 
-// One short, kind sentence saying how much to move (two languages, like the rest of the guided flow).
-// { text, tone } where tone is 'little' | 'much' | 'off'. Null when the pose is right or there is no pose.
+// One short, kind sentence saying how much to move.
+// { text, tone, directional } where tone is 'little' | 'much' | 'off'. `directional` is true when the sentence names a
+// direction (left, right, chin, higher...): the page does not print those (the arrow and the gauge already show the
+// way) and only reads them out to screen readers. Null when the pose is right or there is no pose.
 export function poseCoach(shot, pose, baseline) {
   const meters = poseMeters(shot, pose, baseline);
   if (!meters) return null;
@@ -346,59 +384,25 @@ export function poseCoach(shot, pose, baseline) {
   const yawMiss = miss(meters.yaw);
   const pitchMiss = miss(meters.pitch);
   if (yawMiss === 0 && pitchMiss === 0) return null;
+  const say = (tone, text, directional = true) => ({ tone, text, directional });
 
   if (yawMiss >= pitchMiss) {
     const { status } = meters.yaw;
     const left = shot.yaw[0] > 0;
     if (status === 'little')
-      return {
-        tone: 'little',
-        text: left
-          ? 'A bit more to the left · थोड़ा और बाएँ'
-          : 'A bit more to the right · थोड़ा और दाएँ',
-      };
-    if (status === 'much')
-      return {
-        tone: 'much',
-        text: 'Too far, turn back a little · ज़्यादा हो गया, थोड़ा वापस',
-      };
+      return say('little', left ? 'A bit more to the left' : 'A bit more to the right');
+    if (status === 'much') return say('much', 'Too far, turn back a little');
     // a "straight" pose and the head is to one side: which side is it on?
-    return {
-      tone: 'off',
-      text:
-        pose.yaw < shot.yaw[0]
-          ? 'Turn a little to your left · थोड़ा बाएँ आएँ'
-          : 'Turn a little to your right · थोड़ा दाएँ आएँ',
-    };
+    return say('off', pose.yaw < shot.yaw[0] ? 'Turn a little to your left' : 'Turn a little to your right');
   }
   const { status } = meters.pitch;
   const up = baseline && shot.dPitch[1] < 0; // the "phone up high" pose
-  if (!baseline)
-    return {
-      tone: 'off',
-      text: 'Phone at eye level, look straight · फ़ोन आँखों के सामने',
-    };
+  if (!baseline) return say('off', 'Phone at eye level, look straight', false);
   if (status === 'little')
-    return {
-      tone: 'little',
-      text: up
-        ? 'Raise the phone a bit more · फ़ोन थोड़ा और ऊपर'
-        : 'Chin down a little more · ठुड्डी थोड़ी और नीचे',
-    };
+    return say('little', up ? 'Raise the phone a bit more' : 'Chin down a little more');
   if (status === 'much')
-    return {
-      tone: 'much',
-      text: up
-        ? 'Too high, lower it a little · ज़्यादा ऊपर, थोड़ा नीचे'
-        : 'Too low, lift your chin a little · ज़्यादा नीचे, थोड़ा ऊपर',
-    };
-  return {
-    tone: 'off',
-    text:
-      pose.pitch - baseline.pitch < shot.dPitch[0]
-        ? 'Lower your chin a little · ठुड्डी थोड़ी नीचे'
-        : 'Raise your chin a little · ठुड्डी थोड़ी ऊपर',
-  };
+    return say('much', up ? 'Too high, lower it a little' : 'Too low, lift your chin a little');
+  return say('off', pose.pitch - baseline.pitch < shot.dPitch[0] ? 'Lower your chin a little' : 'Raise your chin a little');
 }
 
 // Where the nose should be on screen for this shot: an ellipse (centre x, y, radii rx, ry, tilt angle) in image

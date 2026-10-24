@@ -114,3 +114,27 @@ export function greetingFor(nowTime) {
 export function classLabel(klass) {
   return klass ? `${klass.branch} ${klass.semester}${klass.section}` : '';
 }
+
+// "Period 3" -> "P3"
+export const shortPeriod = label => String(label ?? '').replace(/^Period\s*/i, 'P');
+
+// "P3", or "P3–P4" for a double lecture
+export function periodTag(group) {
+  const first = shortPeriod(group.periods[0].slot);
+  const last = shortPeriod(group.periods.at(-1).slot);
+  return group.periods.length > 1 ? `${first}–${last}` : first;
+}
+
+export const isDouble = group => group.periods.length > 1;
+
+// One chip for the whole card, unless its periods are in different states (say P3 present, P4 absent):
+// then one chip per period, each saying which period it is.
+export function chipsFor(group) {
+  const first = group.periods[0];
+  if (group.periods.every(p => p.state === first.state)) return [{ label: '', chip: chipFor(first) }];
+  return group.periods.map(p => ({ label: shortPeriod(p.slot), chip: chipFor(p) }));
+}
+
+// Room text for a card or row: only when it is not the class's usual room
+export const roomNote = (room, homeRoom) => (room && room !== homeRoom ? `Room ${room}` : null);
+
