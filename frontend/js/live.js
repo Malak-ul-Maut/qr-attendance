@@ -9,7 +9,6 @@ import { getCurrentUser } from '../utils/storage.js';
 
 export const liveSocket = typeof io === 'function' ? io(window.API_BASE || location.origin) : null;
 let joined = false;
-let everJoined = false;
 export const liveJoined = () => joined && Boolean(liveSocket?.connected);
 
 if (liveSocket) {
@@ -25,8 +24,7 @@ if (liveSocket) {
   });
   liveSocket.on('student_joined', () => {
     joined = true;
-    if (everJoined) changed(); // back after a drop: whatever happened meanwhile is missing
-    everJoined = true;
+    changed(); // catch up after connecting, and after reconnecting, before relying on live notices
   });
   liveSocket.on('disconnect', () => { joined = false; });
   liveSocket.on('schedule_changed', changed);

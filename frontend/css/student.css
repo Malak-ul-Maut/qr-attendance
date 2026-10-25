@@ -36,6 +36,7 @@
 .note-warning { background: var(--warning-50); color: var(--warning-600); }
 .title-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3); }
 .view-title { margin: 0; font-size: var(--text-lg); }
+.week-navigation { display: flex; align-items: center; gap: var(--space-2); }
 .mode-switch { flex: none; width: 11rem; }
 
 .checklist { padding: var(--space-4); display: grid; gap: var(--space-3); }
@@ -91,6 +92,7 @@
 .week-slot .slot-title { font-size: var(--text-base); }
 .slot-sub { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding-left: calc(3.25rem + var(--space-3)); }
 .slot-sub .meta { margin: 0; }
+.week-slot .scan-btn { width: auto; min-height: 2.5rem; margin-top: 0; font-size: var(--text-sm); }
 .lunch-line { font-size: var(--text-sm); color: var(--ink-500); border-top: 1px dashed var(--line-strong); padding-top: var(--space-1); }
 
 /* ---- Attendance + Profile tabs ---- */

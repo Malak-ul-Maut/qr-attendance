@@ -204,9 +204,10 @@ async function checkStudentForSession(sessionCode, username) {
   );
   const subject = subjectRow?.name ?? null;
 
-  // A session left open from an earlier day counts as ended.
+  // An open session left over from an earlier day counts as ended; future sessions
+  // are allowed while they remain open.
   const today = todayLocal();
-  if (isSessionEnded(rows) || rows.every(row => row.date !== today))
+  if (isSessionEnded(rows) || rows.some(row => row.date < today))
     return { error: 'session_ended', subject };
   // Camera (CCTV) sessions are marked by the camera, never by a phone.
   if (rows.some(row => row.method !== 'qr'))

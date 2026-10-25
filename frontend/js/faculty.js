@@ -3,7 +3,7 @@ import { enableLightDismiss, enableLightDismissAll } from '/utils/dialog.js';
 import { mountAccountMenu } from './account-menu.js';
 import postData from '/utils/fetch.js';
 import { showToast } from './ui.js';
-import { fmtClock, fmtDayDate, fmtTime } from './format.js';
+import { fmtClock, fmtDayDate, fmtTime, parseISODate } from './format.js';
 
 const $ = sel => document.querySelector(sel);
 const currentUser = getCurrentUser() || {};
@@ -63,7 +63,8 @@ const ERROR_TEXT = {
   borrow_partial:
     'That period is a combined lecture with other classes. Pick all of those classes too, or choose another period.',
   invalid_room: 'That room could not be found. Pick the room again.',
-  invalid_class_or_room: 'A class or room you picked no longer exists. Reload and try again.',
+  invalid_class_or_room:
+    'A class or room you picked no longer exists. Reload and try again.',
   invalid_slot: 'That period could not be found. Reload and try again.',
   session_has_marks:
     'Some students are already marked present. Confirm to discard the session and remove their marks.',
@@ -120,7 +121,9 @@ const byName = (a, b) => a.name.localeCompare(b.name);
 mountAccountMenu($('#accountMenu'), { user: currentUser, role: 'faculty' });
 // Add manually closes on an outside click, except once someone is ticked (then it only nudges, so a stray click
 // cannot throw the choices away). manualSelected is declared further down; it is only read when someone clicks.
-enableLightDismiss($('#manual-attendance-dialog'), { canDismiss: () => manualSelected.size === 0 });
+enableLightDismiss($('#manual-attendance-dialog'), {
+  canDismiss: () => manualSelected.size === 0,
+});
 enableLightDismissAll(); // dialogs say how they behave with data-modal (see utils/dialog.js)
 
 // Tabs: Session / History
@@ -154,7 +157,9 @@ const VIA = { qr: 'QR', cctv: 'CCTV', manual: 'Manual' };
 // "CSE · Sem 5 · A", or "CSE-5A + CSE-5B" when classes were taken together
 function classesText(classes) {
   if (!classes?.length) return '';
-  return classes.length > 1 ? classes.map(compactClassLabel).join(' + ') : classLabel(classes[0]);
+  return classes.length > 1
+    ? classes.map(compactClassLabel).join(' + ')
+    : classLabel(classes[0]);
 }
 
 // What the server's session header says in words: room, periods and the time range
@@ -163,8 +168,13 @@ function sessionFacts(header) {
   const first = periods[0];
   const last = periods.at(-1);
   return {
-    room: header?.block && header?.room_number ? `${header.block}-${header.room_number}` : '',
-    time: first ? `${fmtTime(first.start_time)} – ${fmtTime(last.end_time)}` : '',
+    room:
+      header?.block && header?.room_number
+        ? `${header.block}-${header.room_number}`
+        : '',
+    time: first
+      ? `${fmtTime(first.start_time)} – ${fmtTime(last.end_time)}`
+      : '',
     periodText:
       periods.length > 1
         ? `${shortPeriod(first.label)}–${shortPeriod(last.label)}`
@@ -244,8 +254,12 @@ async function loadHistory({ more = false } = {}) {
     renderHistory();
   }
 }
-$('#historyRetryBtn').addEventListener('click', () => loadHistory({ more: historyItems.length > 0 && historyMore }));
-$('#historyMoreBtn').addEventListener('click', () => loadHistory({ more: true }));
+$('#historyRetryBtn').addEventListener('click', () =>
+  loadHistory({ more: historyItems.length > 0 && historyMore }),
+);
+$('#historyMoreBtn').addEventListener('click', () =>
+  loadHistory({ more: true }),
+);
 
 function studentGroup(title, students, showHow) {
   const wrap = document.createElement('section');
@@ -263,7 +277,9 @@ function studentGroup(title, students, showHow) {
     if (showHow && s.method) {
       const how = document.createElement('span');
       how.className = 'hd-how';
-      how.textContent = [VIA[s.method], s.markedAt && fmtClock(s.markedAt)].filter(Boolean).join(' · ');
+      how.textContent = [VIA[s.method], s.markedAt && fmtClock(s.markedAt)]
+        .filter(Boolean)
+        .join(' · ');
       li.append(how);
     }
     ul.append(li);
@@ -271,7 +287,9 @@ function studentGroup(title, students, showHow) {
   if (!students.length) {
     const none = document.createElement('p');
     none.className = 'muted';
-    none.textContent = showHow ? 'Nobody was marked present.' : 'Nobody was absent.';
+    none.textContent = showHow
+      ? 'Nobody was marked present.'
+      : 'Nobody was absent.';
     wrap.append(h, none);
   } else wrap.append(h, ul);
   return wrap;
@@ -298,7 +316,9 @@ $('#historyList').addEventListener('click', async event => {
   $('#hdBody').replaceChildren();
   historyDialog.showModal();
   try {
-    const res = await fetch(`/api/session/history/${enc(btn.dataset.code)}?facultyId=${enc(facultyId)}`);
+    const res = await fetch(
+      `/api/session/history/${enc(btn.dataset.code)}?facultyId=${enc(facultyId)}`,
+    );
     const data = await res.json();
     if (!data.ok) throw new Error(data.error);
     const present = data.students.filter(s => s.present);
@@ -311,7 +331,8 @@ $('#historyList').addEventListener('click', async event => {
       studentGroup('Present', present, true),
     );
   } catch {
-    $('#hdSummary').textContent = 'Could not load this session. Close this and try again.';
+    $('#hdSummary').textContent =
+      'Could not load this session. Close this and try again.';
   }
 });
 
@@ -361,7 +382,8 @@ const sessionType = () => $('input[name="session-type"]:checked').value; // 'reg
 const updateSubjectHeader = () => {
   const subject =
     sessionType() === 'extra'
-      ? chosenArrClassIds().length && $('#arrSubject').selectedOptions[0]?.textContent
+      ? chosenArrClassIds().length &&
+        $('#arrSubject').selectedOptions[0]?.textContent
       : selectedSlot()?.subject_label;
   const title = $('#sub-name');
   title.textContent = subject || 'Pick a class';
@@ -385,7 +407,8 @@ function updateDateWarning() {
 function chooseSlot(slots) {
   const free = slots.map(slot => !slot.taken_by); // a period someone else took cannot be started
   const firstFree = free.indexOf(true);
-  if (dateInput.value !== localISODate()) return { pick: firstFree, nowId: null };
+  if (dateInput.value !== localISODate())
+    return { pick: firstFree, nowId: null };
   const now = new Date();
   const minutes = now.getHours() * 60 + now.getMinutes();
   const times = slots.map(s => ({
@@ -400,7 +423,10 @@ function chooseSlot(slots) {
       minutes < t.end,
   );
   if (current !== -1)
-    return { pick: free[current] ? current : firstFree, nowId: slots[current].id };
+    return {
+      pick: free[current] ? current : firstFree,
+      nowId: slots[current].id,
+    };
   const upcoming = times.findIndex(
     (t, i) => free[i] && t.start !== null && t.start > minutes,
   );
@@ -455,9 +481,11 @@ async function loadSlots() {
           loadRooms();
         });
         const time = label.querySelector('.slot-time');
-        time.innerHTML = '<span class="t-start"></span><span class="t-end"></span>';
+        time.innerHTML =
+          '<span class="t-start"></span><span class="t-end"></span>';
         time.querySelector('.t-start').textContent = fmtTime(slot.start_time);
-        time.querySelector('.t-end').textContent = ` – ${fmtTime(slot.end_time)}`;
+        time.querySelector('.t-end').textContent =
+          ` – ${fmtTime(slot.end_time)}`;
         label.title = timeRange(slot);
         if (nowId !== null && String(slot.id) === String(nowId)) {
           const badge = document.createElement('span');
@@ -521,14 +549,21 @@ let extraSlots = []; // periods the server described for the chosen classes
 const enc = encodeURIComponent;
 const roomName = room => `${room.block}-${room.number}`;
 const shortPeriod = label => String(label ?? '').replace(/^Period\s*/i, 'P');
-const timeRange = slot => `${fmtTime(slot.start_time)} – ${fmtTime(slot.end_time)}`;
+const timeRange = slot =>
+  `${fmtTime(slot.start_time)} – ${fmtTime(slot.end_time)}`;
 const chosenArrClassIds = () =>
-  [...document.querySelectorAll('#arrClasses input:checked')].map(i => Number(i.value));
+  [...document.querySelectorAll('#arrClasses input:checked')].map(i =>
+    Number(i.value),
+  );
 const chosenArrSlotIds = () =>
-  [...document.querySelectorAll('#arrSlots input:checked')].map(i => Number(i.value));
+  [...document.querySelectorAll('#arrSlots input:checked')].map(i =>
+    Number(i.value),
+  );
 const setupSlotIds = () =>
   sessionType() === 'regular'
-    ? getSlotId() ? [Number(getSlotId())] : []
+    ? getSlotId()
+      ? [Number(getSlotId())]
+      : []
     : chosenArrSlotIds();
 
 // Why the Start button is off, in a few words ('' when it can start).
@@ -581,7 +616,9 @@ async function loadRooms() {
         option.value = room.id;
         const notes = [];
         if (room.id === preferred)
-          notes.push(sessionType() === 'regular' ? 'timetable room' : 'class room');
+          notes.push(
+            sessionType() === 'regular' ? 'timetable room' : 'class room',
+          );
         if (room.type === 'lab') notes.push('lab');
         if (room.in_use_by) notes.push(`in use by ${room.in_use_by}`);
         else if (room.planned) notes.push(`planned: ${room.planned}`);
@@ -594,8 +631,12 @@ async function loadRooms() {
       }),
     );
     // Keep what the faculty already chose while the period changes, if that room is still free
-    const free = id => rooms.find(r => String(r.id) === String(id) && !r.in_use_by);
-    const usable = (userPickedRoom && free(kept)) || free(preferred) || rooms.find(r => !r.in_use_by);
+    const free = id =>
+      rooms.find(r => String(r.id) === String(id) && !r.in_use_by);
+    const usable =
+      (userPickedRoom && free(kept)) ||
+      free(preferred) ||
+      rooms.find(r => !r.in_use_by);
     if (usable) roomSelect.value = usable.id;
     updateRoomHint();
   } catch {
@@ -663,18 +704,26 @@ async function loadArranged() {
     if (requestId !== arrangedRequestId) return;
     arrangedClasses = data.classes || [];
     if (data.closed) {
-      $('#arrMsg').textContent = 'There are no classes on Sundays. Pick another date.';
+      $('#arrMsg').textContent =
+        'There are no classes on Sundays. Pick another date.';
       $('#arrMsg').hidden = false;
     } else if (!arrangedClasses.length) {
       // Without this the Extra form is just blank, and it looks broken
-      $('#arrMsg').textContent = 'You have no classes in the timetable this term, so there is nothing to take extra. Ask the admin office to add your periods.';
+      $('#arrMsg').textContent =
+        'You have no classes in the timetable this term, so there is nothing to take extra. Ask the admin office to add your periods.';
       $('#arrMsg').hidden = false;
     }
     $('#arrClasses').replaceChildren(
       ...arrangedClasses.map(c => {
-        const row = chipRow(c.class_id, compactClassLabel(c), c.room || '', 'arr-class');
+        const row = chipRow(
+          c.class_id,
+          compactClassLabel(c),
+          c.room || '',
+          'arr-class',
+        );
         const input = row.querySelector('input');
-        input.checked = keptClasses.has(c.class_id) || arrangedClasses.length === 1;
+        input.checked =
+          keptClasses.has(c.class_id) || arrangedClasses.length === 1;
         input.addEventListener('change', () => {
           updateSubjectHeader();
           loadArrangedSlots();
@@ -696,12 +745,19 @@ async function loadArranged() {
     await loadArrangedSlots();
   } catch {
     if (requestId !== arrangedRequestId) return;
-    $('#arrMsg').textContent = 'Could not load your classes. Check your connection and change the date to retry.';
+    $('#arrMsg').textContent =
+      'Could not load your classes. Check your connection and change the date to retry.';
     $('#arrMsg').hidden = false;
   }
 }
 
-const STATE_WORD = { own: 'Yours', borrow: 'Borrow', mine: 'Resume', taken: 'Taken', blocked: 'Combined' };
+const STATE_WORD = {
+  own: 'Yours',
+  borrow: 'Borrow',
+  mine: 'Resume',
+  taken: 'Taken',
+  blocked: 'Combined',
+};
 
 // Explains the periods that are not plain "free": what picking a borrowed one means, and why some are greyed out.
 function updateArrNote() {
@@ -710,9 +766,13 @@ function updateArrNote() {
   for (const slot of extraSlots) {
     const name = shortPeriod(slot.label);
     if (picked.has(slot.id) && slot.status === 'borrow')
-      lines.push(`${name}: ${slot.note}. They can no longer take attendance for it.`);
-    else if (picked.has(slot.id) && slot.status === 'mine') lines.push(`${name} was already started. It will resume.`);
-    else if (slot.status === 'taken' || slot.status === 'blocked') lines.push(`${name}: ${slot.note}.`);
+      lines.push(
+        `${name}: ${slot.note}. They can no longer take attendance for it.`,
+      );
+    else if (picked.has(slot.id) && slot.status === 'mine')
+      lines.push(`${name} was already started. It will resume.`);
+    else if (slot.status === 'taken' || slot.status === 'blocked')
+      lines.push(`${name}: ${slot.note}.`);
   }
   $('#arrNote').textContent = lines.join('\n');
 }
@@ -739,7 +799,10 @@ async function loadArrangedSlots() {
           '<input type="checkbox" name="arr-slot"><span class="slot-body"><span class="slot-time"></span><span class="slot-details"></span><span class="slot-state"></span></span>';
         const input = label.querySelector('input');
         input.value = slot.id;
-        input.disabled = slot.status === 'taken' || slot.status === 'blocked' || classIdsChosen.length === 0;
+        input.disabled =
+          slot.status === 'taken' ||
+          slot.status === 'blocked' ||
+          classIdsChosen.length === 0;
         input.checked = keptSlots.has(slot.id) && !input.disabled;
         input.addEventListener('change', () => {
           updateStartState();
@@ -747,12 +810,16 @@ async function loadArrangedSlots() {
           loadRooms();
         });
         label.querySelector('.slot-time').textContent = shortPeriod(slot.label);
-        label.querySelector('.slot-details').textContent = fmtTime(slot.start_time);
-        label.querySelector('.slot-state').textContent = STATE_WORD[slot.status] || '';
+        label.querySelector('.slot-details').textContent = fmtTime(
+          slot.start_time,
+        );
+        label.querySelector('.slot-state').textContent =
+          STATE_WORD[slot.status] || '';
         return label;
       }),
     );
-    if (classIdsChosen.length === 0) $('#arrNote').textContent = 'Pick a class first.';
+    if (classIdsChosen.length === 0)
+      $('#arrNote').textContent = 'Pick a class first.';
     else updateArrNote();
     updateStartState();
     await loadRooms();
@@ -812,7 +879,9 @@ $('#dateChip').addEventListener('click', () => {
   }
 });
 dateInput.addEventListener('change', dateChanged);
-document.querySelectorAll('input[name="method"]').forEach(r => r.addEventListener('change', updateRoomHint));
+document
+  .querySelectorAll('input[name="method"]')
+  .forEach(r => r.addEventListener('change', updateRoomHint));
 
 // ---------- Roster ----------
 const presentCount = () => {
@@ -829,7 +898,8 @@ function markPresent(id, name, source, time = formatTime()) {
   if (entry?.present) return false;
   // Taken off the list by the teacher: a later scan or QR must not quietly put them back (only "Mark present" does)
   if (entry?.removed && source !== 'manual') return false;
-  if (entry) Object.assign(entry, { present: true, removed: false, source, time });
+  if (entry)
+    Object.assign(entry, { present: true, removed: false, source, time });
   else roster.set(id, { name, time, source, present: true });
   return true;
 }
@@ -858,7 +928,11 @@ function classLabel(c) {
   const branch = c.branch_abbr || c.branchAbbr || c.branch || '';
   const sem = c.semester ?? c.sem ?? '';
   const section = c.section ?? '';
-  const label = [branch, sem !== '' ? `Sem ${sem}` : '', section !== '' ? section : '']
+  const label = [
+    branch,
+    sem !== '' ? `Sem ${sem}` : '',
+    section !== '' ? section : '',
+  ]
     .filter(Boolean)
     .join(' · ');
   const base = label || c.label || c.name || `Class ${c.class_id ?? ''}`.trim();
@@ -869,9 +943,7 @@ function compactClassLabel(c) {
   const branch = c.branch_abbr || c.branchAbbr || c.branch || '';
   const sem = c.semester ?? c.sem ?? '';
   const section = c.section ?? '';
-  return branch && sem !== ''
-    ? `${branch}-${sem}${section}`
-    : classLabel(c);
+  return branch && sem !== '' ? `${branch}-${sem}${section}` : classLabel(c);
 }
 
 // Present / total for one class. Needs students that say which class they belong to;
@@ -905,10 +977,15 @@ function updateHeaderStatus() {
   const count = `${presentCount()}${allStudents.size ? ` / ${allStudents.size}` : ''}`;
   $('#headerStatusWhat').textContent = what;
   $('#headerStatusCount').textContent = count;
-  chip.setAttribute('aria-label', `Live session: ${what}. ${count.replace(' / ', ' of ')} present. Open the session.`);
+  chip.setAttribute(
+    'aria-label',
+    `Live session: ${what}. ${count.replace(' / ', ' of ')} present. Open the session.`,
+  );
   chip.hidden = false;
 }
-$('#headerStatus').addEventListener('click', () => document.querySelector('.nav-item[data-view="session"]').click());
+$('#headerStatus').addEventListener('click', () =>
+  document.querySelector('.nav-item[data-view="session"]').click(),
+);
 
 function renderSessionHeader() {
   const bar = $('#sessionHeader');
@@ -935,8 +1012,11 @@ function renderSessionHeader() {
     facts.room,
     facts.time,
   ].filter(Boolean);
-  const rows = merged ? classes.map(c => ({ name: compactClassLabel(c), ...classCounts(c) })) : [];
-  const subject = srv?.subject_label || srv?.subject_abbr || defaultSubjectLabel || 'Class';
+  const rows = merged
+    ? classes.map(c => ({ name: compactClassLabel(c), ...classCounts(c) }))
+    : [];
+  const subject =
+    srv?.subject_label || srv?.subject_abbr || defaultSubjectLabel || 'Class';
   const key = JSON.stringify([subject, tags, meta, rows]);
   if (key === headerKey) return; // nothing new: leave the DOM alone
   headerKey = key;
@@ -944,7 +1024,9 @@ function renderSessionHeader() {
   bar.dataset.merged = merged ? 'true' : 'false';
   $('#shSubject').textContent = subject;
   $('#shTags').replaceChildren(
-    ...tags.map(text => Object.assign(document.createElement('li'), { textContent: text })),
+    ...tags.map(text =>
+      Object.assign(document.createElement('li'), { textContent: text }),
+    ),
   );
   $('#shMeta').textContent = meta.join(' · ');
   $('#shClasses').hidden = rows.length === 0;
@@ -959,7 +1041,8 @@ function renderSessionHeader() {
       if (row.total !== null) {
         const count = document.createElement('span');
         count.className = 'sb-chip-count';
-        count.textContent = row.present === null ? `${row.total}` : `${row.present}/${row.total}`;
+        count.textContent =
+          row.present === null ? `${row.total}` : `${row.present}/${row.total}`;
         li.append(count);
       }
       return li;
@@ -978,8 +1061,12 @@ function buildRows() {
     label: idLabel(allStudents.get(id) || {}),
     present: s.present,
     meta: s.present
-      ? [idLabel(allStudents.get(id) || {}), via[s.source], s.time].filter(Boolean).join(' · ')
-      : ['Marked absent', idLabel(allStudents.get(id) || {})].filter(Boolean).join(' · '),
+      ? [idLabel(allStudents.get(id) || {}), via[s.source], s.time]
+          .filter(Boolean)
+          .join(' · ')
+      : ['Marked absent', idLabel(allStudents.get(id) || {})]
+          .filter(Boolean)
+          .join(' · '),
   }));
   return q
     ? rows.filter(
@@ -1114,7 +1201,9 @@ studentList.addEventListener('click', async event => {
   }
   saveRemoved();
   renderRoster({ force: true });
-  studentList.querySelector(`[data-id="${CSS.escape(id)}"] .row-action`)?.focus();
+  studentList
+    .querySelector(`[data-id="${CSS.escape(id)}"] .row-action`)
+    ?.focus();
 });
 
 $('#rosterSearch').addEventListener('input', event => {
@@ -1167,7 +1256,8 @@ function announcePresent(name) {
 // ---------- Live updates ----------
 // Students scanning their QR arrive through the socket. If the library did not load, or the connection drops, the
 // list is re-read from the server every few seconds instead, so nobody goes missing.
-const socket = typeof io === 'function' ? io(window.API_BASE || location.origin) : null;
+const socket =
+  typeof io === 'function' ? io(window.API_BASE || location.origin) : null;
 const onSocket = (event, handler) => socket?.on(event, handler);
 let socketWasDown = false;
 const POLL_MS = 8000;
@@ -1179,8 +1269,14 @@ function mergeServerMarks(marks) {
   for (const m of marks) {
     const id = String(m.id);
     if (roster.has(id)) continue;
-    const source = m.method === 'cctv' ? 'cctv' : m.method === 'manual' ? 'manual' : 'qr';
-    roster.set(id, { name: m.name, time: m.markedAt ? fmtClock(m.markedAt) : formatTime(), source, present: true });
+    const source =
+      m.method === 'cctv' ? 'cctv' : m.method === 'manual' ? 'manual' : 'qr';
+    roster.set(id, {
+      name: m.name,
+      time: m.markedAt ? fmtClock(m.markedAt) : formatTime(),
+      source,
+      present: true,
+    });
     added++;
   }
   return added;
@@ -1191,7 +1287,9 @@ async function syncMarks() {
   const code = sessionCode;
   if (!code) return false;
   try {
-    const res = await fetch(`/api/session/active?facultyId=${enc(facultyId)}&code=${enc(code)}`);
+    const res = await fetch(
+      `/api/session/active?facultyId=${enc(facultyId)}&code=${enc(code)}`,
+    );
     const data = await res.json();
     if (code !== sessionCode || !data.ok) return false;
     if (!data.active) {
@@ -1223,8 +1321,7 @@ onSocket('attendance_update', data => {
     80;
   renderRoster();
   // Follow new arrivals only if the teacher has not scrolled up to read
-  if (nearBottom)
-    studentList.scrollTop = studentList.scrollHeight;
+  if (nearBottom) studentList.scrollTop = studentList.scrollHeight;
   announcePresent(data.studentName);
 });
 
@@ -1260,7 +1357,8 @@ function saveRemoved() {
   if (!sessionCode) return;
   const ids = [...roster].filter(([, s]) => s.removed).map(([id]) => id);
   try {
-    if (ids.length) localStorage.setItem(removedKey(sessionCode), JSON.stringify(ids));
+    if (ids.length)
+      localStorage.setItem(removedKey(sessionCode), JSON.stringify(ids));
     else localStorage.removeItem(removedKey(sessionCode));
   } catch {
     // storage blocked: the list still works, a refresh just forgets who was taken off
@@ -1289,17 +1387,39 @@ function fallbackHeader() {
     subject_abbr: slot?.subject_abbr,
     block: slot?.block,
     room_number: slot?.room_number,
-    periods: slot ? [{ label: slot.label, start_time: slot.start_time, end_time: slot.end_time }] : [],
+    periods: slot
+      ? [
+          {
+            label: slot.label,
+            start_time: slot.start_time,
+            end_time: slot.end_time,
+          },
+        ]
+      : [],
     kinds: [],
     classes: [...classInfo],
   };
 }
 
-function openLive({ code, method, date, header, marks = [], token = null, resumed = false }) {
+function openLive({
+  code,
+  method,
+  date,
+  header,
+  marks = [],
+  token = null,
+  resumed = false,
+}) {
   sessionCode = code;
   sessionMethod = method;
   const srv = header || fallbackHeader();
-  headerInfo = { date, srv, classes: srv.classes || [], method, kinds: srv.kinds || [] };
+  headerInfo = {
+    date,
+    srv,
+    classes: srv.classes || [],
+    method,
+    kinds: srv.kinds || [],
+  };
   headerKey = '';
   roster.clear();
   allStudents.clear();
@@ -1322,7 +1442,9 @@ function openLive({ code, method, date, header, marks = [], token = null, resume
   $('#qrLive').hidden = true;
   $('#cctvPanel').hidden = isQr;
   fullscreenBtn.hidden = !isQr || !document.fullscreenEnabled;
-  $('#panelTitle').textContent = isQr ? 'Scan to mark attendance' : 'CCTV result';
+  $('#panelTitle').textContent = isQr
+    ? 'Scan to mark attendance'
+    : 'CCTV result';
   $('#panelTitle').focus({ preventScroll: true });
   $('#liveStatus').textContent = '';
   connBanner.textContent = socket
@@ -1346,7 +1468,9 @@ function showCctvAfterResume() {
     resetView();
   };
   cctvResultImage.onerror = () => {};
-  cctvResultImage.src = window.apiUrl(`/results/${sessionCode}.jpg?t=${Date.now()}`);
+  cctvResultImage.src = window.apiUrl(
+    `/results/${sessionCode}.jpg?t=${Date.now()}`,
+  );
 }
 
 // ---------- Start session ----------
@@ -1458,14 +1582,18 @@ function drawQR(token) {
   if (!sessionCode || !token) return;
   if (typeof QRCode === 'undefined') return ($('#qrError').hidden = false);
   const dpr = window.devicePixelRatio || 1;
-  const box = Math.floor(Math.min(qrStage.clientWidth, qrStage.clientHeight)) || 320;
+  const box =
+    Math.floor(Math.min(qrStage.clientWidth, qrStage.clientHeight)) || 320;
   const target = Math.max(160, Math.round(box * dpr));
   const paint = () => {
     const scale = Math.max(2, Math.floor(target / qrSpan));
     QRCode.toCanvas(offscreen, token, { scale, margin: 1 }, err => {
       if (err || !sessionCode) return;
       // Changing a canvas's size clears it, so only do that when it really changed
-      if (qrCanvas.width !== offscreen.width || qrCanvas.height !== offscreen.height) {
+      if (
+        qrCanvas.width !== offscreen.width ||
+        qrCanvas.height !== offscreen.height
+      ) {
         qrCanvas.width = offscreen.width;
         qrCanvas.height = offscreen.height;
       }
@@ -1574,14 +1702,25 @@ function startScanProgress(startedAt, getInfo) {
     const { typical, others } = getInfo();
     const seconds = Math.round((Date.now() - startedAt) / 1000);
     const parts = [`Scanning… ${seconds} s`];
-    if (typical) parts.push(seconds > typical * 1.5 ? 'taking longer than usual' : `usually about ${typical} s`);
-    if (others > 0) parts.push(`${others} other ${others === 1 ? 'class is' : 'classes are'} also being scanned`);
+    if (typical)
+      parts.push(
+        seconds > typical * 1.5
+          ? 'taking longer than usual'
+          : `usually about ${typical} s`,
+      );
+    if (others > 0)
+      parts.push(
+        `${others} other ${others === 1 ? 'class is' : 'classes are'} also being scanned`,
+      );
     line.textContent = parts.join(' · ');
     line.hidden = false;
   };
   tick();
   const timer = setInterval(tick, 1000);
-  return () => { clearInterval(timer); line.hidden = true; };
+  return () => {
+    clearInterval(timer);
+    line.hidden = true;
+  };
 }
 
 async function runCCTV() {
@@ -1660,7 +1799,9 @@ async function runCCTV() {
     $('#cctvSkeleton').hidden = true;
     notify('The annotated CCTV image could not be loaded.', 'error');
   };
-  cctvResultImage.src = window.apiUrl(`/results/${sessionCode}.jpg?t=${Date.now()}`);
+  cctvResultImage.src = window.apiUrl(
+    `/results/${sessionCode}.jpg?t=${Date.now()}`,
+  );
 }
 
 // "Try again" (after an error) and "Scan again" (after a result) run the same scan. Students already
@@ -1899,7 +2040,9 @@ function renderManualList() {
       const li = document.createElement('li');
       const label = document.createElement('label');
       label.className = 'pick-row';
-      label.dataset.selected = manualSelected.has(student.id) ? 'true' : 'false';
+      label.dataset.selected = manualSelected.has(student.id)
+        ? 'true'
+        : 'false';
       const roll = document.createElement('span');
       roll.className = 'pick-roll';
       roll.textContent = idLabel(student);
@@ -2066,13 +2209,19 @@ $('#confirmDiscardBtn').addEventListener('click', async event => {
   });
   btn.removeAttribute('aria-busy');
   // More students scanned while the dialog was open: show the new count and ask again
-  if (response?.error === 'marks_changed' || response?.error === 'session_has_marks') {
+  if (
+    response?.error === 'marks_changed' ||
+    response?.error === 'session_has_marks'
+  ) {
     describeDiscard(response.marked, true);
     return;
   }
   discardDialog.close();
   if (!response?.ok)
-    return notify(`Could not discard the session. ${friendlyError(response?.error, response)}`, 'error');
+    return notify(
+      `Could not discard the session. ${friendlyError(response?.error, response)}`,
+      'error',
+    );
   showToast(
     response.removed
       ? `Session discarded. ${response.removed} student${response.removed === 1 ? '' : 's'}' marks removed.`
