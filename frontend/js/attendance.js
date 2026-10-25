@@ -152,3 +152,4 @@ function record(r) {
 
 window.addEventListener('student:tab', ev => { if (ev.detail === 'attendance') refresh(); });
 window.addEventListener('student:changed', () => { if (data) refresh(); });
+window.addEventListener('student:schedule-changed', () => { if (data) refresh(); }); // marks change when a class is submitted (js/live.js)

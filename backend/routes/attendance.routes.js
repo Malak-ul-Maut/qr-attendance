@@ -1,7 +1,7 @@
 import express from 'express';
 import { dbGet, dbRun } from '../utils/db.js';
 import utils from '../utils/in-memory-db.js';
-import { getIO } from '../utils/socket-io.js';
+import { getIO, notifyStudents } from '../utils/socket-io.js';
 import { getSessionRows, isSessionEnded } from '../utils/timetable.js';
 import { todayLocal } from '../utils/dates.js';
 
@@ -93,6 +93,7 @@ router.post('/verify', async (req, res) => {
       sessionId,
       time: currentDate.toLocaleTimeString(),
     });
+    notifyStudents([student.student_id]); // their own Today turns to "present" without waiting for a check
     return res.json({
       ok: true,
       message: 'Attendance recorded',
@@ -177,6 +178,7 @@ router.post('/manual', async (req, res) => {
         time,
         method: 'manual',
       });
+      notifyStudents([row.student_id]);
     }
 
     return res.json({ ok: true, added });

@@ -81,11 +81,24 @@ const folderOf = async id => {
 };
 
 // The photo files a student uploaded (names only; the image itself is fetched one by one below).
+// One photo per pose: older uploads saved the best AND the runner-up frame of every pose, and showing both made the grid
+// twice as long for no gain. The sharpest (rank 1) of each pose is shown; photos with no pose on record (added by hand,
+// or from before poses were saved) are all shown. `hidden` says how many runner-ups were left out.
 router.get('/:id/photos', wrap(async (req, res) => {
   const folder = await folderOf(req.params.id);
   let files = [];
   try { files = fs.readdirSync(folder).filter(f => IMAGE.test(f)).sort(); } catch { /* no folder yet */ }
-  res.json({ ok: true, files });
+  let meta = {};
+  try { meta = JSON.parse(fs.readFileSync(path.join(folder, 'self_meta.dat'), 'utf8')).files || {}; } catch { /* no record */ }
+  const best = new Map(); // pose -> file
+  for (const file of files) {
+    const shot = meta[file]?.shot;
+    if (!shot) continue;
+    const kept = best.get(shot);
+    if (!kept || (meta[file].rank ?? 1) < (meta[kept].rank ?? 1)) best.set(shot, file);
+  }
+  const shown = files.filter(file => !meta[file]?.shot || best.get(meta[file].shot) === file);
+  res.json({ ok: true, files: shown, photos: shown.map(file => ({ file, shot: meta[file]?.shot || null })), hidden: files.length - shown.length });
 }));
 
 router.get('/:id/photos/:file', wrap(async (req, res) => {

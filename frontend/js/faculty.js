@@ -3,7 +3,7 @@ import { enableLightDismiss, enableLightDismissAll } from '/utils/dialog.js';
 import { mountAccountMenu } from './account-menu.js';
 import postData from '/utils/fetch.js';
 import { showToast } from './ui.js';
-import { fmtClock, fmtDayDate, fmtTime, parseISODate } from './format.js';
+import { fmtClock, fmtDayDate, fmtTime } from './format.js';
 
 const $ = sel => document.querySelector(sel);
 const currentUser = getCurrentUser() || {};
@@ -664,6 +664,10 @@ async function loadArranged() {
     arrangedClasses = data.classes || [];
     if (data.closed) {
       $('#arrMsg').textContent = 'There are no classes on Sundays. Pick another date.';
+      $('#arrMsg').hidden = false;
+    } else if (!arrangedClasses.length) {
+      // Without this the Extra form is just blank, and it looks broken
+      $('#arrMsg').textContent = 'You have no classes in the timetable this term, so there is nothing to take extra. Ask the admin office to add your periods.';
       $('#arrMsg').hidden = false;
     }
     $('#arrClasses').replaceChildren(

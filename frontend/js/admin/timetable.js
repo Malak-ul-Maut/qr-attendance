@@ -495,10 +495,10 @@ document.querySelectorAll('#ttModeSeg button').forEach(b => b.addEventListener('
 const printDialog = $('#printDialog');
 const printBoxes = () => [...document.querySelectorAll('#printRooms input')];
 $('#ttPrintBtn').addEventListener('click', () => {
-  const current = mode === 'room' ? $('#ttTarget').value : '';
+  // Everything is ticked to begin with: the sheets are usually printed for every classroom at once
   $('#printRooms').replaceChildren(...rooms.map(r => h('label', { class: 'adm-pick' },
-    h('input', { type: 'checkbox', value: r.id, checked: String(r.id) === current }), h('span', { text: roomTitle(r) }))));
-  $('#printAll').checked = false;
+    h('input', { type: 'checkbox', value: r.id, checked: true }), h('span', { text: roomTitle(r) }))));
+  $('#printAll').checked = true;
   $('#printError').hidden = true;
   printDialog.showModal();
 });

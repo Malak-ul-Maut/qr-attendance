@@ -416,8 +416,8 @@ select.input { padding-right: var(--space-3); }
 /* ---------- Added in phase 6 ---------- */
 
 /* Dark theme: white text on the lighter dark-mode reds/greens would be hard to read, so buttons use dark text there */
-@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) { --on-red: #1a0608; --danger-700: #ffb3ab; } }
-:root[data-theme='dark'] { --on-red: #1a0608; --danger-700: #ffb3ab; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) { --danger-700: #ffb3ab; } }
+:root[data-theme='dark'] { --danger-700: #ffb3ab; }
 
 /* Placeholder-sized focus: dialogs and cards that receive programmatic focus show no stray ring */
 dialog:focus { outline: none; }

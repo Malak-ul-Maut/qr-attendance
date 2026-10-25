@@ -2,7 +2,7 @@ import express from 'express';
 import { randomBytes } from 'crypto';
 import utils from '../utils/in-memory-db.js';
 import { dbAll, dbGet, dbRun, withTransaction } from '../utils/db.js';
-import { getIO } from '../utils/socket-io.js';
+import { getIO, notifyClasses } from '../utils/socket-io.js';
 import { warmSessionCamera, releaseSessionCamera, growGalleryFromSession } from './cctv.routes.js';
 import { isValidDate, weekdayName, classDayName } from '../utils/dates.js';
 import {
@@ -313,6 +313,8 @@ async function startSessions({ date, facultyDbId, method, targets }) {
         : null,
     resumed,
   };
+
+  if (!resumed) notifyClasses(response.classIds); // students' Today moves from "waiting" to "open" at once
 
   if (resumed) {
     // Lets the client show who was already marked before it reconnected.
@@ -795,6 +797,7 @@ router.post('/cancel', async (req, res) => {
     });
 
     getIO().to(sessionCode).emit('session_finalized', { sessionCode });
+    notifyClasses((header?.classes || []).map(c => c.class_id)); // their Today stops showing the discarded period
     return res.json({ ok: true, message: 'Discarded', removed: marked });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ ok: false, error: err.message });
@@ -1057,6 +1060,8 @@ router.post('/finalize', async (req, res) => {
     });
 
     getIO().to(sessionCode).emit('session_finalized', { sessionCode });
+    // Students' Today and Attendance change now (absent people may have been marked, or the other way round)
+    getSessionHeader(sessionCode).then(h => notifyClasses((h?.classes || []).map(c => c.class_id))).catch(() => {});
     // The class is over: close its camera connection (no-op for QR sessions).
     void releaseSessionCamera(sessionCode);
     // CCTV only: crops of the students the faculty confirmed join their galleries (no-op for QR sessions).

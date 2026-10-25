@@ -5,6 +5,7 @@ import { engine } from './face/engine.js';
 import { openCamera } from './face/camera.js';
 import { session } from './state.js';
 import { showToast } from './ui.js';
+import { liveJoined, liveSocket } from './live.js';
 import { apiGet } from './api.js';
 import {
   cameraErrorCode,
@@ -379,14 +380,21 @@ async function startFaceStep() {
 
   // If the teacher closes attendance while the check runs, stop and say so.
   let stopCode = null;
-  const poll = setInterval(async () => {
+  const pollStatus = async () => {
     const res = await fetch(
       `/api/attendance/session-status?sessionId=${encodeURIComponent(flow.sessionId)}&studentId=${encodeURIComponent(studentId)}`,
     )
       .then(r => r.json())
       .catch(() => null);
     if (res && res.ok && res.open === false) stopCode = res;
-  }, STATUS_POLL_MS);
+  };
+  // With a live connection the server says when the teacher closes this session, so asking is only a safety net
+  // (every 6th turn, about 30 s). Without one, it asks every STATUS_POLL_MS as before.
+  let turns = 0;
+  const poll = setInterval(() => { if (liveJoined() && ++turns % 6) return; pollStatus(); }, STATUS_POLL_MS);
+  const onEnded = event => { if (String(event?.sessionCode) === String(flow.sessionId)) pollStatus(); }; // ask once: it also says why
+  liveSocket?.emit('join_session', flow.sessionId);
+  liveSocket?.on('session_finalized', onEnded);
   const isRunning = () =>
     active && generation === scanGeneration && stopCode === null;
 
@@ -402,6 +410,7 @@ async function startFaceStep() {
     });
   } catch (error) {
     clearInterval(poll);
+    liveSocket?.off('session_finalized', onEnded);
     console.error('Face verification failed', error);
     if (active && generation === scanGeneration) {
       stopCamera();
@@ -410,6 +419,7 @@ async function startFaceStep() {
     return;
   }
   clearInterval(poll);
+  liveSocket?.off('session_finalized', onEnded);
   if (!active || generation !== scanGeneration) return;
 
   if (result.status === 'cancelled' && stopCode) {

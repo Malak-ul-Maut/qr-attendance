@@ -46,10 +46,10 @@ const ENTITIES = {
       text('name', 'Full name'),
       text('roll_number', 'Roll number'),
       text('username', 'Username'),
-      { name: 'password', label: 'Password', type: 'password', secret: true, hint: 'Leave blank to keep the current one (new students get a generated password).' },
+      { name: 'password', column: 'password_hash', label: 'Password', type: 'password', secret: true, hint: 'Leave blank to keep the current one (new students get a generated password).' },
       opt('college_email', 'College email', { type: 'email' }),
       opt('phone_number', 'Phone', { type: 'tel' }),
-      text('year_of_passing', 'Year of passing', { type: 'number', min: YEAR_MIN, max: yearMax() }),
+      text('year_of_passing', 'Year of passing', { type: 'number', min: YEAR_MIN, max: yearMax(), hint: 'Filled in from the class. Change it only for a student who is repeating a year.' }),
       { name: 'class_id', label: 'Class', type: 'select', ref: 'classes', virtual: true, required: false },
       { name: 'batch', label: 'Batch', type: 'select', options: BATCHES, virtual: true, required: false },
       { name: 'active', label: 'Active', type: 'checkbox', default: 1 },
@@ -76,7 +76,7 @@ const ENTITIES = {
       text('name', 'Full name'),
       opt('abbr', 'Abbreviation', { hint: 'Leave blank to generate one from the name.' }),
       text('username', 'Username'),
-      { name: 'password', label: 'Password', type: 'password', secret: true, hint: 'Leave blank to keep the current one (new faculty get a generated password).' },
+      { name: 'password', column: 'password_hash', label: 'Password', type: 'password', secret: true, hint: 'Leave blank to keep the current one (new faculty get a generated password).' },
       { name: 'active', label: 'Active', type: 'checkbox', default: 1 },
     ],
     list: `SELECT f.id, f.name, f.abbr, f.username, f.active,
@@ -103,7 +103,8 @@ const ENTITIES = {
     label: 'Classes',
     singular: 'class',
     table: 'classes',
-    columns: [['branch', 'Branch'], ['semester', 'Sem'], ['section', 'Section'], ['academic_session', 'Session'], ['room', 'Home room'], ['counsellor', 'Class counsellor'], ['students', 'Students']],
+    // The table shows CLASSROOMS (section + home room + the class(es) taught in it); the page builds those rows from the list below.
+    columns: [['classroom', 'Classroom'], ['classesText', 'Classes'], ['academic_session', 'Session'], ['counsellor', 'Class counsellor'], ['students', 'Students']],
     fields: [
       { name: 'branch_id', label: 'Branch', type: 'select', ref: 'branches', required: true },
       text('semester', 'Semester', { type: 'number', min: 1, max: 8 }),
@@ -171,8 +172,10 @@ async function refOptions(ref) {
     courses: `SELECT id AS value, abbr AS label FROM courses ORDER BY abbr`,
     branches: `SELECT b.id AS value, c.abbr || ' / ' || b.abbr AS label FROM branches b JOIN courses c ON c.id = b.course_id ORDER BY c.abbr, b.abbr`,
     rooms: `SELECT id AS value, block || '-' || number AS label FROM rooms ORDER BY block, number`,
-    classes: `SELECT c.id AS value, b.abbr || ' Sem ' || c.semester || ' ' || c.section || ' (' || c.academic_session || ')' AS label
-              FROM classes c JOIN branches b ON b.id = c.branch_id
+    // session, semester and course length ride along so the student form can suggest the year of passing
+    classes: `SELECT c.id AS value, b.abbr || ' Sem ' || c.semester || ' ' || c.section || ' (' || c.academic_session || ')' AS label,
+                     c.academic_session AS session, c.semester AS semester, co.duration_years AS duration
+              FROM classes c JOIN branches b ON b.id = c.branch_id JOIN courses co ON co.id = b.course_id
               ORDER BY c.academic_session DESC, b.abbr, c.semester, c.section`,
   };
   return dbAll(queries[ref]);
@@ -192,6 +195,20 @@ router.get('/meta', wrap(async (req, res) => {
   }
   const sessions = (await dbAll(`SELECT DISTINCT academic_session AS s FROM classes ORDER BY s DESC`)).map(r => r.s);
   res.json({ ok: true, entities, sessions, today: todayLocal() });
+}));
+
+// Who already uses this faculty abbreviation (letters compared without case), other than faculty `exceptId`
+async function abbrOwner(abbr, exceptId = 0) {
+  return dbGet(`SELECT id, name FROM faculties WHERE UPPER(abbr) = UPPER(?) AND id != ? LIMIT 1`, [abbr, Number(exceptId) || 0]);
+}
+const abbrTaken = (abbr, owner) => new HttpError(409, 'duplicate', `"${abbr}" is already used by ${owner.name}. Choose a different abbreviation.`);
+
+// Live check while the admin types an abbreviation
+router.get('/abbr-check', wrap(async (req, res) => {
+  const abbr = clean(req.query.abbr);
+  if (!abbr) return res.json({ ok: true, available: true });
+  const owner = await abbrOwner(abbr, req.query.exclude);
+  res.json({ ok: true, available: !owner, ...(owner ? { owner: owner.name } : {}) });
 }));
 
 function entityOr404(name) {
@@ -216,7 +233,7 @@ function buildValues(entity, body, isInsert, out = {}) {
         if (!isInsert) continue;
         v = out.generatedPassword = generatePassword(); // handed to the admin once, never "password"
       } else checkPassword(v);
-      values[f.name] = v;
+      values[f.column || f.name] = v; // the form field is "password"; the table column is password_hash
       continue;
     }
     if (f.type === 'checkbox') {
@@ -266,6 +283,7 @@ router.post('/entity/:name', wrap(async (req, res) => {
   const values = buildValues(entity, req.body || {}, true, out);
   if (entity.table === 'classes') values.academic_session = deriveSession(values.semester);
   if (entity.table === 'faculties' && !values.abbr) values.abbr = await makeUniqueAbbr(values.name);
+  else if (entity.table === 'faculties') { const owner = await abbrOwner(values.abbr); if (owner) throw abbrTaken(values.abbr, owner); }
   const id = await withTransaction(async () => {
     const names = Object.keys(values);
     const result = await dbRun(
@@ -285,6 +303,7 @@ router.put('/entity/:name/:id', wrap(async (req, res) => {
   const values = buildValues(entity, req.body || {}, false);
   if (entity.table === 'classes') values.academic_session = deriveSession(values.semester ?? row.semester, row.academic_session);
   if (entity.table === 'faculties' && values.abbr === null) delete values.abbr;
+  if (entity.table === 'faculties' && values.abbr) { const owner = await abbrOwner(values.abbr, row.id); if (owner) throw abbrTaken(values.abbr, owner); }
   await withTransaction(async () => {
     const names = Object.keys(values);
     if (names.length)
@@ -396,6 +415,27 @@ router.post('/students-bulk', wrap(async (req, res) => {
     }
   });
   res.json({ ok: true, updated: ids.length });
+}));
+
+// New random passwords for chosen students or faculty (the row's Reset password, and the bulk Generate passwords).
+// They are returned once, for the admin to hand over or download; nothing keeps a readable copy of the list.
+router.post('/passwords', wrap(async (req, res) => {
+  const table = { students: 'students', faculties: 'faculties' }[req.body?.entity];
+  if (!table) throw new HttpError(400, 'invalid_value', 'Unknown table.');
+  const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map(Number).filter(Number.isInteger))];
+  if (!ids.length) throw new HttpError(400, 'invalid_value', 'Select at least one person.');
+  if (ids.length > 1000) throw new HttpError(400, 'invalid_value', 'Select at most 1000 people at a time.');
+  const passwords = [];
+  await withTransaction(async () => {
+    for (const id of ids) {
+      const row = await dbGet(`SELECT id, name, username${table === 'students' ? ', roll_number' : ''} FROM ${table} WHERE id = ?`, [id]);
+      if (!row) continue;
+      const password = generatePassword();
+      await dbRun(`UPDATE ${table} SET password_hash = ? WHERE id = ?`, [password, id]);
+      passwords.push({ id, name: row.name, username: row.username, rollNumber: row.roll_number ?? '', password });
+    }
+  });
+  res.json({ ok: true, passwords });
 }));
 
 // Everything the Term checklist shows for one session.

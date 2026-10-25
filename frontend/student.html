@@ -43,6 +43,7 @@
     <link rel="modulepreload" href="js/attendance.js" />
     <link rel="modulepreload" href="js/profile.js" />
     <link rel="modulepreload" href="js/password-dialog.js" />
+    <link rel="modulepreload" href="js/live.js" />
     <link rel="modulepreload" href="js/api.js" />
     <link rel="modulepreload" href="js/dom.js" />
     <link rel="modulepreload" href="js/state.js" />
@@ -53,6 +54,8 @@
     <script src="js/theme.js"></script>
     <script src="utils/auth-guard.js" type="module"></script>
     <!-- The face models run in js/face/engine.worker.js, which loads its own copy of ONNX Runtime -->
+    <!-- socket.io client (deferred, so it never blocks the page). js/live.js copes if it did not load. -->
+    <script defer src="/socket.io/socket.io.js"></script>
     <script defer src="js/app.js" type="module"></script>
   </head>
 

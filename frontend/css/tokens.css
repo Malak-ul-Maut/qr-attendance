@@ -92,6 +92,26 @@
   --toast-bg: #202328;
   --toast-ink: #ffffff;
   color-scheme: light;
+
+  /* ---- Text on the brand red (buttons, active steps). Dark in dark mode, where the red is lighter. ---- */
+  --on-red: #fff; /* 5.3:1 on --red-600 */
+  --scrim: rgba(32, 35, 40, 0.8); /* behind a white icon laid over a photo */
+  --head-bg: #e7eaee; /* table header rows */
+
+  /* ---- The timetable sheet: a copy of the printed paper, so it is the same in light and dark mode ---- */
+  --sheet-paper: #fff;
+  --sheet-ink: #000; /* lines and big text */
+  --sheet-ink-2: #202020; /* text in the cells */
+  --sheet-ink-3: #333; /* the "shared" mark */
+  --sheet-ink-4: #5f5f5f; /* the "+" in empty cells: 6.4:1 on paper */
+  --sheet-line: #767676; /* dashed edge of the add buttons: 4.5:1 on paper */
+  --sheet-sat: #c5e0b4; /* Saturday row */
+  --sheet-head: #d0d0d0; /* sheet header cells */
+  --sheet-accent: #b42318; /* hover on the add buttons: 6.6:1 on paper */
+  --sheet-new: #2e9d57; /* a cell that will be added: 3.4:1 on paper */
+  --sheet-changed: #b86200; /* a cell that will change: 4.4:1 on paper */
+  --sheet-removed: #c0392b; /* a cell that will be removed: 5.4:1 on paper */
+  --sheet-ghost: #8a2b22; /* struck-through text of a removed cell: 8.6:1 on paper */
 }
 
 /* ---------- Dark theme ----------
@@ -112,6 +132,8 @@
     --canvas: #15171a;
     --surface: #1e2125;
     --red-600: #ef5560; /* lighter so it keeps 4.5:1 contrast on dark surfaces */
+    --on-red: #1a0608; /* 5.7:1 on the lighter red */
+    --head-bg: #2d333b;
     --red-700: #f4747d;
     --red-50: #361b1e;
     --success-600: #4cc38a;
@@ -142,6 +164,8 @@
   --canvas: #15171a;
   --surface: #1e2125;
   --red-600: #ef5560;
+  --on-red: #1a0608;
+  --head-bg: #2d333b;
   --red-700: #f4747d;
   --red-50: #361b1e;
   --success-600: #4cc38a;

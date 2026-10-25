@@ -1,5 +1,5 @@
 // master.js - term setup + one table per kind of record (students, faculty, subjects, classes ...).
-import { $, $$, h, api, createDataTable, askConfirm, rowActions, setBusy, setBox, setFieldMsg, errorText, fillSelect, showToast, maskSecrets, generatePassword, copyText, announce } from './core.js';
+import { $, $$, h, api, createDataTable, askConfirm, rowActions, setBusy, setBox, setFieldMsg, errorText, fillSelect, showToast, maskSecrets, copyText, announce, downloadCsv } from './core.js';
 import { openImport } from './import.js';
 
 const goto = view => document.dispatchEvent(new CustomEvent('admin:goto', { detail: view }));
@@ -185,6 +185,31 @@ $('#masterTabs').addEventListener('keydown', event => {
   switchTab(tabs[next].dataset.tab);
 });
 
+// ---- Classes tab: one row per CLASSROOM ----
+// A classroom is one home room with its section and the class(es) taught in it (DS and AIML in 5D are one row).
+// Classes with no home room each stand alone. The rows are built from the plain class list.
+function groupClassrooms(list) {
+  const groups = new Map();
+  for (const c of list) {
+    const key = c.room_id ? `${c.academic_session}|${c.room_id}|${c.section}` : `class${c.id}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(c);
+  }
+  return [...groups].map(([key, classes]) => {
+    const first = classes[0];
+    const names = [...new Set(classes.map(c => `${c.semester}${c.section}`))];
+    return {
+      id: key,
+      classes,
+      classroom: `${names.join(' + ')} · ${first.room || 'No home room'}`,
+      classesText: classes.map(c => c.branch).join(', '),
+      academic_session: first.academic_session,
+      counsellor: [...new Set(classes.map(c => c.counsellor).filter(Boolean))].join(', '),
+      students: classes.reduce((n, c) => n + c.students, 0),
+    };
+  });
+}
+
 function makeTable() {
   const entity = meta.entities[active];
   const columns = entity.columns.map(([key, label]) => ({
@@ -192,14 +217,27 @@ function makeTable() {
     ...(key === 'name' && SOFT.includes(active) ? { render: (r, td) => td.append(r.name, ...(r.active ? [] : [' ', h('span', { class: 'badge', text: 'Inactive' })])) } : {}),
     ...(['periods', 'semester', 'students'].includes(key) ? { num: true } : {}),
     ...(key === 'camera_url' ? { clip: true, get: r => maskSecrets(r.camera_url), render: renderCameraUrl } : {}),
+    ...(active === 'classes' && key === 'classroom' ? { render: (r, td) => td.append(h('strong', { text: r.classroom })) } : {}),
   }));
   const students = active === 'students';
   columns.push({ key: 'actions', label: 'Actions', render: (r, td) => {
+    if (active === 'classes') { // each class of the classroom keeps its own Edit and Delete
+      for (const c of r.classes) {
+        const label = `${c.branch} Sem ${c.semester}`;
+        td.append(h('div', { class: 'adm-class-line' }, r.classes.length > 1 ? h('span', { class: 'adm-class-name', text: label }) : null, rowActions('class', c, label, openEditor, askRemove)));
+      }
+      return;
+    }
     const name = r.name || r.label || r.abbr || r.code || `#${r.id}`;
     // Students are never deleted (their attendance history is kept), so the button says what it does
     const soft = SOFT.includes(active);
     const opts = !soft ? {} : r.active ? { removeLabel: 'Deactivate' } : { removeLabel: 'Reactivate', removeKind: 'secondary' };
     td.append(rowActions(entity.singular, r, name, openEditor, soft && !r.active ? reactivate : askRemove, opts));
+    // New password for one person: the handover dialog shows it once
+    if (soft) {
+      const actions = td.querySelector('.adm-actions');
+      actions.insertBefore(h('button', { class: 'btn btn-secondary btn-sm', type: 'button', text: 'Reset password', 'aria-label': `Reset password for ${name}`, onclick: () => askReset(r) }), actions.children[1]);
+    }
   } });
   table = createDataTable({ mount: $('#masterTable'), noun: entity.singular, pageSize: 12, columns, selectable: students, onSelect: updateBulk, emptyHint: `Select "Add" to create the first ${entity.singular}.`, onRetry: () => loadRows() });
 }
@@ -209,7 +247,7 @@ async function loadRows() {
   try {
     ({ rows } = await api(`/api/admin/master/entity/${active}`));
     cache[active] = true;
-    table.setRows(rows);
+    table.setRows(active === 'classes' ? groupClassrooms(rows) : rows);
     applyFilters();
   } catch {
     table.setError();
@@ -301,6 +339,21 @@ async function bulk(action, extra = {}) {
   refresh();
   return r.updated;
 }
+$('#bulkPasswordsBtn').addEventListener('click', () => {
+  const ids = [...table.selected];
+  askConfirm({
+    title: `Make new passwords for ${ids.length} student${ids.length === 1 ? '' : 's'}?`,
+    text: 'Each one gets a new random password and the old one stops working at once. You will get a CSV file with the new passwords to hand out. It is made now and is not kept anywhere else, so keep it safe.',
+    confirmLabel: 'Generate passwords', cancelLabel: 'Keep them', danger: false,
+    failText: 'Could not generate the passwords. Try again.',
+    run: async () => {
+      const r = await api('/api/admin/master/passwords', { method: 'POST', body: { entity: 'students', ids } });
+      downloadCsv(`student-passwords-${meta.today}.csv`, ['Name', 'Roll number', 'Username', 'Password'], r.passwords.map(p => [p.name, p.rollNumber, p.username, p.password]));
+      table.clearSelection();
+      showToast(`${r.passwords.length} new passwords saved to a CSV file.`, 'success');
+    },
+  });
+});
 $('#bulkClearBtn').addEventListener('click', () => { table.clearSelection(); $('#masterSearch').focus(); });
 $('#bulkReactivateBtn').addEventListener('click', async () => {
   try { showToast(`${await bulk('reactivate')} students are active again.`, 'success'); } catch (error) { showToast(errorText(error), 'error'); }
@@ -358,10 +411,9 @@ function control(field, value) {
   if (field.type === 'checkbox') {
     input = h('input', { type: 'checkbox' });
     input.checked = value == null ? Boolean(field.default) : Boolean(value);
-  } else if (field.type === 'select') {
-    input = h('select');
-    fillSelect(input, field.options || [], field.required ? 'Choose…' : 'None');
-    input.value = value ?? '';
+  } else if (field.type === 'select' || field.name === 'year_of_passing') {
+    input = h('select'); // year of passing: a short list, filled by wireYearOfPassing()
+    if (field.type === 'select') { fillSelect(input, field.options || [], field.required ? 'Choose…' : 'None'); input.value = value ?? ''; }
   } else {
     input = h('input', { type: field.type === 'password' ? 'password' : field.type || 'text', autocomplete: 'off' });
     if (field.min) input.min = field.min;
@@ -375,28 +427,92 @@ function control(field, value) {
   return input;
 }
 
-// Password row: the field, Show/Hide and a Generate button (a random password the admin can hand over)
+// Password field with an eye inside it (show / hide). There is no Generate button here: a new person gets a generated
+// password when this is left blank, and "Reset password" on their row makes a new one later.
+const EYE_ON = '<svg class="eye-on" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF = '<svg class="eye-off" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><path d="M3 3l18 18"/><path d="M10.6 5.1A10.5 10.5 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.2M6.6 6.6A16.6 16.6 0 0 0 2 12s3.6 7 10 7a9.8 9.8 0 0 0 4.2-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
 function passwordRow(input) {
-  const show = h('button', { class: 'btn btn-secondary btn-sm', type: 'button', text: 'Show', 'aria-pressed': 'false', 'aria-controls': input.id,
-    onclick: () => {
-      const visible = input.type === 'password';
-      input.type = visible ? 'text' : 'password';
-      show.textContent = visible ? 'Hide' : 'Show';
-      show.setAttribute('aria-pressed', String(visible));
-    } });
-  const generate = h('button', { class: 'btn btn-secondary btn-sm', type: 'button', text: 'Generate', 'aria-label': 'Generate a random password',
-    onclick: () => {
-      input.value = generatePassword();
-      input.dataset.generated = '1';
-      input.type = 'text';
-      show.textContent = 'Hide';
-      show.setAttribute('aria-pressed', 'true');
-      setFieldMsg(input.id, '');
-      input.focus();
-      input.select();
-    } });
-  input.addEventListener('input', () => delete input.dataset.generated); // typing your own replaces the generated one
-  return h('div', { class: 'adm-pw' }, input, show, generate);
+  const eye = h('button', { class: 'input-toggle', type: 'button', 'aria-label': 'Show password', 'aria-pressed': 'false', 'aria-controls': input.id });
+  eye.innerHTML = EYE_ON + EYE_OFF;
+  eye.addEventListener('click', () => {
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    eye.setAttribute('aria-pressed', String(show));
+    eye.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    eye.querySelector('.eye-on').hidden = show;
+    eye.querySelector('.eye-off').hidden = !show;
+  });
+  return h('div', { class: 'input-group' }, input, eye);
+}
+
+// ---- Year of passing: worked out from the class, with a short list to change it ----
+// year = start year of the class's session + course length - year of study + 1 (Sem 5 in 2026-27, 4-year course: 2028)
+function wireYearOfPassing(row) {
+  const yearSel = $('#ef-year_of_passing');
+  const classSel = $('#ef-class_id');
+  if (!yearSel || !classSel) return;
+  const classes = classOptions();
+  let touched = Boolean(row?.year_of_passing); // an existing student keeps the stored year until someone changes it
+  const derive = () => {
+    const c = classes.find(o => String(o.value) === classSel.value);
+    const start = Number(/^(\d{4})/.exec(c?.session || '')?.[1]);
+    return c && start ? start + Number(c.duration) - Math.ceil(Number(c.semester) / 2) + 1 : null;
+  };
+  const fill = () => {
+    const derived = derive();
+    // With a class: the year it points to, one earlier and two later (a student repeating a year). Without one:
+    // from this academic year on, long enough to cover every year of study.
+    const first = currentTerm(meta.today).startYear;
+    const years = derived ? [derived - 1, derived, derived + 1, derived + 2] : Array.from({ length: 6 }, (_, i) => first + i);
+    const keep = touched ? yearSel.value || String(row?.year_of_passing ?? '') : '';
+    if (keep && !years.includes(Number(keep))) years.push(Number(keep)); // never silently drop a stored value
+    years.sort((a, b) => a - b);
+    fillSelect(yearSel, years.map(y => ({ value: y, label: y === derived ? `${y} (from the class)` : String(y) })), 'Choose…');
+    yearSel.value = touched ? keep : derived ?? '';
+  };
+  yearSel.addEventListener('change', () => { touched = true; });
+  classSel.addEventListener('change', fill);
+  fill();
+  if (row?.year_of_passing) yearSel.value = String(row.year_of_passing);
+}
+
+// ---- Faculty abbreviation: say at once if somebody else has it ----
+function wireAbbrCheck() {
+  const abbr = $('#ef-abbr');
+  if (!abbr) return;
+  let timer = 0;
+  let latest = 0;
+  abbr.addEventListener('input', () => {
+    clearTimeout(timer);
+    const value = abbr.value.trim();
+    latest++;
+    if (!value) return setFieldMsg(abbr.id, '');
+    timer = setTimeout(async () => {
+      const mine = latest;
+      try {
+        const r = await api(`/api/admin/master/abbr-check?abbr=${encodeURIComponent(value)}${editing ? `&exclude=${editing.id}` : ''}`);
+        if (mine !== latest) return; // the admin kept typing
+        setFieldMsg(abbr.id, r.available ? `${value} is free.` : `${value} is already used by ${r.owner}.`, r.available ? 'ok' : 'err');
+      } catch {
+        if (mine === latest) setFieldMsg(abbr.id, '');
+      }
+    }, 350);
+  });
+}
+
+// ---- New password for one person ----
+function askReset(row) {
+  askConfirm({
+    title: `Reset ${row.name}'s password?`,
+    text: 'A new random password is made now and the old one stops working at once. You will see the new one once, to hand over.',
+    confirmLabel: 'Reset password', cancelLabel: 'Keep it', danger: false,
+    failText: 'Could not reset the password. Try again.',
+    run: async () => {
+      const r = await api('/api/admin/master/passwords', { method: 'POST', body: { entity: active, ids: [row.id] } });
+      const p = r.passwords[0];
+      if (p) showCredentials({ name: p.name, username: p.username, password: p.password });
+    },
+  });
 }
 
 function openEditor(row) {
@@ -409,7 +525,7 @@ function openEditor(row) {
     // Hint and error live under the field and are tied to it for screen readers
     // The server's password hint talks about "keeping the current one", which is wrong for a new record
     const hint = f.type === 'password'
-      ? (row ? 'Leave blank to keep the current password. At least 6 characters.' : 'Leave blank and a secure password is generated for you to hand over.')
+      ? (row ? 'Leave blank to keep the current password. To give them a new one, use Reset password on their row.' : 'Leave blank and a secure password is generated for you to hand over.')
       : f.hint;
     const hintEl = hint ? h('p', { class: 'adm-help', id: `${input.id}-hint`, text: hint }) : null;
     const msg = h('p', { class: 'field-msg err', id: `${input.id}-msg`, role: 'alert', hidden: true });
@@ -420,12 +536,14 @@ function openEditor(row) {
       : h('div', { class: 'field' }, h('label', { for: input.id, text: f.label + (f.required ? '' : ' (optional)') }), f.type === 'password' ? passwordRow(input) : input);
     if (hintEl) wrap.append(hintEl);
     wrap.append(msg);
-    if (f.type === 'checkbox' || f.type === 'password') wrap.classList.add('adm-span2');
+    if (f.type === 'checkbox') wrap.classList.add('adm-span2'); // (the password sits beside the username)
     return wrap;
   }));
   // Convenience: a new student's username defaults to their roll number
   const roll = $('#ef-roll_number');
   roll?.addEventListener('blur', () => { const u = $('#ef-username'); if (u && !u.value) u.value = roll.value.trim().toLowerCase(); });
+  if (active === 'students') wireYearOfPassing(row);
+  if (active === 'faculties') wireAbbrCheck();
   dialog.showModal();
   $('#entityFields input:not([type=checkbox]), #entityFields select')?.focus();
 }
@@ -482,6 +600,7 @@ $('#entityForm').addEventListener('submit', async event => {
     const taken = error.code === 'duplicate' && /^That (.+) is already in use/.exec(error.message || '');
     const field = taken && entity.fields.find(f => f.name.replaceAll('_', ' ') === taken[1]);
     if (field) { setFieldMsg(`ef-${field.name}`, error.message); $(`#ef-${field.name}`).focus(); }
+    else if (error.code === 'duplicate' && active === 'faculties' && /is already used by/.test(error.message || '')) { setFieldMsg('ef-abbr', error.message); $('#ef-abbr').focus(); } // "AMG" is already used by Mr. ...
     else setBox('entityError', errorText(error));
   } finally {
     setBusy(button, false);
@@ -529,30 +648,49 @@ let step = 1;
 let wizRows = [];
 let cohorts = [];
 const SECTION_OK = /^[A-Z0-9][A-Z0-9-]{0,7}$/;
-const SESSION_RE = /^(\d{4})-(\d{4}) (ODD|EVEN)$/;
-const sessionProblem = value => {
-  const m = SESSION_RE.exec(value);
-  if (!value) return 'Choose the academic session.';
-  if (!m) return 'Use the format 2026-2027 ODD (two years, then ODD or EVEN).';
-  if (Number(m[2]) !== Number(m[1]) + 1) return 'The two years must be consecutive, like 2026-2027.';
-  return '';
-};
-const wizSessionValue = () => ($('#wizSession').value === '__other' ? $('#wizSessionOther').value.trim().toUpperCase().replace(/\s+/g, ' ') : $('#wizSession').value);
-function fillSessionPicker(preferred) {
-  const year = new Date().getFullYear();
-  const generated = [];
-  for (let y = year + 1; y >= year - 1; y--) generated.push(`${y}-${y + 1} ODD`, `${y - 1}-${y} EVEN`);
-  const all = [...new Set([...meta.sessions, ...generated])].sort((a, b) => b.localeCompare(a));
-  fillSelect($('#wizSession'), [...all.map(v => ({ value: v, label: meta.sessions.includes(v) ? `${v} (has classes)` : v })), { value: '__other', label: 'Other (type it)…' }]);
-  $('#wizSession').value = all.includes(preferred) ? preferred : all[0];
-  $('#wizSessionOther').hidden = true;
-  $('#wizSessionOther').value = '';
+// The academic year starts in July: July-December is the ODD term of that year, January-June is the EVEN term
+// of the year that began the July before. Change this one number if the college's year starts in another month.
+const ACADEMIC_YEAR_START_MONTH = 7;
+const YEARS_AHEAD = 2; // how many academic years after the current one are offered
+
+// The term running on `today` (a YYYY-MM-DD date from the server): { startYear, term }
+function currentTerm(today) {
+  const [y, m] = today.split('-').map(Number);
+  const startYear = m >= ACADEMIC_YEAR_START_MONTH ? y : y - 1;
+  const oddMonths = m >= ACADEMIC_YEAR_START_MONTH;
+  return { startYear, term: oddMonths ? 'ODD' : 'EVEN' };
 }
-$('#wizSession').addEventListener('change', event => {
-  const other = event.target.value === '__other';
-  $('#wizSessionOther').hidden = !other;
-  if (other) $('#wizSessionOther').focus();
-});
+// Is this term the current one or a later one? Earlier terms are not offered.
+const termIsCurrentOrLater = (startYear, term, now) =>
+  startYear > now.startYear || (startYear === now.startYear && (term === now.term || term === 'EVEN'));
+const sessionName = (startYear, term) => `${startYear}-${startYear + 1} ${term}`;
+
+const wizSessionValue = () => sessionName(Number($('#wizYear').value), document.querySelector('input[name="wizTerm"]:checked')?.value || 'ODD');
+
+// Year list from the current academic year on; ODD/EVEN radios with the already-finished term switched off
+function fillSessionPicker(preferred) {
+  const now = currentTerm(meta.today);
+  const years = Array.from({ length: YEARS_AHEAD + 1 }, (_, i) => now.startYear + i);
+  const has = y => ['ODD', 'EVEN'].some(t => meta.sessions.includes(sessionName(y, t)));
+  fillSelect($('#wizYear'), years.map(y => ({ value: y, label: `${y}-${y + 1}${has(y) ? ' (has classes)' : ''}` })));
+  const m = /^(\d{4})-\d{4} (ODD|EVEN)$/.exec(preferred || '');
+  const wanted = m && termIsCurrentOrLater(Number(m[1]), m[2], now) ? { year: Number(m[1]), term: m[2] } : { year: now.startYear, term: now.term };
+  $('#wizYear').value = wanted.year;
+  syncTermChoices(wanted.term);
+}
+function syncTermChoices(prefer) {
+  const now = currentTerm(meta.today);
+  const year = Number($('#wizYear').value);
+  for (const input of document.querySelectorAll('input[name="wizTerm"]')) {
+    const allowed = termIsCurrentOrLater(year, input.value, now);
+    input.disabled = !allowed;
+    input.closest('label').classList.toggle('is-off', !allowed);
+  }
+  const first = [...document.querySelectorAll('input[name="wizTerm"]')].find(i => !i.disabled);
+  const chosen = [...document.querySelectorAll('input[name="wizTerm"]')].find(i => i.value === prefer && !i.disabled) || first;
+  if (chosen) chosen.checked = true;
+}
+$('#wizYear').addEventListener('change', () => syncTermChoices(document.querySelector('input[name="wizTerm"]:checked')?.value));
 
 const branchOptions = () => meta.entities.classes.fields.find(f => f.name === 'branch_id').options;
 const roomOptions = () => meta.entities.classes.fields.find(f => f.name === 'room_id').options;
@@ -660,7 +798,7 @@ async function openWizard() {
   renderWizRows();
   wizGo(1);
   wizard.showModal();
-  $('#wizSession').focus();
+  $('#wizYear').focus();
 }
 $('#wizardBtn').addEventListener('click', openWizard);
 $('#wizAddRow').addEventListener('click', () => { wizRows.push({ branchId: '', semester: '' }); renderWizRows(); });
@@ -717,14 +855,7 @@ function sectionsProblem() {
 $('#wizardForm').addEventListener('submit', async event => {
   event.preventDefault();
   if (step === 1) {
-    const value = wizSessionValue();
-    const problem = meta.sessions.includes(value) ? '' : sessionProblem(value);
-    $('#wizSession-msg').textContent = problem;
-    $('#wizSession-msg').hidden = !problem;
-    $('#wizSession-msg').className = 'field-msg err';
-    const field = $('#wizSession').value === '__other' ? $('#wizSessionOther') : $('#wizSession');
-    field.toggleAttribute('aria-invalid', Boolean(problem));
-    if (problem) return field.focus();
+    $('#wizSession-msg').hidden = true; // year and term are both always set, so there is nothing to type wrong
     renderWizRows();
     return wizGo(2);
   }

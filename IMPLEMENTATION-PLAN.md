@@ -13,9 +13,9 @@ Branch reviewed: `faculty/arranged-feature`. Terms and formats used below are de
 | 4 | Faculty live session | **Done** |
 | 5 | Student screens | **Done** |
 | 6 | Face enrolment pipeline | **Built, needs a real-phone check** (`docs/CHANGELOG-stage-6.md`) |
-| 7 | Admin | Planned |
-| 8 | Subject catalog (research spike, optional) | Planned |
-| 9 | Polish and QA | Planned |
+| 7 | Admin | **Built, awaiting review** (`docs/CHANGELOG-stage-7.md`) |
+| 8 | Subject catalog (research spike, optional) | **Skipped** |
+| 9 | Polish and QA | **Partly done**: small review items only (`docs/CHANGELOG-stage-9.md`); accessibility pass, full regression run and pre-sharing checks still open |
 
 Each stage ships as a zip of changed files plus a short changelog. Nothing in a later stage starts until the earlier one is reviewed.
 
@@ -31,8 +31,8 @@ Each stage ships as a zip of changed files plus a short changelog. Nothing in a 
 
 | Decision | Needed by | Default if not answered |
 |---|---|---|
-| Admin "Classes" table: keep as is, or rename to "Classrooms" and group rows by classroom (`DS/AIML-5D` as one row) | Stage 7 | Keep "Classes" until decided |
-| Academic year start month for the term picker | Stage 7 | July |
+| ~~Admin "Classes" table: keep or rename~~ | Stage 7 | Decided: keep the name "Classes", show one row per classroom |
+| ~~Academic year start month~~ | Stage 7 | Decided: July |
 | ~~Middle-aligned roster checkbox vs. a conventional side checkbox~~ | Stage 4 | Decided: conventional left checkbox, whole row tappable |
 
 ---

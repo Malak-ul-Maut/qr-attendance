@@ -1,35 +1,97 @@
 /* homepage.css - styles used only by homepage.html.
    Layout goal: everything, including the college name, is visible at 1366x768 without scrolling. */
 
+/* The page is: header, then a full-width campus photo band (with the heading on it), then the role cards
+   overlapping the bottom edge of the band, then the footer. */
+.top {
+  border-bottom: 1px solid var(--line);
+}
 .stage {
+  --overlap: 3.5rem; /* how far the cards ride up into the photo */
   flex: 1;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* ---------- Hero: the campus photo, full width ---------- */
+.hero {
+  position: relative;
+  isolation: isolate;
+  flex: 1 1 auto;
+  min-height: 21rem;
+  /* The photo is a 1300x390 panorama; this height keeps both buildings in view at any desktop width */
+  max-height: max(26rem, 30vw);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding-bottom: calc(var(--overlap) + var(--space-6));
+  overflow: hidden;
+}
+.hero::before,
+.hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+}
+.hero::before {
+  background: url('../icons/mit-building.webp') center bottom / cover no-repeat;
+}
+/* Dark on the left so the white heading reads, clear on the right so the red building stays in the foreground */
+.hero::after {
+  background:
+    linear-gradient(
+      90deg,
+      rgba(14, 16, 20, 0.86) 0%,
+      rgba(14, 16, 20, 0.62) 38%,
+      rgba(14, 16, 20, 0.12) 72%,
+      rgba(14, 16, 20, 0) 100%
+    ),
+    linear-gradient(to bottom, rgba(14, 16, 20, 0.18), rgba(14, 16, 20, 0.1));
+}
+:root[data-theme='dark'] .hero::before {
+  filter: brightness(0.72) saturate(0.85);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .hero::before {
+    filter: brightness(0.72) saturate(0.85);
+  }
+}
+
+/* ---------- Intro: white text on the photo, in both themes ---------- */
+.hero-inner {
   width: 100%;
   max-width: var(--content-width);
   margin: 0 auto;
-  padding: var(--space-5) var(--space-5) var(--space-6);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: var(--space-6);
+  padding: 0 var(--space-5);
 }
-
-/* ---------- Intro ---------- */
 .intro h1 {
+  max-width: 11ch;
   font-size: clamp(2.25rem, 1.4rem + 3.2vw, 3.75rem);
   font-weight: 700;
   letter-spacing: -0.035em;
   line-height: 1.04;
-  color: var(--ink-900);
+  color: #fff;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.35);
 }
 .intro p {
   max-width: 34rem;
   margin-top: var(--space-4);
   font-size: var(--text-lg);
-  color: var(--ink-700);
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.4);
 }
 
 /* ---------- Role cards ---------- */
 .roles {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: var(--content-width);
+  margin: calc(var(--overlap) * -1) auto 0;
+  padding: 0 var(--space-5);
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-5);
@@ -87,7 +149,8 @@
 
 /* ---------- Foot ---------- */
 .page-foot {
-  padding: 0 var(--space-5) var(--space-5);
+  margin-top: auto;
+  padding: var(--space-5) var(--space-5) var(--space-5);
   width: 100%;
   max-width: var(--content-width);
   margin: 0 auto;
@@ -108,10 +171,9 @@
     margin-top: var(--space-2);
     font-size: var(--text-sm);
   }
-  .stage {
-    gap: var(--space-4);
-    padding-top: var(--space-3);
-    padding-bottom: var(--space-3);
+  .hero {
+    min-height: 0;
+    padding-top: var(--space-4);
   }
   .role-card {
     padding: var(--space-3) var(--space-4);
@@ -132,8 +194,29 @@
 /* ---------- Tablets and phones: compact rows so all three roles fit one screen ---------- */
 @media (max-width: 860px) {
   .stage {
-    gap: var(--space-5);
+    --overlap: 1.25rem;
+  }
+  .page-foot {
     padding-top: var(--space-4);
+    padding-bottom: var(--space-4);
+  }
+  .hero {
+    min-height: 0;
+    max-height: none;
+    padding-top: var(--space-6);
+  }
+  .hero::before {
+    background-position: 78% center; /* keep the red building in frame on narrow screens */
+  }
+  .hero::after {
+    background: linear-gradient(
+      to bottom,
+      rgba(14, 16, 20, 0.45),
+      rgba(14, 16, 20, 0.8)
+    );
+  }
+  .intro h1 {
+    max-width: none;
   }
   .intro p {
     font-size: var(--text-base);

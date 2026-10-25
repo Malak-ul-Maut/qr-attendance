@@ -7,6 +7,7 @@ import './today.js';
 import './attendance.js';
 import './profile.js';
 import './password-dialog.js';
+import './live.js';
 // scan-flow.js and enroll.js (QR scanner, face engine, pose coaching: about 100 KB) are not needed to show the
 // Today tab. They load the first time they are asked for, or in the background once the page has settled.
 

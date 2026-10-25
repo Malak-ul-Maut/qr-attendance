@@ -160,6 +160,7 @@
           <strong id="masterBulkCount"></strong>
           <button id="bulkDeactivateBtn" class="btn btn-danger btn-sm" type="button">Deactivate</button>
           <button id="bulkReactivateBtn" class="btn btn-secondary btn-sm" type="button">Reactivate</button>
+          <button id="bulkPasswordsBtn" class="btn btn-secondary btn-sm" type="button">Generate passwords</button>
           <span class="adm-bulk-move">
             <label class="visually-hidden" for="bulkClass">Move selected students to class</label>
             <select class="input" id="bulkClass"></select>
@@ -325,13 +326,21 @@
         </ol>
 
         <div class="adm-step" data-step="1">
-          <div class="field">
-            <label for="wizSession">Academic session</label>
-            <select class="input" id="wizSession" aria-describedby="wizSession-msg wizSessionHelp"></select>
-            <input class="input" id="wizSessionOther" type="text" autocomplete="off" placeholder="2026-2027 ODD" aria-label="Academic session (type it)" aria-describedby="wizSession-msg" hidden />
-            <p class="adm-help" id="wizSessionHelp">Pick the term to set up, or choose "Other" to type one as <b>2026-2027 ODD</b>. Classes of other sessions stay untouched.</p>
-            <p class="field-msg" id="wizSession-msg" hidden></p>
+          <div class="adm-term-pick">
+            <div class="field">
+              <label for="wizYear">Academic year</label>
+              <select class="input" id="wizYear" aria-describedby="wizSession-msg wizSessionHelp"></select>
+            </div>
+            <fieldset class="field adm-term-kind">
+              <legend>Term</legend>
+              <div class="segmented">
+                <label><input type="radio" name="wizTerm" value="ODD" /><span>ODD (Jul – Dec)</span></label>
+                <label><input type="radio" name="wizTerm" value="EVEN" /><span>EVEN (Jan – Jun)</span></label>
+              </div>
+            </fieldset>
           </div>
+          <p class="adm-help" id="wizSessionHelp">Only the current term and later ones are offered. Classes of other sessions stay untouched.</p>
+          <p class="field-msg" id="wizSession-msg" hidden></p>
         </div>
 
         <div class="adm-step" data-step="2" hidden>

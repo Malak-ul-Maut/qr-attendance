@@ -54,7 +54,7 @@ const toDate = sql => (sql ? new Date(String(sql).replace(' ', 'T') + 'Z') : nul
 const timeOf = sql => { const d = toDate(sql); return d && !Number.isNaN(d.getTime()) ? fmtClock(d) : ''; };
 const shortDate = iso => fmtDayMonth(iso, false); // chart axis: "5 Oct"
 
-// The chart is drawn at the width it is shown at, so text stays a real 12px on phones
+// The chart is drawn at the width it is shown at, so text stays a real 14px on phones
 // (a fixed 640px drawing shrinks to about 6px text on a 360px screen).
 // Tap, drag or use the arrow keys to read the value of any day.
 let trendState = null;
@@ -66,7 +66,7 @@ function trendChart(mount, daily) {
   }
   const W = Math.max(260, Math.round(mount.clientWidth || 640));
   const phone = W < 480;
-  const H = phone ? 240 : 230, L = 34, R = 12, T = 22, B = 30;
+  const H = phone ? 250 : 240, L = 40, R = 14, T = 26, B = 36; // room for 14px labels
   const n = daily.length;
   const x = i => L + (i * (W - L - R)) / (n - 1);
   const y = v => T + ((100 - v) * (H - T - B)) / 100;
@@ -77,7 +77,7 @@ function trendChart(mount, daily) {
     'aria-label': `Daily attendance from ${daily[0].date} to ${daily.at(-1).date}. Use the left and right arrow keys to read each day.` });
   for (const g of [0, 25, 50, 75, 100]) {
     root.append(svg('line', { x1: L, x2: W - R, y1: y(g), y2: y(g), class: g === 75 ? 'adm-grid adm-target' : 'adm-grid' }));
-    const label = svg('text', { x: L - 6, y: y(g) + 4, class: 'adm-axis', 'text-anchor': 'end' });
+    const label = svg('text', { x: L - 6, y: y(g) + 5, class: 'adm-axis', 'text-anchor': 'end' });
     label.textContent = g;
     root.append(label);
   }
@@ -87,10 +87,10 @@ function trendChart(mount, daily) {
   points.forEach(([cx, cy]) => root.append(svg('circle', { cx, cy, r: n > 40 ? 2 : phone && n > 20 ? 2.5 : 3.5, class: 'adm-dot' })));
 
   // X axis: as many dates as fit (about one per 64px), always including the first and the last
-  const ticks = Math.min(n, Math.max(2, Math.floor((W - L - R) / 64) + 1));
+  const ticks = Math.min(n, Math.max(2, Math.floor((W - L - R) / 76) + 1));
   const tickIdx = [...new Set(Array.from({ length: ticks }, (_, k) => Math.round((k * (n - 1)) / (ticks - 1))))];
   tickIdx.forEach((i, k) => {
-    const t = svg('text', { x: x(i), y: H - 8, class: 'adm-axis', 'text-anchor': k === 0 ? 'start' : k === tickIdx.length - 1 ? 'end' : 'middle' });
+    const t = svg('text', { x: x(i), y: H - 10, class: 'adm-axis', 'text-anchor': k === 0 ? 'start' : k === tickIdx.length - 1 ? 'end' : 'middle' });
     t.textContent = shortDate(daily[i].date);
     root.append(t);
   });
@@ -309,7 +309,7 @@ async function load() {
           h('span', { class: 'adm-bar-label', text: m.method.toUpperCase() }),
           h('span', { class: 'adm-bar-track' }, h('span', { class: 'adm-bar-fill adm-lvl-info', style: `width:${pct(m.sessions, totalSessions)}%` })),
           h('span', { class: 'adm-bar-value', text: m.sessions }))))
-      : h('p', { class: 'adm-empty', text: 'No sessions in this period.' }));
+      : h('p', { class: 'adm-empty', text: 'No sessions in this period. Sessions show here as faculty start them; try a longer period.' }));
 
   recentTable.setRows(recent);
   $('#exportSessionsBtn').disabled = !recent.length;

@@ -1,5 +1,6 @@
 // enrollment.js - who has uploaded their face photos and who has not.
 import { $, h, api, createDataTable, askConfirm, downloadCsv, showToast, currentUser, errorText } from './core.js';
+import { SHOTS, GLASSES_OFF_SHOT } from '../pose.js';
 
 let students = [];
 let loaded = false;
@@ -12,6 +13,39 @@ const STATUS = {
   none: ['Not uploaded', ''],
 };
 const RESET_REASONS = ['Photos were blurry or poor quality', 'Wrong person or wrong photos', 'Student asked to upload again', 'Appearance changed', 'Other'];
+
+// ---- "i": what the photo check looks at ----
+// The wording follows QA in backend/enroll_qa.py (face size, sharpness, quality, same person, reference photo, number of
+// usable photos). If those limits change there, change the numbers here.
+const QA_POINTS = [
+  'Each photo has exactly one face, at least 90 pixels wide, so it is big enough.',
+  'The face is sharp (not blurred by movement) and the recognition model rates its quality as good.',
+  'The photos look like the same person: they must be alike on average, and one that looks unlike the rest is named.',
+  'They look like the reference photo (the I-Card or any photo you added), when there is one. A low match is the best hint that someone else used this account.',
+  'At least 4 photos are clear enough. The optional wide-turn and deep chin-down photos are measured too, but never counted against the student.',
+];
+let infoPop = null;
+function closeInfo() { infoPop?.remove(); infoPop = null; document.removeEventListener('keydown', infoKey); document.removeEventListener('pointerdown', infoOutside, true); }
+function infoKey(e) { if (e.key === 'Escape') { const opener = infoPop?.opener; closeInfo(); opener?.focus(); } }
+function infoOutside(e) { if (infoPop && !infoPop.contains(e.target) && e.target !== infoPop.opener) closeInfo(); }
+function openInfo(button) {
+  if (infoPop?.opener === button) return closeInfo();
+  closeInfo();
+  infoPop = h('div', { class: 'adm-pop', id: 'qaInfo', role: 'note' },
+    h('strong', { text: 'How the photos are checked' }),
+    h('p', { class: 'adm-help', text: 'Check runs the same models that read the CCTV on the student\'s photos, and reports:' }),
+    h('ul', {}, QA_POINTS.map(text => h('li', { text }))),
+    h('p', { class: 'adm-help', text: 'It is a help for your review, not a decision: you still approve or reject.' }));
+  infoPop.opener = button;
+  document.body.append(infoPop);
+  const r = button.getBoundingClientRect();
+  infoPop.style.top = `${window.scrollY + r.bottom + 6}px`;
+  infoPop.style.left = `${Math.max(8, Math.min(window.scrollX + r.left, window.scrollX + document.documentElement.clientWidth - infoPop.offsetWidth - 8))}px`;
+  document.addEventListener('keydown', infoKey);
+  document.addEventListener('pointerdown', infoOutside, true);
+}
+const infoButton = () => h('button', { class: 'adm-info', type: 'button', text: 'i', 'aria-label': 'How the photos are checked', 'aria-describedby': 'qaInfo', onclick: e => openInfo(e.currentTarget) });
+const POSE_NAME = Object.fromEntries([...SHOTS, GLASSES_OFF_SHOT].map(shot => [shot.id, shot.title]));
 
 const table = createDataTable({
   mount: $('#enrollTable'),
@@ -44,7 +78,7 @@ const table = createDataTable({
           onclick: async () => {
             try { await api(`/api/admin/enrollment/${s.id}/check`, { method: 'POST' }); showToast('Photos checked.', 'success'); load(); }
             catch (error) { showToast(errorText(error), 'error'); }
-          } }), ' ');
+          } }), infoButton(), ' ');
         return s.enrolled && s.faceStatus !== 'pending' && td.append(h('button', { class: 'btn btn-danger btn-sm', type: 'button', text: 'Reset', 'aria-label': `Reset face data of ${s.name}`,
         onclick: () => askConfirm({ title: `Reset ${s.name}'s face data?`, text: 'The saved face template and the photos the student took are removed, and they will need to upload photos again. Photos you added by hand stay.',
           confirmLabel: 'Reset', cancelLabel: 'Keep', reasons: RESET_REASONS, failText: 'Could not reset. Try again.',
@@ -149,14 +183,15 @@ async function openPhotos(s) {
   photoDialog.showModal();
   $('#photoTitle').focus();
   try {
-    const { files } = await api(`/api/admin/enrollment/${s.id}/photos`);
+    const { files, photos = files.map(file => ({ file, shot: null })), hidden = 0 } = await api(`/api/admin/enrollment/${s.id}/photos`);
     if (!files.length) return $('#photoGrid').replaceChildren(h('p', { class: 'adm-empty', text: 'No photo files were found for this student.' }));
-    const figures = files.map((file, i) => h('figure', { class: 'adm-photo' }, h('span', { class: 'adm-photo-ph', text: '…' }), h('figcaption', { text: `Photo ${i + 1}` })));
-    $('#photoGrid').replaceChildren(...figures);
+    // One photo per pose, each captioned with the pose the student was asked for
+    const figures = photos.map((p, i) => h('figure', { class: 'adm-photo' }, h('span', { class: 'adm-photo-ph', text: '…' }), h('figcaption', { text: POSE_NAME[p.shot] || `Photo ${i + 1}` })));
+    $('#photoGrid').replaceChildren(...figures, ...(hidden ? [h('p', { class: 'adm-help', text: `${hidden} extra frame${hidden === 1 ? '' : 's'} from an older upload ${hidden === 1 ? 'is' : 'are'} not shown. They are kept, and used by the check.` })] : []));
     await Promise.all(files.map(async (file, i) => {
       try {
         const url = await fetchPhoto(s.id, file);
-        figures[i].firstChild.replaceWith(h('img', { src: url, alt: `${s.name}, photo ${i + 1} of ${files.length}`, loading: 'lazy' }));
+        figures[i].firstChild.replaceWith(h('img', { src: url, alt: `${s.name}, ${POSE_NAME[photos[i].shot] || `photo ${i + 1}`} (${i + 1} of ${files.length})`, loading: 'lazy' }));
       } catch {
         figures[i].firstChild.textContent = 'Could not load';
       }

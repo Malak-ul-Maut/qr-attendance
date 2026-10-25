@@ -110,7 +110,7 @@
   bottom: 0;
   width: min(62vw, 58rem);
   height: min(86%, 40rem);
-  background: url('../icons/campus.webp') center bottom / cover no-repeat;
+  background: url('../icons/mit-building.webp') center top / cover no-repeat;
   mix-blend-mode: multiply;
   pointer-events: none;
   -webkit-mask-image:
@@ -178,7 +178,9 @@
     opacity: 0.55;
   }
   .page-foot {
-    background: var(--canvas); /* solid first; the translucent version below needs a newer browser */
+    background: var(
+      --canvas
+    ); /* solid first; the translucent version below needs a newer browser */
     background: color-mix(in srgb, var(--canvas) 88%, transparent);
     backdrop-filter: blur(4px);
     max-width: none;

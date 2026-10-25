@@ -4,6 +4,7 @@ import { apiGet } from './api.js';
 import { h } from './dom.js';
 import { session } from './state.js';
 import { fmtDayMonth } from './format.js';
+import { liveJoined } from './live.js';
 import {
   chipFor, chipsFor, classLabel, countdownText, fmtTime, greetingFor, groupRows, groupState,
   isDouble, lunchBetween, minutesUntil, periodTag, pickNow, roomNote, toMin,
@@ -15,6 +16,7 @@ import {
 //  - nothing while the tab is hidden, and a focus/tab switch is ignored if we fetched in the last 10 s
 const POLL_MS = 60000;
 const POLL_WAITING_MS = 20000;
+const POLL_LIVE_MS = 5 * 60 * 1000; // with a live connection the page is told about changes; this is only a safety net
 const ME_MAX_AGE_MS = 5 * 60000;
 const MIN_GAP_MS = 10000;
 const root = document.querySelector('#todayRoot');
@@ -311,6 +313,7 @@ function tick() {
 const todayVisible = () => !document.hidden && !document.querySelector('#view-today')?.hidden;
 
 function nextDelay() {
+  if (liveJoined()) return POLL_LIVE_MS;
   const rows = [...(schedule?.rows || []), ...(week?.days?.flatMap(d => d.rows) || [])];
   return mode === 'today' && rows.some(r => r.state === 'waiting') ? POLL_WAITING_MS : POLL_MS;
 }
@@ -329,6 +332,7 @@ const refreshIfStale = () => { if (todayVisible() && performance.now() - fetched
 document.addEventListener('visibilitychange', refreshIfStale);
 window.addEventListener('focus', refreshIfStale);
 window.addEventListener('student:tab', ev => { if (ev.detail === 'today') refreshIfStale(); });
+window.addEventListener('student:schedule-changed', () => { if (todayVisible()) refresh(); else fetchedAt = 0; }); // told by the server (js/live.js); a hidden page refreshes when it is shown again
 window.addEventListener('student:changed', () => refresh({ forceMe: true })); // after marking attendance or editing the profile
 
 root.setAttribute('aria-busy', 'true');
