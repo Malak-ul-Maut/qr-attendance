@@ -87,7 +87,6 @@
   height: 2.25rem;
   width: auto;
   padding: 2px;
-  background: #fff; /* the logo is not transparent-friendly; a white chip keeps it clean in dark mode */
   border-radius: var(--radius-sm);
 }
 .institute-name {
