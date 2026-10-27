@@ -7,7 +7,7 @@ const MESSAGES = {
   invalid_or_expired_token: {
     tone: 'warning',
     title: 'That QR code has expired.',
-    text: "Point at the QR on your teacher's screen. It refreshes every few seconds.",
+    text: "Point at the QR on your teacher's screen.",
     keepScanning: true,
   },
   not_a_class_qr: {
@@ -153,7 +153,8 @@ export function describeError(codeOrResponse) {
 export function cameraErrorCode(error) {
   if (typeof window !== 'undefined' && window.isSecureContext === false)
     return 'camera_insecure';
-  if (error?.code === 'stalled' || error?.code === 'no_picture') return 'camera_busy';
+  if (error?.code === 'stalled' || error?.code === 'no_picture')
+    return 'camera_busy';
   switch (error?.name) {
     case 'NotAllowedError':
     case 'SecurityError':

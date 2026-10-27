@@ -1,150 +1,244 @@
-# 🎓 QR Attendance System
+<div align="center">
 
-![live-updates](https://drive.google.com/uc?export=view&id=1jPQ8bebqDM4vPXtg2sM6cjdevWu6SRIO)
+<img src="docs/screenshots/brand-logo.svg" alt="Smart Attendance Marker logo" width="96" />
 
-The QR Code Attendance System is an efficient, fast and user-friendly tool for tracking attendance using QR codes. It utilizes HTML, CSS, and JavaScript to create a web-based interface for marking attendance. This system is designed to work seamlessly when devices are connected to the Same College Local Network.
+# Smart Attendance Marker
 
-The faculty can display the QR Code using classroom projector so that present students can scan and mark their attendance.
+**Scan. Verify. Present.**
+
+Classroom attendance driven by the timetable: live QR codes, in-browser face verification and optional CCTV recognition.
+
+<!-- TODO: add badges once the repo has a license and CI -->
+
+![License](https://img.shields.io/badge/license-TODO-lightgrey)
+![Node](https://img.shields.io/badge/node-%E2%89%A5%2021-green)
+
+<!-- TODO: hero GIF or screenshot (faculty live session + student scan) -->
+<img src="docs/screenshots/hero.png" alt="Smart Attendance Marker in action" width="800" />
+
+</div>
+
+---
+
+## Contents
+
+- [Features](#features)
+- [How attendance is marked](#how-attendance-is-marked)
+- [Screenshots](#screenshots)
+- [Quick start](#quick-start)
+- [Configuration](#configuration)
+- [CCTV recognition (optional)](#cctv-recognition-optional)
+- [Deployment](#deployment)
+- [Privacy and security](#privacy-and-security)
+- [License](#license)
 
 ---
 
 ## Features
 
-- **Automatic IP Fetching** — It fetch your IPv4 address automatically and Generate a QR code based on that IP to enable connections within the classroom.
-- **Live Faculty Dashboard** — Enables faculty to view live attendance updates and remove proxy attendances based on count.
-- **Device Fingerprinting** — Prevents multiple entries from the same camera/device.
-- **Auto QR Refresh** — Tokens refresh every few seconds for high security.
-- **Face verification** — Student face checks use SCRFD detection, MiniFASNet liveness, and w600k_mbf recognition in the browser.
-- **SQLite Database** — Lightweight and portable for classroom use.
+### Students
+
+- Today and Week views built from the published timetable, with double lectures shown as one block.
+- Mark attendance by scanning the QR code on the classroom screen, with face verification.
+- Per-subject attendance with dated records, measured against the 75% line.
+- Self-service face enrolment: one photo per pose, with live guidance.
+- Change password from the account menu.
+
+### Faculty
+
+- Start a **Regular** session from the timetable, or an **Extra** session (extra classes, borrowed periods, merged classes). Extra only offers classes the faculty member teaches.
+- Live roster with the present count, QR display (full-screen presenting mode), manual add and remove.
+- Discard (with confirmation) or submit a session. Every discard is logged.
+- A running session survives a page refresh.
+- Server-side session history with absent and present lists.
+
+### Admin
+
+- **Home**: analytics.
+- **Setup**: term setup wizard, classrooms, rooms, subjects, faculty, students, batches.
+- **Timetable**: view, create and edit in a grid, conflict detection, draft and published states, print.
+- **Enrollment**: face-photo status per student (Not uploaded, Waiting for review, Approved or Rejected).
+- Bulk CSV import for students, faculty and timetable.
+- Reset passwords, or bulk-generate them and download a CSV.
+
+### Platform
+
+- Runs on the college network, with optional public access through a tunnel (ngrok, cloudflared or zrok) or Cloudflare.
+- Real-time updates over Socket.io.
+- SQLite storage: no database server to run.
+- White-label ready: college name and logo are one config file.
 
 ---
 
-## Prerequisites
+## How attendance is marked
 
-Before you begin, ensure you have the following prerequisites installed:
+| Method            | What happens                                                                                                             |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| **QR**            | The faculty screen shows a QR code that refreshes automatically. The student scans it from their own phone.              |
+| **Camera (face)** | The browser checks the student's face before the mark is accepted: detection, liveness and recognition run on the phone. |
+| **CCTV**          | An optional Python service recognizes faces from classroom camera footage and queues results for the faculty to review.  |
+| **Teacher**       | The faculty member adds or removes a student manually.                                                                   |
 
-- **Nodejs**: Install the Windows installer(.msi) version from their [official website](https://nodejs.org/en/download/current).
-- **Git**: Install from their [official website](https://git-scm.com/install/windows)
+[Attendance flow architecture](docs/ARCHITECTURE.md)
 
 ---
 
-## 🛠️ Setup Instructions
+## Screenshots
 
-### 1. Clone the Repository:
+| Homepage                                   | Login                                |
+| ------------------------------------------ | ------------------------------------ |
+| ![Homepage](docs/screenshots/homepage.png) | ![Login](docs/screenshots/login.png) |
 
-Open Command Prompt and run
+| Student: Today                                       | Student: face enrolment                               |
+| ---------------------------------------------------- | ----------------------------------------------------- |
+| ![Student Today](docs/screenshots/student-today.png) | ![Face enrolment](docs/screenshots/student-enrol.png) |
+
+| Faculty: session setup                               | Faculty: live session                              |
+| ---------------------------------------------------- | -------------------------------------------------- |
+| ![Session setup](docs/screenshots/faculty-setup.png) | ![Live session](docs/screenshots/faculty-live.png) |
+
+| Admin: Home                                    | Admin: Timetable                                         |
+| ---------------------------------------------- | -------------------------------------------------------- |
+| ![Admin home](docs/screenshots/admin-home.png) | ![Admin timetable](docs/screenshots/admin-timetable.png) |
+
+---
+
+## Quick start
+
+### Prerequisites
+
+- [Node.js 20.12 or later](https://nodejs.org/)
+- [Git](https://git-scm.com/)
+- Python 3.14.x, **only** if you want CCTV recognition
+
+### 1. Clone and install
 
 ```bash
 git clone https://github.com/Malak-ul-Maut/qr-attendance.git
-```
-
-### 2. Navigate to the project directory:
-
-```bash
 cd qr-attendance
-```
-
-### 3. Install dependencies:
-
-```bash
 npm install
-python -m venv venv
-pip install insightface openvino opencv-python numpy gdown uvicorn
 ```
 
-### 4. Build frontend:
+### 2. Configure
 
 ```bash
-npm run build
+cp .env.example .env
 ```
 
-The build creates one `frontend-dist` folder with the optimized site, local Brotli files, Cloudflare headers, and an `index.html`. The three large face-engine WASM/model files are omitted from the build and fetched from the CDN only, so `--assets` is required and the built site needs CDN access for face verification. The generated Cloudflare Worker serves this same folder and forwards API traffic to the tunnel.
+Edit `.env`. At minimum, decide on `TUNNEL` and, if you use ngrok, set `NGROK_AUTHTOKEN`. See [Configuration](#configuration).
 
-To deploy the build to Cloudflare:
+### 3. Create the database and first admin
+
+<!-- TODO: document how the database is created from backend/schema.sql and how the first admin account is made.
+     The repo currently has no seed script and no documented bootstrap step. -->
 
 ```bash
-cd ../pages-worker
-npx wrangler@latest deploy
+# TODO: command to initialise the database and create the first admin
 ```
 
-To run the built frontend locally from the project root in PowerShell:
-
-```powershell
-$env:SERVE_DIST = '1'
-npm start
-```
-
-### 5. Start the server
-
-By default, the Node server starts the memory-intensive CCTV Python service too. To skip it when you do not need the CCTV pipeline, add this to your existing `.env` file:
-
-```env
-CCTV_SPAWN_SERVICE=false
-```
-
-Restart the server after changing `.env`. Set `CCTV_SPAWN_SERVICE=true` (or remove the setting) to start the service again. With the service disabled, QR attendance continues to work, but CCTV recognition requests will not be available.
+### 4. Start the server
 
 ```bash
 npm start
 ```
 
-You should see:
+You should see something like:
 
 ```
 Connected to SQLite database
-🚀 Server running at https://<Your_IPv4_Address>:4000
-Tunnel established at: https://<random-subdomain>.ngrok-free.dev
+Server running at https://<your-ip>:4000
+Tunnel established at: https://<your-tunnel-address>
 ```
 
-### 6. Access the system
+The server uses a self-signed certificate, so the browser will show a warning on the local address. This is expected. The camera needs HTTPS, which is why the certificate exists.
 
-Open your web browser and go here to use the system
+### 5. Open it
+
+| Address                  | Use                              |
+| ------------------------ | -------------------------------- |
+| `https://<your-ip>:4000` | Same Wi-Fi or LAN as the server  |
+| The tunnel address       | Anywhere, if a tunnel is enabled |
+
+Sign in from the homepage as a student, faculty member or admin.
+
+---
+
+## Configuration
+
+All runtime settings are environment variables loaded from `.env` when you start the server with `npm start`.
+[`.env.example`](.env.example) lists the available server, tunnel, face-enrollment and CCTV settings with their
+defaults and short descriptions. Copy it to `.env`, then uncomment only the settings you want to override.
+
+The default tunnel is ngrok and requires `NGROK_AUTHTOKEN`. CCTV recognition is optional: set `CCTV_SPAWN_SERVICE=false` to skip the Python service, or use
+`CCTV_SOURCE=live` with a camera URL configured for the room to scan live footage.
+
+---
+
+## CCTV recognition (optional)
+
+QR and in-browser face attendance work without this. Skip it unless you want camera-based recognition.
 
 ```bash
-https://<Your_IPv4_Address>:4000 (local url)
-https://<random-subdomain>.ngrok-free.dev (public url)
+python -m venv venv
+venv\Scripts\activate   # macOS/Linux:  source venv/bin/activate
+pip install -r requirements.txt
 ```
 
-You should be able to:
+<!-- TODO: add requirements.txt (fastapi, uvicorn, pydantic, onnxruntime, opencv-python, numpy, insightface, openvino ...) -->
 
-- Login via the homepage
-- Generate/Scan QR Codes
-- Get success/error messages in real-time
+- **Models.** The SCRFD detector and AdaFace recognizer are downloaded into `backend/models/` on first run. <!-- TODO: sizes, disk and RAM needed, and how to fetch them manually if Google Drive is blocked -->
+- **Speed.** On an Intel laptop, installing `openvino` is faster than plain onnxruntime. `CCTV_BACKEND=auto` falls back automatically.
+- **Memory.** The service is memory-hungry. Set `CCTV_SPAWN_SERVICE=false` when you do not need it, or run `python backend/server.py` yourself (even on another machine) and point `CCTV_SERVICE_URL` at it.
+- **Source.** Use `CCTV_SOURCE=clip` with a test video while developing, and `live` for a real camera. <!-- TODO: how the camera URL is configured -->
 
----
-
-## Snapshots
-
-### 1) Homepage
-
-![homepage](https://drive.google.com/uc?export=view&id=184EjrayFAfLnT-Dsy_IcWlzNqsYi9yVi)
-
-### 2) Instant scan validation
-
-![student scan](https://drive.google.com/uc?export=view&id=13IhQNSxQ0qyK5ljF2H-yWKMMiD6iE23A)
-
-### 3) Finalize window
-
-![finalize-window](https://drive.google.com/uc?export=view&id=1fLhGirxZk1jJXwQoZXeC-uB5ypDu6hF2)
+The browser-side face check uses separate, smaller models (SCRFD-500M detector, MiniFASNet liveness, w600k_mbf recognizer) shipped in `frontend/utils/models/`.
 
 ---
 
-## Developers
+## Deployment
 
-- **Project Lead:** Ahad Ali
-- **Backend:** Node.js (Express, SQLite3)
-- **Frontend:** HTML, CSS, JS, jsQR
-- **Security:** Token-based verification + device fingerprinting
+### Option A: LAN only
+
+Run `npm start` with `TUNNEL=none`. Everyone must be on the same network.
+
+### Option B: tunnel
+
+Set `TUNNEL` to `ngrok`, `cloudflared` or `zrok`. The tunnel address is printed on start. A reserved name or domain keeps it stable.
+
+### Option C: Cloudflare for the frontend, tunnel for the API
+
+The build outputs an optimized `frontend-dist/` folder. A Cloudflare Worker serves it and forwards `/api/*`, `/results/*` and `/socket.io/*` to your tunnel.
+
+```bash
+npm run build -- --proxy=https://<your-tunnel-address> --assets=https://cdn.jsdelivr.net/gh/<user>/<repo>@<tag>/frontend
+cd pages-worker
+npx wrangler@latest deploy
+```
+
+- The three large face-engine files (WASM and models) are **not** bundled. They are loaded from the CDN given in `--assets`, so tag a release and push it first, and make sure users can reach the CDN.
+- Update `ORIGIN` in `pages-worker/wrangler.jsonc` to your tunnel address.
+- Test the built site locally:
+
+```bash
+# Set SERVE_DIST=1 in .env, then run:
+npm start
+```
 
 ---
 
-## Future Improvements
+## Privacy and security
 
-- Add attendance history section
-- Add analytics based on user behaviour
+<!-- TODO: fill in after confirming with the code and your college's policy -->
+
+- **Face data:** where enrolled photos and embeddings are stored, who can see them, how to delete a student's data.
+- **Accounts:** how passwords are hashed and how sign-in tokens work. Admin tokens last 8 hours.
+- **Network:** HTTPS with a self-signed certificate on the local server. CORS is open (`*`), so keep the server behind a tunnel or firewall you trust.
+- **Reporting a vulnerability:** logintemporarily@gmail.com
 
 ---
 
-### 🧾 License
+## License
 
-MIT License © 2025 — QR Attendance System by Ahad Ali
+<!-- TODO: pick one and add a LICENSE file. package.json says UNLICENSED; the old README said MIT. -->
+
+Created by Ahad Ali.

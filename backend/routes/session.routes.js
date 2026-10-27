@@ -3,7 +3,11 @@ import { randomBytes } from 'crypto';
 import utils from '../utils/in-memory-db.js';
 import { dbAll, dbGet, dbRun, withTransaction } from '../utils/db.js';
 import { getIO, notifyClasses } from '../utils/socket-io.js';
-import { warmSessionCamera, releaseSessionCamera, growGalleryFromSession } from './cctv.routes.js';
+import {
+  warmSessionCamera,
+  releaseSessionCamera,
+  growGalleryFromSession,
+} from './cctv.routes.js';
 import { isValidDate, weekdayName, classDayName } from '../utils/dates.js';
 import {
   resolveFacultyId,
@@ -211,17 +215,28 @@ async function startSessions({ date, facultyDbId, method, targets }) {
 
   const other = existing.find(row => row.faculty_id !== facultyDbId);
   if (other)
-    throw fail(409, 'slot_taken', { takenBy: other.faculty_name || 'another faculty' });
-  if (existing.some(row => row.end_time !== null)) throw fail(409, 'session_already_ended');
-  if (existing.some(row => row.method !== method)) throw fail(409, 'session_method_mismatch');
+    throw fail(409, 'slot_taken', {
+      takenBy: other.faculty_name || 'another faculty',
+    });
+  if (existing.some(row => row.end_time !== null))
+    throw fail(409, 'session_already_ended');
+  if (existing.some(row => row.method !== method))
+    throw fail(409, 'session_method_mismatch');
 
   const resumed = existing.length > 0;
-  const sessionCode = resumed ? existing[0].session_code : 'sess_' + randomBytes(6).toString('hex');
+  const sessionCode = resumed
+    ? existing[0].session_code
+    : 'sess_' + randomBytes(6).toString('hex');
   const missing = targets.filter(target => !target.existing);
 
   // Nobody else may be using the room in that period.
   for (const target of missing) {
-    const busyBy = await roomBusy(target.roomId, date, target.slotId, sessionCode);
+    const busyBy = await roomBusy(
+      target.roomId,
+      date,
+      target.slotId,
+      sessionCode,
+    );
     if (busyBy) throw fail(409, 'room_in_use', { takenBy: busyBy });
   }
 
@@ -280,7 +295,12 @@ async function startSessions({ date, facultyDbId, method, targets }) {
       // Say who holds the period instead of a bare error.
       for (const target of missing) {
         const ids = target.classes.map(c => c.class_id);
-        const holder = await findSlotHolder(date, target.slotId, ids, facultyDbId);
+        const holder = await findSlotHolder(
+          date,
+          target.slotId,
+          ids,
+          facultyDbId,
+        );
         if (holder) throw fail(409, 'slot_taken', { takenBy: holder.name });
       }
       throw fail(409, 'slot_taken', { takenBy: 'another faculty' });
@@ -294,7 +314,9 @@ async function startSessions({ date, facultyDbId, method, targets }) {
      WHERE sessions.session_code = ? ORDER BY session_classes.class_id`,
     [sessionCode],
   );
-  const timetableIds = targets.map(target => target.timetableId).filter(Boolean);
+  const timetableIds = targets
+    .map(target => target.timetableId)
+    .filter(Boolean);
 
   const response = {
     ok: true,
@@ -335,11 +357,15 @@ async function startSessions({ date, facultyDbId, method, targets }) {
 
 function sendStartError(res, err) {
   if (err.status) {
-    return res.status(err.status).json({ ok: false, error: err.message, ...err.extra });
+    return res
+      .status(err.status)
+      .json({ ok: false, error: err.message, ...err.extra });
   }
   // Errors raised by the database triggers carry their message.
   if (/does not take attendance/.test(err.message)) {
-    return res.status(400).json({ ok: false, error: 'subject_does_not_take_attendance' });
+    return res
+      .status(400)
+      .json({ ok: false, error: 'subject_does_not_take_attendance' });
   }
   if (/outside the timetable row validity/.test(err.message)) {
     return res.status(400).json({ ok: false, error: 'date_outside_timetable' });
@@ -440,13 +466,16 @@ router.post('/arranged', async (req, res) => {
   if (method !== 'qr' && method !== 'cctv')
     return res.status(400).json({ ok: false, error: 'invalid_method' });
   const dayName = classDayName(date);
-  if (!dayName) return res.status(400).json({ ok: false, error: 'no_class_on_sunday' });
+  if (!dayName)
+    return res.status(400).json({ ok: false, error: 'no_class_on_sunday' });
 
   const classIds = uniqueIds(req.body.classIds).slice(0, 6);
   const slotIds = uniqueIds(req.body.slotIds).slice(0, 4);
   const subjectId = Number(req.body.subjectId);
-  if (classIds.length === 0) return res.status(400).json({ ok: false, error: 'pick_classes' });
-  if (slotIds.length === 0) return res.status(400).json({ ok: false, error: 'pick_periods' });
+  if (classIds.length === 0)
+    return res.status(400).json({ ok: false, error: 'pick_classes' });
+  if (slotIds.length === 0)
+    return res.status(400).json({ ok: false, error: 'pick_periods' });
   if (!Number.isInteger(subjectId))
     return res.status(400).json({ ok: false, error: 'pick_subject' });
 
@@ -456,10 +485,16 @@ router.post('/arranged', async (req, res) => {
     if (!facultyDbId)
       return res.status(404).json({ ok: false, error: 'faculty_not_found' });
 
-    const subject = await dbGet(`SELECT id, takes_attendance FROM subjects WHERE id = ?`, [subjectId]);
-    if (!subject) return res.status(400).json({ ok: false, error: 'pick_subject' });
+    const subject = await dbGet(
+      `SELECT id, takes_attendance FROM subjects WHERE id = ?`,
+      [subjectId],
+    );
+    if (!subject)
+      return res.status(400).json({ ok: false, error: 'pick_subject' });
     if (!subject.takes_attendance)
-      return res.status(400).json({ ok: false, error: 'subject_does_not_take_attendance' });
+      return res
+        .status(400)
+        .json({ ok: false, error: 'subject_does_not_take_attendance' });
 
     // Limited to what the faculty teaches (their subjects and their classes), to keep borrowing simple.
     const mine = await dbGet(
@@ -468,7 +503,8 @@ router.post('/arranged', async (req, res) => {
          AND (valid_to IS NULL OR valid_to >= ?) LIMIT 1`,
       [facultyDbId, subjectId, date, date],
     );
-    if (!mine) return res.status(403).json({ ok: false, error: 'subject_not_yours' });
+    if (!mine)
+      return res.status(403).json({ ok: false, error: 'subject_not_yours' });
 
     const classMarks = classIds.map(() => '?').join(', ');
     const myClasses = await dbAll(
@@ -484,7 +520,10 @@ router.post('/arranged', async (req, res) => {
       return res.status(403).json({ ok: false, error: 'class_not_yours' });
 
     const slotMarks = slotIds.map(() => '?').join(', ');
-    const slots = await dbAll(`SELECT id FROM slots WHERE id IN (${slotMarks})`, slotIds);
+    const slots = await dbAll(
+      `SELECT id FROM slots WHERE id IN (${slotMarks})`,
+      slotIds,
+    );
     if (slots.length !== slotIds.length)
       return res.status(400).json({ ok: false, error: 'invalid_slot' });
 
@@ -542,7 +581,9 @@ router.post('/arranged', async (req, res) => {
       }
     }
 
-    return res.json(await startSessions({ date, facultyDbId, method, targets }));
+    return res.json(
+      await startSessions({ date, facultyDbId, method, targets }),
+    );
   } catch (err) {
     return sendStartError(res, err);
   }
@@ -581,9 +622,12 @@ router.get('/rooms', async (req, res) => {
         [day, ...slotIds, date, date, date],
       );
       for (const room of rooms) {
-        room.in_use_by = inUse.find(row => row.room_id === room.id)?.faculty || null;
+        room.in_use_by =
+          inUse.find(row => row.room_id === room.id)?.faculty || null;
         const plan = planned.find(row => row.room_id === room.id);
-        room.planned = plan ? `${plan.subject}${plan.faculty ? ` · ${plan.faculty}` : ''}` : null;
+        room.planned = plan
+          ? `${plan.subject}${plan.faculty ? ` · ${plan.faculty}` : ''}`
+          : null;
       }
     }
     return res.json(rooms);
@@ -596,11 +640,14 @@ router.get('/rooms', async (req, res) => {
 // Arranged class, step 1: the classes and subjects this faculty teaches (with each class's home room).
 router.get('/arranged/options', async (req, res) => {
   const { date, faculty_id } = req.query;
-  if (!isValidDate(date)) return res.json({ closed: true, classes: [], subjects: [] });
-  if (!classDayName(date)) return res.json({ closed: true, classes: [], subjects: [] });
+  if (!isValidDate(date))
+    return res.json({ closed: true, classes: [], subjects: [] });
+  if (!classDayName(date))
+    return res.json({ closed: true, classes: [], subjects: [] });
   try {
     const facultyDbId = await resolveFacultyId(faculty_id);
-    if (!facultyDbId) return res.json({ closed: false, classes: [], subjects: [] });
+    if (!facultyDbId)
+      return res.json({ closed: false, classes: [], subjects: [] });
     const classes = await dbAll(
       `SELECT DISTINCT classes.id AS class_id, courses.abbr AS course, branches.abbr AS branch,
          classes.semester, classes.section, classes.room_id,
@@ -644,9 +691,13 @@ router.get('/arranged/slots', async (req, res) => {
   if (!isValidDate(date) || !classDayName(date)) return res.json([]);
   try {
     const facultyDbId = await resolveFacultyId(faculty_id);
-    const slots = await dbAll(`SELECT id, label, start_time, end_time FROM slots ORDER BY start_time`);
+    const slots = await dbAll(
+      `SELECT id, label, start_time, end_time FROM slots ORDER BY start_time`,
+    );
     if (!facultyDbId || classIds.length === 0)
-      return res.json(slots.map(slot => ({ ...slot, status: 'free', note: '' })));
+      return res.json(
+        slots.map(slot => ({ ...slot, status: 'free', note: '' })),
+      );
 
     const marks = classIds.map(() => '?').join(', ');
     const day = weekdayName(date);
@@ -690,20 +741,40 @@ router.get('/arranged/slots', async (req, res) => {
         // A period with no faculty, or a subject that takes no attendance, is free to use.
         const rows = all.filter(row => row.counts);
         const lender = rows.filter(row => row.faculty_id !== facultyDbId);
-        const names = [...new Set(lender.map(row => row.faculty || 'another faculty'))].join(', ');
+        const names = [
+          ...new Set(lender.map(row => row.faculty || 'another faculty')),
+        ].join(', ');
         const subjects = [...new Set(rows.map(row => row.subject))].join(', ');
 
         const stranger = holders.find(row => row.faculty_id !== facultyDbId);
         if (stranger)
-          return { ...slot, status: 'taken', note: `Taken by ${stranger.faculty || 'another faculty'}` };
-        if (holders.length) return { ...slot, status: 'mine', note: 'Already started: resumes' };
+          return {
+            ...slot,
+            status: 'taken',
+            note: `Taken by ${stranger.faculty || 'another faculty'}`,
+          };
+        if (holders.length)
+          return { ...slot, status: 'mine', note: 'Already started: resumes' };
         if (rows.some(row => partial.has(row.id)))
-          return { ...slot, status: 'blocked', note: `${subjects}: combined with other classes` };
+          return {
+            ...slot,
+            status: 'blocked',
+            note: `${subjects}: combined with other classes`,
+          };
         if (lender.length)
-          return { ...slot, status: 'borrow', note: `Borrow from ${names} (${subjects})` };
-        if (rows.length) return { ...slot, status: 'own', note: `Your period (${subjects})` };
+          return {
+            ...slot,
+            status: 'borrow',
+            note: `Borrow from ${names} (${subjects})`,
+          };
+        if (rows.length)
+          return { ...slot, status: 'own', note: `Your period (${subjects})` };
         const idle = [...new Set(all.map(row => row.subject))].join(', ');
-        return { ...slot, status: 'free', note: idle ? `Free (${idle}, no attendance)` : 'Free' };
+        return {
+          ...slot,
+          status: 'free',
+          note: idle ? `Free (${idle}, no attendance)` : 'Free',
+        };
       }),
     );
   } catch (err) {
@@ -738,15 +809,19 @@ const ensureDiscardLog = () =>
 router.post('/cancel', async (req, res) => {
   const { sessionCode, facultyId } = req.body;
   const force = req.body.force === true;
-  if (!sessionCode) return res.status(400).json({ ok: false, error: 'missing_session_code' });
+  if (!sessionCode)
+    return res.status(400).json({ ok: false, error: 'missing_session_code' });
   try {
     const facultyDbId = await resolveFacultyId(facultyId);
-    if (!facultyDbId) return res.status(404).json({ ok: false, error: 'faculty_not_found' });
+    if (!facultyDbId)
+      return res.status(404).json({ ok: false, error: 'faculty_not_found' });
     const rows = await getSessionRows(sessionCode);
-    if (rows.length === 0) return res.status(404).json({ ok: false, error: 'session_not_found' });
+    if (rows.length === 0)
+      return res.status(404).json({ ok: false, error: 'session_not_found' });
     if (rows.some(row => row.faculty_id !== facultyDbId))
       return res.status(403).json({ ok: false, error: 'not_your_session' });
-    if (isSessionEnded(rows)) return res.status(400).json({ ok: false, error: 'session_ended' });
+    if (isSessionEnded(rows))
+      return res.status(400).json({ ok: false, error: 'session_ended' });
 
     const ids = `SELECT id FROM sessions WHERE session_code = ?`;
     const counts = await dbGet(
@@ -757,17 +832,30 @@ router.post('/cancel', async (req, res) => {
     );
     const marked = counts.marked;
     if (marked > 0 && !force)
-      return res.status(409).json({ ok: false, error: 'session_has_marks', marked });
+      return res
+        .status(409)
+        .json({ ok: false, error: 'session_has_marks', marked });
     if (marked > 0) {
       const confirmed = Number(req.body.confirmMarked);
-      if (!Number.isSafeInteger(confirmed) || confirmed < 0 || marked > confirmed)
-        return res.status(409).json({ ok: false, error: 'marks_changed', marked });
+      if (
+        !Number.isSafeInteger(confirmed) ||
+        confirmed < 0 ||
+        marked > confirmed
+      )
+        return res
+          .status(409)
+          .json({ ok: false, error: 'marks_changed', marked });
     }
 
     const header = await getSessionHeader(sessionCode);
-    const faculty = await dbGet(`SELECT name FROM faculties WHERE id = ?`, [facultyDbId]);
+    const faculty = await dbGet(`SELECT name FROM faculties WHERE id = ?`, [
+      facultyDbId,
+    ]);
     const classes = (header?.classes || [])
-      .map(c => `${c.branch}-${c.semester}${c.section}${c.batch ? ` ${c.batch}` : ''}`)
+      .map(
+        c =>
+          `${c.branch}-${c.semester}${c.section}${c.batch ? ` ${c.batch}` : ''}`,
+      )
       .join(', ');
 
     // Close the room's camera connection first: once the session is gone there is no room to look up.
@@ -791,8 +879,12 @@ router.post('/cancel', async (req, res) => {
           marked > 0 ? 1 : 0,
         ],
       );
-      await dbRun(`DELETE FROM attendance WHERE session_id IN (${ids})`, [sessionCode]);
-      await dbRun(`DELETE FROM session_classes WHERE session_id IN (${ids})`, [sessionCode]);
+      await dbRun(`DELETE FROM attendance WHERE session_id IN (${ids})`, [
+        sessionCode,
+      ]);
+      await dbRun(`DELETE FROM session_classes WHERE session_id IN (${ids})`, [
+        sessionCode,
+      ]);
       await dbRun(`DELETE FROM sessions WHERE session_code = ?`, [sessionCode]);
     });
 
@@ -800,7 +892,8 @@ router.post('/cancel', async (req, res) => {
     notifyClasses((header?.classes || []).map(c => c.class_id)); // their Today stops showing the discarded period
     return res.json({ ok: true, message: 'Discarded', removed: marked });
   } catch (err) {
-    if (err.status) return res.status(err.status).json({ ok: false, error: err.message });
+    if (err.status)
+      return res.status(err.status).json({ ok: false, error: err.message });
     console.error(err);
     return res.status(500).json({ ok: false, error: 'database_error' });
   }
@@ -838,7 +931,8 @@ async function sessionMarks(sessionCode) {
 router.get('/active', async (req, res) => {
   try {
     const facultyDbId = await resolveFacultyId(req.query.facultyId);
-    if (!facultyDbId) return res.status(404).json({ ok: false, error: 'faculty_not_found' });
+    if (!facultyDbId)
+      return res.status(404).json({ ok: false, error: 'faculty_not_found' });
 
     const code = String(req.query.code ?? '');
     const open = await dbGet(
@@ -864,7 +958,11 @@ router.get('/active', async (req, res) => {
         marks: await sessionMarks(sessionCode),
         token:
           open.method === 'qr'
-            ? createSessionToken(sessionCode, TOKEN_LIFETIME_SECONDS, await getSessionSections(sessionCode))
+            ? createSessionToken(
+                sessionCode,
+                TOKEN_LIFETIME_SECONDS,
+                await getSessionSections(sessionCode),
+              )
             : null,
       },
     };
@@ -881,7 +979,8 @@ router.get('/active', async (req, res) => {
 router.get('/history', async (req, res) => {
   try {
     const facultyDbId = await resolveFacultyId(req.query.facultyId);
-    if (!facultyDbId) return res.status(404).json({ ok: false, error: 'faculty_not_found' });
+    if (!facultyDbId)
+      return res.status(404).json({ ok: false, error: 'faculty_not_found' });
     const limit = Math.min(Math.max(Number(req.query.limit) || 30, 1), 100);
     const offset = Math.max(Number(req.query.offset) || 0, 0);
 
@@ -917,7 +1016,11 @@ router.get('/history', async (req, res) => {
         total: counts.total,
       });
     }
-    return res.json({ ok: true, sessions: items, hasMore: codes.length > limit });
+    return res.json({
+      ok: true,
+      sessions: items,
+      hasMore: codes.length > limit,
+    });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ ok: false, error: 'database_error' });
@@ -927,13 +1030,18 @@ router.get('/history', async (req, res) => {
 router.get('/history/:sessionCode', async (req, res) => {
   try {
     const facultyDbId = await resolveFacultyId(req.query.facultyId);
-    if (!facultyDbId) return res.status(404).json({ ok: false, error: 'faculty_not_found' });
+    if (!facultyDbId)
+      return res.status(404).json({ ok: false, error: 'faculty_not_found' });
     const sessionCode = req.params.sessionCode;
     const rows = await getSessionRows(sessionCode);
-    if (rows.length === 0) return res.status(404).json({ ok: false, error: 'session_not_found' });
+    if (rows.length === 0)
+      return res.status(404).json({ ok: false, error: 'session_not_found' });
     if (rows.some(row => row.faculty_id !== facultyDbId))
       return res.status(403).json({ ok: false, error: 'not_your_session' });
-    if (!isSessionEnded(rows)) return res.status(409).json({ ok: false, error: 'session_not_submitted' });
+    if (!isSessionEnded(rows))
+      return res
+        .status(409)
+        .json({ ok: false, error: 'session_not_submitted' });
 
     const students = await dbAll(
       `SELECT students.id AS id, students.name AS name, students.roll_number AS roll_number,
@@ -952,7 +1060,12 @@ router.get('/history/:sessionCode', async (req, res) => {
       sessionCode,
       date: rows[0].date,
       method: rows[0].method,
-      endedAt: isoUtc(rows.map(r => r.end_time).sort().at(-1)),
+      endedAt: isoUtc(
+        rows
+          .map(r => r.end_time)
+          .sort()
+          .at(-1),
+      ),
       header: await getSessionHeader(sessionCode),
       students: students.map(s => ({
         id: s.id,
@@ -1061,12 +1174,16 @@ router.post('/finalize', async (req, res) => {
 
     getIO().to(sessionCode).emit('session_finalized', { sessionCode });
     // Students' Today and Attendance change now (absent people may have been marked, or the other way round)
-    getSessionHeader(sessionCode).then(h => notifyClasses((h?.classes || []).map(c => c.class_id))).catch(() => {});
+    getSessionHeader(sessionCode)
+      .then(h => notifyClasses((h?.classes || []).map(c => c.class_id)))
+      .catch(() => {});
     // The class is over: close its camera connection (no-op for QR sessions).
     void releaseSessionCamera(sessionCode);
     // CCTV only: crops of the students the faculty confirmed join their galleries (no-op for QR sessions).
     void growGalleryFromSession(sessionCode, checkedStudentIds).catch(error =>
-      console.warn(`[cctv] could not add face crops to galleries: ${error.message}`),
+      console.warn(
+        `[cctv] could not add face crops to galleries: ${error.message}`,
+      ),
     );
     return res.json({ ok: true, message: 'Finalized' });
   } catch (err) {
@@ -1077,7 +1194,7 @@ router.post('/finalize', async (req, res) => {
 
 // Checked when the request reaches the server, so it must cover slow campus Wi-Fi.
 // The QR still rotates every few seconds, so a screenshot is useless.
-const TOKEN_LIFETIME_SECONDS = 8;
+const TOKEN_LIFETIME_SECONDS = 3;
 
 function createSessionToken(sessionCode, expiresInSeconds, section) {
   const token = randomBytes(12).toString('hex');

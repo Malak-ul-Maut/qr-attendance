@@ -4,8 +4,8 @@
   "description": "Mark attendance securely using dynamic QR codes",
   "main": "backend/index.js",
   "scripts": {
-    "start": "node --env-file=.env backend/index.js",
-    "dev": "node --watch-path=backend --watch-path=.env --env-file=.env backend/index.js",
+    "start": "node --import ./backend/load-env.js backend/index.js",
+    "dev": "node --watch-path=backend --watch-path=.env --import ./backend/load-env.js backend/index.js",
     "host": "zrok2 share public https://localhost:4000 --backend-mode proxy -n public:smart-attendance --insecure",
     "build": "node backend/scripts/build-frontend.mjs --proxy=https://scrimmage-unlucky-dispersed.ngrok-free.dev --assets=https://cdn.jsdelivr.net/gh/malak-ul-maut/qr-attendance@v1/frontend"
   },
@@ -15,8 +15,12 @@
   "type": "module",
   "author": "Ahad Ali",
   "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20.12.0"
+  },
   "dependencies": {
     "@ngrok/ngrok": "^1.7.0",
+    "compression": "^1.8.2",
     "cors": "^2.8.5",
     "express": "^4.17.1",
     "qr-scanner": "^1.4.2",
@@ -25,6 +29,7 @@
     "sqlite3": "^5.1.7"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "prettier": "3.7.4"
   },
   "prettier": {

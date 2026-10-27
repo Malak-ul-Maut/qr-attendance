@@ -1616,7 +1616,7 @@ function renderQR(data) {
   if (!sessionCode) return;
   lastToken = data.token;
   drawQR(lastToken);
-  scheduleTokenRefresh(500); // the QR changes constantly so screenshots stop working
+  scheduleTokenRefresh(1000); // the QR changes constantly so screenshots stop working
 }
 
 // A resized window, a rotated phone or full screen: redraw at once, from the code already on screen

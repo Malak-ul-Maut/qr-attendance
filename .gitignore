@@ -15,3 +15,7 @@ backend/bakeoff_work
 
 # Build
 frontend-dist
+
+# Transient database files
+backend/database.db-shm
+backend/database.db-wal
