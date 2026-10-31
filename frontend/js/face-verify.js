@@ -7,8 +7,11 @@ import { nextFrame } from './face/camera.js';
 export const FACE_SETTINGS = {
   detectionThreshold: 0.5,
   stableFrames: 3, // good frames in a row before the face is compared
+  liveness: true, // photo/screen check (MiniFASNet) on every frame of the streak
+  liveFramesRequired: 3, // live frames in a row before the face is compared (when liveness is on)
+  liveLogitThreshold: Math.log(0.8 / 0.2), // real score minus spoof score must reach this (= 80% sure it is live)
   recognitionThreshold: 0.45,
-  minFaceFraction: 0.16, // face width as a share of the shorter side of the picture
+  minFaceFraction: 0.20, // face width as a share of the shorter side of the picture
   minFaceWidth: 80, // ...but never fewer pixels than this
   hardBlur: 6, // below this the frame is rejected as blurry
   minBrightness: 40,
@@ -34,6 +37,7 @@ export const FACE_TIPS = {
   backlit: 'Turn so the light (a window or lamp) is in front of you, not behind you.',
   sidelit: 'Light is coming from one side. Face the light.',
   glare: 'Part of your face is too bright. Step out of direct light.',
+  liveness: 'Face the camera directly, with no photo or screen in view.',
   mismatch: 'Take off glasses or a mask if you can, face the camera straight on, and try again.',
 };
 
@@ -47,6 +51,7 @@ export const HINT_TEXT = {
   backlit: 'Light is behind you. Turn around.',
   sidelit: 'Light on one side only. Face the light.',
   glare: 'Too bright on your face.',
+  liveness: 'Liveness check failed.',
 };
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -163,6 +168,24 @@ export function assessFrame(video, face, settings = FACE_SETTINGS) {
   };
 }
 
+// The square the liveness model looks at: the face box widened 1.5x, shrunk to 128x128.
+let cropScratch = null;
+export function createSquareFaceCrop(source, face, expansion = 1.5, size = 128) {
+  const width = source.videoWidth || source.width;
+  const height = source.videoHeight || source.height;
+  const side = Math.min(Math.max(face.box.x2 - face.box.x1, face.box.y2 - face.box.y1) * expansion, width, height);
+  const x = Math.max(0, Math.min(width - side, (face.box.x1 + face.box.x2) / 2 - side / 2));
+  const y = Math.max(0, Math.min(height - side, (face.box.y1 + face.box.y2) / 2 - side / 2));
+  if (!cropScratch || cropScratch.canvas.width !== size) {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    cropScratch = { canvas, context: canvas.getContext('2d', { willReadFrequently: true }) };
+  }
+  cropScratch.context.drawImage(source, x, y, side, side, 0, 0, size, size);
+  return cropScratch.canvas;
+}
+
 // A copy of the current frame (shrunk to maxSize) with the face coordinates scaled to match.
 export function snapshotFrame(source, face, quality, maxSize = 640) {
   const scale = Math.min(1, maxSize / Math.max(source.videoWidth, source.videoHeight));
@@ -253,11 +276,19 @@ export async function runFaceCheck({ video, canvas, engine, descriptor, isActive
     const gate = assessFrame(video, face, s);
     if (!gate.ok) { blocked(gate.hint, face); continue; }
 
+    // Photo or screen? A frame that does not look live empties the streak, so a real face has to be seen live
+    // several frames in a row before it is even compared.
+    if (s.liveness) {
+      const live = await engine.live(createSquareFaceCrop(video, face));
+      if (!isActive()) break;
+      if (live.difference < s.liveLogitThreshold) { blocked('liveness', face); continue; }
+    }
+    const needed = s.liveness ? Math.max(s.stableFrames, s.liveFramesRequired) : s.stableFrames;
     streak.push(snapshotFrame(video, face, gate.quality));
-    if (streak.length > s.stableFrames) streak.shift();
+    if (streak.length > needed) streak.shift();
     drawDetection(canvas, video, face, '', '#2f9e44');
-    if (streak.length < s.stableFrames) {
-      onStatus(`Hold still (${streak.length}/${s.stableFrames})`);
+    if (streak.length < needed) {
+      onStatus(`${s.liveness ? 'Liveness confirmed. ' : ''}Hold still (${streak.length}/${needed})`);
       continue;
     }
 

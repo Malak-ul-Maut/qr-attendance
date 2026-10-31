@@ -90,20 +90,35 @@ const useDist = process.env.SERVE_DIST === '1' && fs.existsSync(path.join(DIST_D
 if (process.env.SERVE_DIST === '1' && !useDist)
   console.warn('SERVE_DIST=1 but frontend-dist/ is missing. Run `npm run build`. Serving ../frontend instead.');
 const WEB_DIR = useDist ? DIST_DIR : SRC_DIR;
-// The source pages load the face models from this server. They are not kept in the repo any more.
+let sourceRuntimeConfig;
+// Source pages load the face-engine files from the manifest's CDN base URL.
 if (!useDist) {
-  try {
-    const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '../assets.manifest.json'), 'utf8'));
-    const missing = manifest.assets.filter(
-      a => a.scope === 'frontend' && !a.optional && !fs.existsSync(path.join(FRONTEND_DIR, a.path)),
-    );
-    if (missing.length)
-      console.warn(`Face-engine files are missing (${missing.map(a => path.basename(a.path)).join(', ')}). Run: npm run assets`);
-  } catch {
-    // no manifest: nothing to check
-  }
+  const manifest = JSON.parse(
+    fs.readFileSync(path.join(__dirname, '../assets.manifest.json'), 'utf8'),
+  );
+  const assetBase = manifest.frontendBaseUrl;
+  if (typeof assetBase !== 'string' || !/^https:\/\/[^\s]+$/.test(assetBase))
+    throw new Error('assets.manifest.json must define a valid HTTPS frontendBaseUrl');
+  const runtimeConfigPath = path.join(FRONTEND_DIR, 'utils/runtime-config.js');
+  const runtimeConfig = fs.readFileSync(runtimeConfigPath, 'utf8');
+  const assetBaseSetting = "window.ASSET_BASE = '';";
+  if (!runtimeConfig.includes(assetBaseSetting))
+    throw new Error(`${runtimeConfigPath} must leave ASSET_BASE empty for server configuration`);
+  sourceRuntimeConfig = runtimeConfig.replace(
+    assetBaseSetting,
+    `window.ASSET_BASE = ${JSON.stringify(assetBase.replace(/\/+$/, ''))};`,
+  );
 }
 console.log(`Serving the frontend from ${useDist ? 'frontend-dist (built)' : 'frontend (source)'}`);
+
+if (!useDist) {
+  app.get('/utils/runtime-config.js', (req, res) =>
+    res
+      .type('application/javascript')
+      .set('Cache-Control', 'no-cache')
+      .send(sourceRuntimeConfig),
+  );
+}
 
 // Ready-made brotli files, when the browser accepts them (the 11 MB .wasm drops to about 2.5 MB).
 app.use(precompressed(WEB_DIR));

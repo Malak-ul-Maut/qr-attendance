@@ -7,7 +7,7 @@
 window.API_BASE = '';
 
 // ASSET_BASE is where the face-engine WASM and models are downloaded from.
-// Source/dev pages may leave this empty to load them from their server. The optimized build requires a CDN
+// Source pages served by the backend get this value from assets.manifest.json. The optimized build requires a CDN
 // (`--assets=`) and omits these files, so built pages need CDN access for face verification.
 window.ASSET_BASE = '';
 

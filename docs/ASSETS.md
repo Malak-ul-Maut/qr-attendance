@@ -4,7 +4,7 @@
 
 | Group | Files | Used by | Fetched from |
 | --- | --- | --- | --- |
-| `frontend` | ONNX Runtime WASM, face detector, face recognizer | the student's browser | `frontendBaseUrl` (a CDN) |
+| `frontend` | ONNX Runtime WASM, face detector, face recognizer, liveness (MiniFASNet) | the student's browser | `frontendBaseUrl` (a CDN) |
 | `backend` | CCTV detector and recognizer | the Python CCTV service | the entry's `url`, then the old Google Drive link |
 
 ## Setting up a machine
@@ -19,7 +19,7 @@ Files land in `frontend/utils/...` (for the source pages) and `backend/models/` 
 
 ## Where browsers get the frontend files
 
-GitHub Releases and Google Drive links **cannot** be used for these: browsers are blocked from fetching GitHub release assets (the redirect carries no CORS header), and Drive answers large files with a confirmation page and quotas. jsDelivr works because it serves repo files with CORS and long caching.
+GitHub Releases and Google Drive links **cannot** be used for these: browsers are blocked from fetching GitHub release assets (the redirect carries no CORS header), and Drive answers large files with a confirmation page and quotas. jsDelivr works because it serves repo files with CORS and long caching. In source mode (`SERVE_DIST=0`), the backend injects `frontendBaseUrl` from this manifest into `utils/runtime-config.js`; built mode uses the manifest value unless overridden with `--assets`.
 
 Today `frontendBaseUrl` points at the `v1` tag of this repo. Tags never change, so the files stay available there even after they are removed from `main`. The files are still in git history, though. To remove them for good:
 

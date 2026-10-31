@@ -1,6 +1,6 @@
 {
   "_about": "Heavy files that are NOT kept in this repo. `npm run assets` downloads them to the right folders and checks size + sha256. frontend files are served to browsers from frontendBaseUrl. It points at the v1 tag of this repo, which still contains them (tags never change), so nothing breaks when they are removed from main. To get them out of git history for good, put them in a small separate public repo and point frontendBaseUrl at it (see docs/ASSETS.md). backend files are downloaded by the server machine only, so any plain HTTPS host works (a GitHub release is fine); the older Google Drive link is the fallback. Fill in bytes/sha256 with `npm run assets -- --update-hashes` once a file is on disk.",
-  "frontendBaseUrl": "https://cdn.jsdelivr.net/gh/malak-ul-maut/qr-attendance@v1/frontend",
+  "frontendBaseUrl": "https://cdn.jsdelivr.net/gh/malak-ul-maut/qr-attendance@assets-v2/frontend",
   "assets": [
     {
       "name": "ort-wasm",
@@ -24,9 +24,8 @@
       "sha256": "9cc6e4a75f0e2bf0b1aed94578f144d15175f357bdc05e815e5c4a02b319eb4f"
     },
     {
-      "name": "anti-spoof (not used by any page yet)",
+      "name": "liveness (MiniFASNetV2, int8)",
       "scope": "frontend",
-      "optional": true,
       "path": "utils/models/minifasnetv2_quant.onnx",
       "bytes": 626197,
       "sha256": "fde20585635cae62ed1d41796f76b6f8bc4b92cd91ec1cf0f1bc6485d2d587a9"
@@ -35,7 +34,7 @@
       "name": "cctv-detector",
       "scope": "backend",
       "path": "10g_bnkps.onnx",
-      "url": "https://github.com/malak-ul-maut/qr-attendance/releases/download/assets-v1/10g_bnkps.onnx",
+      "url": "https://github.com/malak-ul-maut/qr-attendance/releases/download/assets-v2/10g_bnkps.onnx",
       "legacyUrl": "https://drive.google.com/file/d/1rLV-F8MG4hXlTzaUfFrfOCH1LQDp8BHr",
       "bytes": null,
       "sha256": null
@@ -44,7 +43,7 @@
       "name": "cctv-recognizer",
       "scope": "backend",
       "path": "cvlface_adaface_ir101_webface12m.onnx",
-      "url": "https://github.com/malak-ul-maut/qr-attendance/releases/download/assets-v1/cvlface_adaface_ir101_webface12m.onnx",
+      "url": "https://github.com/malak-ul-maut/qr-attendance/releases/download/assets-v2/cvlface_adaface_ir101_webface12m.onnx",
       "legacyUrl": "https://drive.google.com/file/d/1dGzgy7cNdWYXrX4FLAGeMSEOXfD8g28j",
       "bytes": null,
       "sha256": null

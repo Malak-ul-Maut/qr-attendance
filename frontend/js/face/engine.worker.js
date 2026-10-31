@@ -15,9 +15,11 @@ const STRIDES = [8, 16, 32];
 const ANCHORS = 2;
 const EMBEDDING_SIZE = 512;
 const ARCFACE = 112;
+const LIVE_SIZE = 128; // MiniFASNetV2 input: a 128x128 square crop of the face (1.5x the face box)
 
 let det = null;
 let rec = null;
+let live = null;
 
 // ---------- asset cache (IndexedDB) ----------
 // A self-signed https certificate makes browsers refuse to keep files in their normal HTTP cache, so the
@@ -153,8 +155,9 @@ async function init({ version, assets }) {
   const wasm = getAsset('wasm', assets.wasm, version, track);
   const det_ = getAsset('det', assets.det, version, track);
   const rec_ = getAsset('rec', assets.rec, version, track);
-  const [w, d, r] = await Promise.all([wasm, det_, rec_]);
-  cacheDeleteOthers(new Set([w.key, d.key, r.key])); // old versions are not needed any more
+  const live_ = getAsset('live', assets.live, version, track);
+  const [w, d, r, l] = await Promise.all([wasm, det_, rec_, live_]);
+  cacheDeleteOthers(new Set([w.key, d.key, r.key, l.key])); // old versions are not needed any more
 
   postMessage({ type: 'stage', stage: 'starting' });
   ort.env.logLevel = 'error';
@@ -169,10 +172,12 @@ async function init({ version, assets }) {
   const options = { executionProviders: ['wasm'], graphOptimizationLevel: 'all', logSeverityLevel: 3 };
   det = await ort.InferenceSession.create(new Uint8Array(d.buffer), options);
   rec = await ort.InferenceSession.create(new Uint8Array(r.buffer), options);
+  live = await ort.InferenceSession.create(new Uint8Array(l.buffer), options);
 
   // The first run of a session is slow (memory and kernels are set up). Do it now, on a blank image.
   await runDetector(new Uint8ClampedArray(320 * 256 * 4), 320, 256, 1, 0.5);
   await runRecognizer(new Uint8ClampedArray(ARCFACE * ARCFACE * 4));
+  await runLiveness(new Uint8ClampedArray(LIVE_SIZE * LIVE_SIZE * 4));
 }
 
 // ---------- detector (SCRFD det_500m) ----------
@@ -256,6 +261,15 @@ async function runRecognizer(rgba) {
   return emb;
 }
 
+// ---------- liveness (MiniFASNetV2, int8) ----------
+// Two logits: [real, spoof]. The page compares their difference with its threshold (face-verify.js).
+async function runLiveness(rgba) {
+  const input = new ort.Tensor('float32', rgbaToPlanar(rgba, LIVE_SIZE, LIVE_SIZE, 0, 255), [1, 3, LIVE_SIZE, LIVE_SIZE]);
+  const out = (await live.run({ [live.inputNames[0]]: input }))[live.outputNames[0]].data;
+  if (out.length !== 2) throw new Error('Unexpected liveness output size');
+  return { real: out[0], spoof: out[1], difference: out[0] - out[1] };
+}
+
 // ---------- message loop ----------
 self.onmessage = async ({ data }) => {
   try {
@@ -269,6 +283,10 @@ self.onmessage = async ({ data }) => {
       const t0 = performance.now();
       const faces = await runDetector(new Uint8ClampedArray(data.rgba), data.width, data.height, data.scale, data.threshold);
       postMessage({ type: 'result', id: data.id, faces, ms: performance.now() - t0 });
+    } else if (data.type === 'live') {
+      const t0 = performance.now();
+      const result = await runLiveness(new Uint8ClampedArray(data.rgba));
+      postMessage({ type: 'result', id: data.id, ...result, ms: performance.now() - t0 });
     } else if (data.type === 'embed') {
       const t0 = performance.now();
       const embedding = await runRecognizer(new Uint8ClampedArray(data.rgba));

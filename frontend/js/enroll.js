@@ -669,7 +669,7 @@ export async function startSelfTest() {
   const descriptor = Float32Array.from(templateRes.data);
   let result;
   try {
-    result = await runFaceCheck({ video, canvas: overlay, engine: eng, descriptor, isActive: () => isRunning(id), onStatus: setStatus });
+    result = await runFaceCheck({ video, canvas: overlay, engine: eng, descriptor, isActive: () => isRunning(id), onStatus: setStatus, settings: { liveness: false } });
   } catch (error) {
     console.error('Face check failed', error);
     if (!isRunning(id)) return;

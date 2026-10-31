@@ -13,11 +13,12 @@ const ASSET_BASE = window.ASSET_BASE || '';
 // `bytes` is the exact size of each file on disk. It drives the progress bar (a compressed download reports a
 // smaller Content-Length than the bytes we receive) and rejects a cut-short or wrong file.
 // If you replace a file, update its bytes here too. `npm run build` checks that they match.
-const VERSION = '2';
+const VERSION = '3';
 const FILES = {
   wasm: { path: '/utils/ort/ort-wasm-simd-threaded.wasm', bytes: 11210254 },
   det: { path: '/utils/models/det_500m.onnx', bytes: 2524817 },
   rec: { path: '/utils/models/w600k_mbf.onnx', bytes: 13616099 },
+  live: { path: '/utils/models/minifasnetv2_quant.onnx', bytes: 626197 },
 };
 // Built sites use the CDN only; source/dev sites can load the files from their server.
 const ASSETS = Object.fromEntries(
@@ -42,7 +43,7 @@ class FaceEngine {
     this.readyPromise = null;
     this.lastUpdate = null;
     this.scratch = null;
-    this.timings = { detectMs: 0, embedMs: 0 };
+    this.timings = { detectMs: 0, embedMs: 0, liveMs: 0 };
     this.prefetching = null;
   }
 
@@ -201,6 +202,15 @@ class FaceEngine {
     const result = await this.#call({ type: 'embed', rgba }, [rgba]);
     this.timings.embedMs = result.ms;
     return result.embedding;
+  }
+
+  // canvas: a 128x128 square crop of the face (see createSquareFaceCrop in face-verify.js).
+  // Resolves to { real, spoof, difference }: the model's two scores for "live person" and "photo or screen".
+  async live(canvas) {
+    const rgba = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, canvas.width, canvas.height).data.buffer;
+    const result = await this.#call({ type: 'live', rgba }, [rgba]);
+    this.timings.liveMs = result.ms;
+    return result;
   }
 }
 
