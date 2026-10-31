@@ -1,8 +1,9 @@
 import express from 'express';
 import { randomBytes } from 'crypto';
-import utils from '../utils/in-memory-db.js';
 import { dbAll, dbGet, dbRun, withTransaction } from '../utils/db.js';
-import { getIO, notifyClasses } from '../utils/socket-io.js';
+import { announceSessionEnd, notifyClasses } from '../utils/socket-io.js';
+import { requireFaculty } from '../utils/faculty-auth.js';
+import { currentFrame } from '../utils/qr-feed.js';
 import {
   warmSessionCamera,
   releaseSessionCamera,
@@ -13,7 +14,6 @@ import {
   resolveFacultyId,
   findTimetableRows,
   getSessionRows,
-  getSessionSections,
   getSessionHeader,
   findSlotHolder,
   isSessionEnded,
@@ -325,14 +325,7 @@ async function startSessions({ date, facultyDbId, method, targets }) {
     classIds: classRows.map(row => row.class_id),
     timetableIds,
     header: await getSessionHeader(sessionCode),
-    token:
-      method === 'qr'
-        ? createSessionToken(
-            sessionCode,
-            TOKEN_LIFETIME_SECONDS,
-            await getSessionSections(sessionCode),
-          )
-        : null,
+    token: method === 'qr' ? currentFrame(sessionCode) : null,
     resumed,
   };
 
@@ -888,7 +881,7 @@ router.post('/cancel', async (req, res) => {
       await dbRun(`DELETE FROM sessions WHERE session_code = ?`, [sessionCode]);
     });
 
-    getIO().to(sessionCode).emit('session_finalized', { sessionCode });
+    announceSessionEnd(sessionCode);
     notifyClasses((header?.classes || []).map(c => c.class_id)); // their Today stops showing the discarded period
     return res.json({ ok: true, message: 'Discarded', removed: marked });
   } catch (err) {
@@ -956,14 +949,7 @@ router.get('/active', async (req, res) => {
         date: open.date,
         header,
         marks: await sessionMarks(sessionCode),
-        token:
-          open.method === 'qr'
-            ? createSessionToken(
-                sessionCode,
-                TOKEN_LIFETIME_SECONDS,
-                await getSessionSections(sessionCode),
-              )
-            : null,
+        token: open.method === 'qr' ? currentFrame(sessionCode) : null,
       },
     };
     return res.json(response);
@@ -1082,8 +1068,9 @@ router.get('/history/:sessionCode', async (req, res) => {
   }
 });
 
-// Issue a fresh token for an existing session code
-router.post('/token', async (req, res) => {
+// HTTP fallback for the rotating QR, used only while the faculty page has no live socket connection. The normal way
+// is the 'qr_subscribe' socket event (utils/socket-io.js). Both hand out frames from the same feed (utils/qr-feed.js).
+router.post('/token', requireFaculty, async (req, res) => {
   const { sessionCode } = req.body;
 
   try {
@@ -1092,13 +1079,16 @@ router.post('/token', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'invalid_session' });
     if (isSessionEnded(rows))
       return res.status(400).json({ ok: false, error: 'session_ended' });
-
-    const token = createSessionToken(
-      sessionCode,
-      TOKEN_LIFETIME_SECONDS,
-      await getSessionSections(sessionCode),
+    const owned = await dbGet(
+      `SELECT 1 AS found FROM sessions
+       JOIN faculties ON faculties.id = sessions.faculty_id
+       WHERE sessions.session_code = ? AND faculties.username = ? LIMIT 1`,
+      [sessionCode, req.facultyUsername],
     );
-    return res.json({ ok: true, token });
+    if (!owned)
+      return res.status(403).json({ ok: false, error: 'invalid_session' });
+
+    return res.json({ ok: true, token: currentFrame(sessionCode) });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ ok: false, error: 'database_error' });
@@ -1172,7 +1162,7 @@ router.post('/finalize', async (req, res) => {
       );
     });
 
-    getIO().to(sessionCode).emit('session_finalized', { sessionCode });
+    announceSessionEnd(sessionCode);
     // Students' Today and Attendance change now (absent people may have been marked, or the other way round)
     getSessionHeader(sessionCode)
       .then(h => notifyClasses((h?.classes || []).map(c => c.class_id)))
@@ -1191,18 +1181,5 @@ router.post('/finalize', async (req, res) => {
     return res.status(500).json({ ok: false, error: 'database_error' });
   }
 });
-
-// Checked when the request reaches the server, so it must cover slow campus Wi-Fi.
-// The QR still rotates every few seconds, so a screenshot is useless.
-const TOKEN_LIFETIME_SECONDS = 3;
-
-function createSessionToken(sessionCode, expiresInSeconds, section) {
-  const token = randomBytes(12).toString('hex');
-  const expiresAt = Date.now() + expiresInSeconds * 1000;
-  utils.activeTokens[token] = { sessionCode, section, expiresAt };
-
-  setTimeout(() => delete utils.activeTokens[token], expiresInSeconds * 1000);
-  return token;
-}
 
 export default router;

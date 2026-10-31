@@ -16,7 +16,7 @@ const TYPES = {
 const YEAR = 'public, max-age=31536000, immutable';
 
 // What the browser may keep, by file. Rules, first match wins:
-//  - pages: always ask (a 304 costs almost nothing) so a new deploy shows up on the next load
+//  - pages and the service worker (sw.js): always ask (a 304 costs almost nothing) so a new deploy shows up on the next load
 //  - files with a build hash in the name (assets/app-3F9A2C1B.js): never change, keep for a year
 //  - the ONNX Runtime files and fonts: never change
 //  - models: a week (bump VERSION in engine.js when one is replaced)
@@ -25,7 +25,7 @@ const YEAR = 'public, max-age=31536000, immutable';
 //    and an edited file still reaches every phone within 5 minutes
 export function cacheControlFor(urlPath) {
   const p = urlPath.toLowerCase();
-  if (p.endsWith('.html') || p === '/' || p.endsWith('.webmanifest')) return 'no-cache';
+  if (p.endsWith('.html') || p === '/' || p.endsWith('.webmanifest') || p === '/sw.js') return 'no-cache';
   if (/\/assets\/.+-[a-z0-9]{8}\.(js|css|wasm|woff2)$/.test(p)) return YEAR;
   if (p.startsWith('/utils/ort/')) return YEAR;
   if (p.endsWith('.woff2')) return YEAR;

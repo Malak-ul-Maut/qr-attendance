@@ -90,6 +90,19 @@ const useDist = process.env.SERVE_DIST === '1' && fs.existsSync(path.join(DIST_D
 if (process.env.SERVE_DIST === '1' && !useDist)
   console.warn('SERVE_DIST=1 but frontend-dist/ is missing. Run `npm run build`. Serving ../frontend instead.');
 const WEB_DIR = useDist ? DIST_DIR : SRC_DIR;
+// The source pages load the face models from this server. They are not kept in the repo any more.
+if (!useDist) {
+  try {
+    const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '../assets.manifest.json'), 'utf8'));
+    const missing = manifest.assets.filter(
+      a => a.scope === 'frontend' && !a.optional && !fs.existsSync(path.join(FRONTEND_DIR, a.path)),
+    );
+    if (missing.length)
+      console.warn(`Face-engine files are missing (${missing.map(a => path.basename(a.path)).join(', ')}). Run: npm run assets`);
+  } catch {
+    // no manifest: nothing to check
+  }
+}
 console.log(`Serving the frontend from ${useDist ? 'frontend-dist (built)' : 'frontend (source)'}`);
 
 // Ready-made brotli files, when the browser accepts them (the 11 MB .wasm drops to about 2.5 MB).

@@ -1,33 +1,37 @@
 import express from 'express';
 import { dbGet, dbRun } from '../utils/db.js';
-import utils from '../utils/in-memory-db.js';
+import { requireStudent } from '../utils/student-auth.js';
+import { redeemFrames } from '../utils/qr-feed.js';
+import { issueTicket, peekTicket, consumeTicket } from '../utils/scan-tickets.js';
 import { getIO, notifyStudents } from '../utils/socket-io.js';
 import { getSessionRows, isSessionEnded } from '../utils/timetable.js';
 import { todayLocal } from '../utils/dates.js';
 
 const router = express.Router();
 
-// Verify student scan.
+// Verify student scan. Two steps, both for the signed-in student (the token says who, never the request body):
+//   1. { frames, cameraFingerprint }  the phone hands in the QR frames it scanned (utils/qr-feed.js asks for several,
+//      shown right after each other, so a photo of the screen cannot work). The reply is a ticket for this one
+//      student and this one session. The session code itself is never sent to the phone.
+//   2. { ticket, isFaceScanned: true, cameraFingerprint }  the face check passed on the phone; the ticket says which
+//      session. Marks the student present.
 // A session creates an attendance row for every student when it starts, so "marking" a
 // student means filling in marked_at (+ method) on the row that already exists.
-router.post('/verify', async (req, res) => {
+router.post('/verify', requireStudent, async (req, res) => {
   const currentDate = new Date();
+  const studentId = req.student.username;
+  const { frames, ticket, cameraFingerprint, isFaceScanned } = req.body;
 
-  // studentId is the student's username. `section` is still sent by the app, but
-  // eligibility now comes from the session's own attendance rows, so it is not needed.
-  const { studentId, token, sessionId, cameraFingerprint, isFaceScanned } =
-    req.body;
-
-  if (!isFaceScanned) {
-    const tokenData = utils.activeTokens[token];
-    if (!tokenData || tokenData.expiresAt <= Date.now())
+  if (!ticket) {
+    const redeemed = redeemFrames(frames);
+    if (!redeemed.ok)
       return res
         .status(400)
-        .json({ ok: false, error: 'invalid_or_expired_token' });
+        .json({ ok: false, error: redeemed.error, need: redeemed.need });
 
     try {
       const check = await checkStudentForSession(
-        tokenData.sessionCode,
+        redeemed.sessionCode,
         studentId,
       );
       if (check.error)
@@ -37,8 +41,8 @@ router.post('/verify', async (req, res) => {
 
       return res.json({
         ok: true,
-        sessionId: tokenData.sessionCode,
-        section: tokenData.section,
+        ticket: issueTicket(studentId, redeemed.sessionCode),
+        section: check.student.section,
         subject: check.subject,
       });
     } catch (err) {
@@ -46,6 +50,10 @@ router.post('/verify', async (req, res) => {
       return res.status(500).json({ ok: false, error: 'database_error' });
     }
   }
+
+  const held = isFaceScanned ? peekTicket(ticket, studentId) : null;
+  if (!held) return res.status(400).json({ ok: false, error: 'ticket_expired' });
+  const sessionId = held.sessionCode;
 
   try {
     const check = await checkStudentForSession(sessionId, studentId);
@@ -83,6 +91,7 @@ router.post('/verify', async (req, res) => {
        WHERE id = ? AND marked_at IS NULL`,
       [cameraFingerprint || null, student.attendance_id],
     );
+    consumeTicket(ticket);
     if (changes === 0)
       return res.status(400).json({ ok: false, error: 'already_marked' });
 
@@ -108,13 +117,11 @@ router.post('/verify', async (req, res) => {
 
 // Lets the face-check screen notice that the teacher closed attendance mid-check.
 // open:true means the student can still mark; otherwise `error` says why not.
-router.get('/session-status', async (req, res) => {
-  const sessionId = String(req.query.sessionId ?? '');
-  const studentId = String(req.query.studentId ?? '');
-  if (!sessionId || !studentId)
-    return res.status(400).json({ ok: false, error: 'missing_fields' });
+router.get('/session-status', requireStudent, async (req, res) => {
+  const held = peekTicket(String(req.query.ticket ?? ''), req.student.username);
+  if (!held) return res.json({ ok: true, open: false, error: 'ticket_expired' });
   try {
-    const check = await checkStudentForSession(sessionId, studentId);
+    const check = await checkStudentForSession(held.sessionCode, req.student.username);
     return res.json({ ok: true, open: !check.error, error: check.error });
   } catch (err) {
     console.error(err);

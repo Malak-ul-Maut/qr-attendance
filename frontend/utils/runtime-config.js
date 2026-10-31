@@ -11,6 +11,16 @@ window.API_BASE = '';
 // (`--assets=`) and omits these files, so built pages need CDN access for face verification.
 window.ASSET_BASE = '';
 
+// SW_ENABLED turns on the service worker (sw.js), which keeps the site's own files on the phone. Only the built site
+// (`npm run build`) has a sw.js, so the build switches this on; source/dev pages leave it off.
+window.SW_ENABLED = false;
+if (window.SW_ENABLED && 'serviceWorker' in navigator)
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/sw.js').catch(function () {
+      // not a secure page, or blocked: the site just works without it
+    });
+  });
+
 (function () {
   var base = String(window.API_BASE || '').replace(/\/+$/, '');
   window.API_BASE = base;

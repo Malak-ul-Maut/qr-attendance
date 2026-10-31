@@ -19,6 +19,7 @@ const $ = sel => document.querySelector(sel);
 const user = getCurrentUser() ?? {};
 const studentId = user.username;
 const studentName = user.name;
+const authHeader = () => ({ Authorization: `Bearer ${user.token}` });
 
 // ---------- Saved face template (the face models load later, in a worker, when the scanner opens) ----------
 let descriptor;
@@ -87,7 +88,12 @@ let cooldownUntil = 0;
 let currentStep = 1;
 let faceRounds = 0;
 let expectedSubject = null; // the class the student tapped, so the prompt can name it
-let flow = null; // { sessionId, section, subject, cameraFingerprint, verifiedAt }
+let flow = null; // { ticket, section, subject, cameraFingerprint, verifiedAt }
+// QR frames seen on the teacher's screen (code -> time first seen). The server wants several different frames that were
+// shown right after each other, which a photo of the screen can never contain.
+const seenFrames = new Map();
+const FRAME_KEEP_MS = 3000; // the server accepts frames for 4 s; keep a margin for the trip
+const needFrames = code => Number(code[1]) || 2;
 
 // The Today tab asks for a scan from a card that says attendance is open.
 window.addEventListener('student:scan', async ev => {
@@ -149,6 +155,7 @@ async function openScanner() {
   cameraRestarts = 0;
   rejectedToken = null;
   cooldownUntil = 0;
+  seenFrames.clear();
   scannerSection.hidden = false;
   setPageInert(true);
   $('#closeScanBtn').focus();
@@ -293,7 +300,7 @@ async function handleQrResult(data, cameraFingerprint, generation) {
   if (isProcessing || !active || generation !== scanGeneration) return;
   if (Date.now() < cooldownUntil || data === rejectedToken) return;
 
-  // Not shaped like a class token: say so without bothering the server.
+  // Not shaped like a class QR: say so without bothering the server.
   if (!looksLikeClassToken(data)) {
     rejectedToken = data;
     cooldownUntil = Date.now() + REJECT_COOLDOWN_MS;
@@ -301,24 +308,30 @@ async function handleQrResult(data, cameraFingerprint, generation) {
     return setStatus(`${e.title} ${e.text}`, true);
   }
 
+  // Collect frames. The code on the teacher's screen changes several times a second, so a phone that is really
+  // pointed at it sees a few different ones within a moment.
+  const now = Date.now();
+  if (!seenFrames.has(data)) seenFrames.set(data, now);
+  for (const [code, at] of seenFrames)
+    if (now - at > FRAME_KEEP_MS) seenFrames.delete(code);
+  if (seenFrames.size < needFrames(data))
+    return setStatus('Reading the code… hold your phone steady.');
+
   isProcessing = true;
   if (navigator.vibrate) navigator.vibrate(40);
   setStatus('Checking QR code...');
   const response = await postJson('/api/attendance/verify', {
-    studentId,
-    studentName,
-    token: data,
+    frames: [...seenFrames.keys()].slice(-4),
     cameraFingerprint,
-    isFaceScanned: false,
-  });
+  }, authHeader());
   if (!active || generation !== scanGeneration) return;
 
   if (!response.ok) {
     const e = describeError(response);
     if (e.keepScanning || e.retryable) {
-      // Stay on the QR step. Remember codes the server refused, but not network failures.
-      if (response.error !== 'network' && e.keepScanning) rejectedToken = data;
-      cooldownUntil = Date.now() + REJECT_COOLDOWN_MS;
+      // Stay on the QR step. Frames the server did not accept are forgotten, so the next ones are fresh.
+      seenFrames.clear();
+      cooldownUntil = Date.now() + (response.error === 'need_more_frames' ? 0 : REJECT_COOLDOWN_MS);
       isProcessing = false;
       return setStatus(`${e.title} ${e.text}`, true);
     }
@@ -327,10 +340,11 @@ async function handleQrResult(data, cameraFingerprint, generation) {
     return showFailure(response, { primary: 'close' });
   }
 
+  seenFrames.clear();
   destroyQrScanner();
   stopCamera();
   flow = {
-    sessionId: response.sessionId,
+    ticket: response.ticket,
     section: response.section,
     subject: response.subject || null,
     cameraFingerprint,
@@ -382,7 +396,8 @@ async function startFaceStep() {
   let stopCode = null;
   const pollStatus = async () => {
     const res = await fetch(
-      `/api/attendance/session-status?sessionId=${encodeURIComponent(flow.sessionId)}&studentId=${encodeURIComponent(studentId)}`,
+      `/api/attendance/session-status?ticket=${encodeURIComponent(flow.ticket)}`,
+      { headers: authHeader() },
     )
       .then(r => r.json())
       .catch(() => null);
@@ -392,9 +407,9 @@ async function startFaceStep() {
   // (every 6th turn, about 30 s). Without one, it asks every STATUS_POLL_MS as before.
   let turns = 0;
   const poll = setInterval(() => { if (liveJoined() && ++turns % 6) return; pollStatus(); }, STATUS_POLL_MS);
-  const onEnded = event => { if (String(event?.sessionCode) === String(flow.sessionId)) pollStatus(); }; // ask once: it also says why
-  liveSocket?.emit('join_session', flow.sessionId);
-  liveSocket?.on('session_finalized', onEnded);
+  const onEnded = () => pollStatus(); // ask once: it also says why
+  liveSocket?.emit('watch_ticket', { token: user.token, ticket: flow.ticket });
+  liveSocket?.on('session_ended', onEnded);
   const isRunning = () =>
     active && generation === scanGeneration && stopCode === null;
 
@@ -410,7 +425,7 @@ async function startFaceStep() {
     });
   } catch (error) {
     clearInterval(poll);
-    liveSocket?.off('session_finalized', onEnded);
+    liveSocket?.off('session_ended', onEnded);
     console.error('Face verification failed', error);
     if (active && generation === scanGeneration) {
       stopCamera();
@@ -419,14 +434,14 @@ async function startFaceStep() {
     return;
   }
   clearInterval(poll);
-  liveSocket?.off('session_finalized', onEnded);
+  liveSocket?.off('session_ended', onEnded);
   if (!active || generation !== scanGeneration) return;
 
   if (result.status === 'cancelled' && stopCode) {
     stopCamera();
     return showFailure(
       { error: stopCode.error, subject: flow.subject },
-      { primary: 'close' },
+      { primary: stopCode.error === 'ticket_expired' ? 'rescan' : 'close' },
     );
   }
   if (result.status === 'camera_stalled') {
@@ -451,13 +466,10 @@ async function submitAttendance() {
   const generation = scanGeneration;
   setStatus('Submitting attendance...');
   const response = await postJson('/api/attendance/verify', {
-    studentId,
-    studentName,
-    sessionId: flow.sessionId,
-    section: flow.section,
+    ticket: flow.ticket,
     cameraFingerprint: flow.cameraFingerprint,
     isFaceScanned: true,
-  });
+  }, authHeader());
   if (!active || generation !== scanGeneration) return;
 
   if (response.ok) {
@@ -477,6 +489,7 @@ async function submitAttendance() {
       primary: { label: 'Done', action: closeScanner },
     });
   }
+  if (response.error === 'ticket_expired') return showFailure(response, { primary: 'rescan' });
   const e = describeError({ ...response, subject: response.subject || flow.subject });
   // A network or server problem keeps the passed face check, so it can be re-sent.
   if (e.retryable && Date.now() - flow.verifiedAt < VERIFIED_VALID_MS)

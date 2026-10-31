@@ -298,25 +298,67 @@ def face_size(face):
     return x2 - x1, y2 - y1
 
 
+def _manifest_entry(filename):
+    """The backend entry for this file in assets.manifest.json at the repo root (or None)."""
+    import json
+    try:
+        manifest = json.loads((HERE.parent / "assets.manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    for asset in manifest.get("assets", []):
+        if asset.get("scope") == "backend" and asset.get("path") == filename:
+            return asset
+    return None
+
+
+def _download_direct(url, dest, entry):
+    """Plain HTTPS download (a GitHub release, any file host). Checks size and sha256 when the manifest has them."""
+    import hashlib
+    import urllib.request
+    part = Path(str(dest) + ".part")
+    digest = hashlib.sha256()
+    with urllib.request.urlopen(url, timeout=60) as response, open(part, "wb") as out:
+        while True:
+            chunk = response.read(1 << 20)
+            if not chunk:
+                break
+            out.write(chunk)
+            digest.update(chunk)
+    if entry and ((entry.get("bytes") and part.stat().st_size != entry["bytes"])
+                  or (entry.get("sha256") and digest.hexdigest() != entry["sha256"])):
+        part.unlink(missing_ok=True)
+        raise IOError("downloaded file does not match assets.manifest.json")
+    part.replace(dest)
+
+
 def download_if_missing(path, url):
-    """Fetch a model file once (Google Drive link or any direct URL); no-op if already on disk."""
+    """Fetch a model file once; no-op if already on disk.
+
+    Where from, in order: the address in assets.manifest.json (a GitHub release, checked against the recorded
+    size and sha256), then the url given here (MODEL_URLS), then the manifest's older Google Drive link.
+    Google Drive links need gdown; everything else needs nothing extra."""
     path = Path(path)
     if path.exists():
         return path
-    if not url:
-        sys.exit(f"{path.name} is missing and no download URL is set - fill in MODEL_URLS in "
-                 f"this script, or place the file at {path} by hand (an int8 model is made by "
-                 f"running quantize_model.py).")
+    entry = _manifest_entry(path.name)
+    sources = [s for s in ((entry or {}).get("url"), url, (entry or {}).get("legacyUrl")) if s]
+    if not sources:
+        sys.exit(f"{path.name} is missing and no download URL is set - add it to assets.manifest.json, "
+                 f"or place the file at {path} by hand (an int8 model is made by running quantize_model.py).")
     path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        import gdown
-    except ImportError:
-        sys.exit("Model download needs gdown. Run: pip install gdown")
-    print(f"  downloading {path.name} ...")
-    gdown.download(url=url, output=str(path), quiet=False)
-    if not path.exists():
-        sys.exit(f"Could not download {path.name} from {url} - download it by hand and save it as {path}")
-    return path
+    for source in dict.fromkeys(sources):
+        print(f"  downloading {path.name} from {source.split('/')[2]} ...")
+        try:
+            if "drive.google.com" in source:
+                import gdown  # only needed for Google Drive links: pip install gdown
+                gdown.download(url=source, output=str(path), quiet=False)
+            else:
+                _download_direct(source, path, entry)
+        except Exception as error:  # try the next source
+            print(f"    could not use it: {error}")
+        if path.exists():
+            return path
+    sys.exit(f"Could not download {path.name} - download it by hand and save it as {path}")
 
 
 # -------------------------------------------------------------------- model

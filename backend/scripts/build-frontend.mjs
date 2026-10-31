@@ -7,8 +7,11 @@
 //
 // Cloudflare metadata (_headers and index.html) is included in that same folder. For a Cloudflare Worker that
 // proxies API traffic to your tunnel, pass --proxy=<tunnel address>; it writes the Worker config separately.
-// Face-engine WASM/models are CDN-only and --assets is required:
-//   node scripts/build-frontend.mjs --proxy=https://your-tunnel.example --assets=https://cdn.jsdelivr.net/gh/USER/REPO@v1/frontend
+// Face-engine WASM/models are CDN-only (they are not even kept in the repo: see assets.manifest.json). The CDN address
+// comes from frontendBaseUrl in that file, or from --assets to override it:
+//   node scripts/build-frontend.mjs --proxy=https://your-tunnel.example [--assets=https://cdn.jsdelivr.net/gh/USER/REPO@v1]
+// The build also writes sw.js (a service worker that keeps the site's own files on the phone) and a local copy of the
+// socket.io browser script, so a page load makes far fewer requests through the tunnel.
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
@@ -20,15 +23,16 @@ const ROOT = path.resolve(
 );
 const SRC = path.join(ROOT, 'frontend');
 const DIST = path.join(ROOT, 'frontend-dist');
+const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'assets.manifest.json'), 'utf8'));
 const assetsArg = process.argv.find(a => a.startsWith('--assets='));
-const assetBase = assetsArg ? assetsArg.slice(9).replace(/\/+$/, '') : '';
+const assetBase = (assetsArg ? assetsArg.slice(9) : manifest.frontendBaseUrl || '').replace(/\/+$/, '');
 if (!assetBase) {
-  console.error('--assets is required; the face-engine WASM and models are CDN-only.');
+  console.error('No CDN address: set frontendBaseUrl in assets.manifest.json or pass --assets=https://...');
   process.exit(1);
 }
 if (!/^https:\/\/[^\s]+$/.test(assetBase)) {
   console.error(
-    `--assets must look like https://cdn.jsdelivr.net/gh/USER/REPO@v1, got "${assetBase}"`,
+    `The CDN address must look like https://cdn.jsdelivr.net/gh/USER/REPO@v1, got "${assetBase}"`,
   );
   process.exit(1);
 }
@@ -43,7 +47,8 @@ try {
   process.exit(1);
 }
 
-// 1. The sizes in engine.js must match the files, or the progress bar and the integrity check would be wrong.
+// 1. The sizes in engine.js must match assets.manifest.json (the record of the real files), or the progress bar and
+//    the integrity check would be wrong. The files themselves are not needed here: they are not kept in the repo.
 const engineSource = fs.readFileSync(
   path.join(SRC, 'js/face/engine.js'),
   'utf8',
@@ -51,10 +56,11 @@ const engineSource = fs.readFileSync(
 for (const [, file, bytes] of engineSource.matchAll(
   /path:\s*'([^']+)',\s*bytes:\s*(\d+)/g,
 )) {
-  const actual = fs.statSync(path.join(SRC, file)).size;
-  if (actual !== Number(bytes)) {
+  const entry = manifest.assets.find(a => '/' + a.path === file);
+  if (!entry || entry.bytes !== Number(bytes)) {
     console.error(
-      `${file} is ${actual} bytes but js/face/engine.js says ${bytes}. Update FILES there (and bump VERSION).`,
+      `${file}: js/face/engine.js says ${bytes} bytes but assets.manifest.json says ${entry ? entry.bytes : 'nothing (not listed)'}. ` +
+        'Update both (npm run assets -- --update-hashes records a file on disk) and bump VERSION in engine.js.',
     );
     process.exit(1);
   }
@@ -169,17 +175,61 @@ fs.writeFileSync(
     `window.ASSET_BASE = ${JSON.stringify(assetBase)};`,
   ),
 );
-const CDN_ONLY = [
-  'utils/ort/ort-wasm-simd-threaded.wasm',
-  'utils/models/det_500m.onnx',
-  'utils/models/w600k_mbf.onnx',
-];
-for (const file of CDN_ONLY) fs.rmSync(path.join(DIST, file), { force: true });
+// Every heavy browser file in the manifest is served by the CDN only (they may not even exist locally).
+for (const asset of manifest.assets)
+  if (asset.scope === 'frontend') fs.rmSync(path.join(DIST, asset.path), { force: true });
+fs.rmSync(path.join(DIST, 'utils/models/models-manifest.json'), { force: true });
 
 fs.copyFileSync(
   path.join(DIST, 'homepage.html'),
   path.join(DIST, 'index.html'),
 );
+
+// 5b. The socket.io browser script. The server hands it out at /socket.io/socket.io.js; here it becomes a plain file
+//     of the site (same package version as the server), so it is kept on the phone like every other script instead
+//     of being asked from the tunnel on each page load.
+const socketClient = path.join(ROOT, 'node_modules/socket.io/client-dist/socket.io.min.js');
+if (fs.existsSync(socketClient)) {
+  fs.copyFileSync(socketClient, path.join(DIST, 'utils/socket.io.min.js'));
+  for (const page of fs.readdirSync(DIST).filter(f => f.endsWith('.html'))) {
+    const file = path.join(DIST, page);
+    const text = fs.readFileSync(file, 'utf8');
+    if (text.includes('"/socket.io/socket.io.js"'))
+      fs.writeFileSync(file, text.split('"/socket.io/socket.io.js"').join('"/utils/socket.io.min.js"'));
+  }
+} else {
+  console.warn('node_modules/socket.io is missing (run npm install): pages will keep loading /socket.io/socket.io.js from the server.');
+}
+
+// 5c. Service worker: the list of files to keep on the phone is every page, script, style, font and icon of this build
+//     (not the models or the ONNX runtime, which are downloaded when first needed, and not .br/.map copies).
+const SKIP_PRECACHE = /(\.br|\.map|\.onnx|\.wasm|\.part)$|^_headers$|^sw\.js$|^utils\/ort\//;
+const precache = [];
+(function walk(dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    const rel = path.relative(DIST, full).split(path.sep).join('/');
+    if (entry.isDirectory()) walk(full);
+    else if (!SKIP_PRECACHE.test(rel)) precache.push('/' + rel);
+  }
+})(DIST);
+precache.sort();
+const precacheBytes = precache.reduce((sum, url) => sum + fs.statSync(path.join(DIST, url)).size, 0);
+if (precacheBytes > 4 * 1024 * 1024)
+  console.warn(`The service worker would keep ${(precacheBytes / 1048576).toFixed(1)} MB on every phone; check what is in frontend-dist.`);
+const buildId = Date.now().toString(36); // sorts by time, so the worker can tell which cache is the older one
+fs.writeFileSync(
+  path.join(DIST, 'sw.js'),
+  fs
+    .readFileSync(path.join(ROOT, 'backend/scripts/sw.template.js'), 'utf8')
+    .replace('__BUILD__', buildId)
+    .replace('__PRECACHE__', JSON.stringify(precache, null, 2)),
+);
+// Switch the registration on in this build's runtime-config.js (it is one of the precached files; rewrite before the .br step)
+const swConfig = fs.readFileSync(configFile, 'utf8');
+if (!swConfig.includes('window.SW_ENABLED = false;'))
+  throw new Error('utils/runtime-config.js changed shape; update the build (SW_ENABLED)');
+fs.writeFileSync(configFile, swConfig.replace('window.SW_ENABLED = false;', 'window.SW_ENABLED = true;'));
 
 // 6. Brotli copies of every text file (used by the local server; Cloudflare serves the original files).
 let count = 0;
@@ -221,6 +271,8 @@ fs.writeFileSync(
   Cache-Control: public, max-age=300
 /css/*
   Cache-Control: public, max-age=300
+/sw.js
+  Cache-Control: no-cache
 `,
 );
 let biggest = 0;

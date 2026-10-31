@@ -13,6 +13,10 @@ backend/*.avi
 backend/crop-staging
 backend/bakeoff_work
 
+# Heavy files kept outside the repo (assets.manifest.json lists them; `npm run assets` downloads them)
+frontend/utils/ort/*.wasm
+frontend/utils/models/*.onnx
+
 # Build
 frontend-dist
 

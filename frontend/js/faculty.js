@@ -360,7 +360,7 @@ const cctvResultImage = $('#cctvResultImage');
 
 let sessionCode = null;
 let sessionMethod = null;
-let qrTimer = null;
+let qrTimer = null; // the watchdog interval for the QR (see the QR section)
 let renderTimer = null;
 let classIds = [];
 let classInfo = []; // full class records for the selected slot (merged classes have several)
@@ -1336,6 +1336,7 @@ onSocket('connect', async () => {
   if (!sessionCode) return;
   // After a reconnect the server has forgotten which room we were in
   socket.emit('join_session', sessionCode);
+  subscribeQR();
   connBanner.hidden = true;
   if (socketWasDown) {
     socketWasDown = false;
@@ -1454,8 +1455,10 @@ function openLive({
   setQrLive(true);
   renderRoster({ force: true });
   loadAllStudents(); // runs alongside; the list fills in when it arrives
-  if (isQr) renderQR({ token });
-  else if (resumed) showCctvAfterResume();
+  if (isQr) {
+    renderQR({ token });
+    subscribeQR();
+  } else if (resumed) showCctvAfterResume();
 }
 
 // A CCTV session that was already running: the scan is not repeated on its own. Show the last picture if the
@@ -1563,6 +1566,7 @@ const qrStage = $('#qrStage');
 const offscreen = document.createElement('canvas');
 let qrLive = true;
 let refreshFailures = 0;
+let lastFrameAt = 0; // when the QR on screen last changed
 let lastToken = null;
 let qrSpan = 0; // squares across, margin included. Same for every token of the same length.
 let qrSpanFor = 0;
@@ -1615,8 +1619,8 @@ function drawQR(token) {
 function renderQR(data) {
   if (!sessionCode) return;
   lastToken = data.token;
+  lastFrameAt = Date.now();
   drawQR(lastToken);
-  scheduleTokenRefresh(1000); // the QR changes constantly so screenshots stop working
 }
 
 // A resized window, a rotated phone or full screen: redraw at once, from the code already on screen
@@ -1627,30 +1631,85 @@ if (typeof ResizeObserver === 'function')
     qrResizeFrame = requestAnimationFrame(() => drawQR(lastToken));
   }).observe(qrStage);
 
-function scheduleTokenRefresh(delay) {
-  clearTimeout(qrTimer);
-  qrTimer = setTimeout(async () => {
-    if (!sessionCode) return;
-    // postData returns undefined when the network fails, so treat that as "not ok"
-    const data = (await postData('/api/session/token', { sessionCode })) || {
-      ok: false,
-    };
-    if (!sessionCode) return; // session ended while we waited
+// The rotating QR arrives over the socket: the server pushes a new frame several times a second, so there is one
+// request to start it instead of one per frame. Frames are made by the server (backend/utils/qr-feed.js); a photo of
+// one frame cannot be redeemed because phones must hand in several frames shown right after each other.
+function subscribeQR() {
+  if (!sessionCode || sessionMethod !== 'qr' || !socket?.connected) return;
+  const code = sessionCode;
+  socket.emit(
+    'qr_subscribe',
+    { sessionCode: code, token: currentUser.token },
+    reply => {
+      if (code !== sessionCode) return;
+      if (reply?.ok) {
+        refreshFailures = 0;
+        setQrLive(true);
+        return renderQR({ token: reply.code });
+      }
+      qrFailed(reply?.error);
+    },
+  );
+}
 
+function qrFailed(error) {
+  if (error === 'session_ended' || error === 'invalid_session') {
+    setQrLive(false, 'Session ended. The QR has stopped.');
+    return notify(friendlyError(error), 'error');
+  }
+  if (
+    error === 'faculty_login_required' ||
+    error === 'expired_faculty_token' ||
+    error === 'invalid_faculty_token'
+  )
+    return setQrLive(false, 'Sign out and sign in again to show the QR.');
+  if (++refreshFailures >= 2) setQrLive(false);
+}
+
+onSocket('qr_frame', ({ code } = {}) => {
+  if (!sessionCode || sessionMethod !== 'qr' || !code) return;
+  if (!qrLive) setQrLive(true);
+  renderQR({ token: code });
+});
+onSocket('qr_ended', () => {
+  if (sessionCode) setQrLive(false, 'Session ended. The QR has stopped.');
+});
+
+// Safety net. Frames stopped coming (the connection dropped, or the server restarted and forgot the subscription):
+// ask again when the socket is up, or fetch frames over HTTP while it is down. Never needed while all is well.
+async function fetchFrameOverHttp() {
+  const code = sessionCode;
+  try {
+    const res = await fetch('/api/session/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${currentUser.token}`,
+      },
+      body: JSON.stringify({ sessionCode: code }),
+    });
+    const data = await res.json();
+    if (code !== sessionCode) return;
     if (data.ok) {
       refreshFailures = 0;
       setQrLive(true);
       return renderQR(data);
     }
-    if (data.error === 'session_ended' || data.error === 'invalid_session') {
-      setQrLive(false, 'Session ended. The QR has stopped.');
-      return notify(friendlyError(data.error), 'error');
-    }
-    // Keep trying instead of freezing on an old QR, and say so after a couple of misses
-    if (++refreshFailures >= 2) setQrLive(false);
-    scheduleTokenRefresh(2000);
-  }, delay);
+    qrFailed(data.error);
+  } catch {
+    if (code === sessionCode && ++refreshFailures >= 2) setQrLive(false);
+  }
 }
+qrTimer = setInterval(() => {
+  if (!sessionCode || sessionMethod !== 'qr') return;
+  const quietMs = Date.now() - lastFrameAt;
+  if (socket?.connected) {
+    if (quietMs > 2000) subscribeQR();
+  } else if (quietMs > 1000) {
+    fetchFrameOverHttp();
+  }
+  if (quietMs > 3000 && qrLive) setQrLive(false);
+}, 1000);
 
 // ---------- CCTV ----------
 // How many faces the camera found in the picture. If the server reports it, use that.
@@ -2232,7 +2291,8 @@ $('#confirmDiscardBtn').addEventListener('click', async event => {
 });
 
 function endSessionUI() {
-  clearTimeout(qrTimer);
+  if (sessionCode) socket?.emit('qr_unsubscribe', sessionCode);
+  lastFrameAt = 0;
   clearTimeout(renderTimer);
   if (sessionCode) forgetRemoved(sessionCode);
   sessionCode = null;

@@ -16,12 +16,12 @@ export default async function postData(url, dataObject) {
 //   { ok: false, status, error, ...body }       the server refused it (error is a code)
 //   { ok: false, status: 0, error: 'network' }  the request never reached the server
 // A 500 with an HTML body becomes { ok: false, status: 500, error: 'server_error' }.
-export async function postJson(url, dataObject) {
+export async function postJson(url, dataObject, extraHeaders = {}) {
   let response;
   try {
     response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...extraHeaders },
       body: JSON.stringify(dataObject),
     });
   } catch (error) {

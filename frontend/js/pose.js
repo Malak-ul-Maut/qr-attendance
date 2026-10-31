@@ -139,15 +139,6 @@ export const SHOTS = [
     template: true,
   },
   {
-    id: 'high',
-    title: 'Raise the phone above your eyes and look up at it',
-    hint: 'Like the classroom camera, which looks down on you. Keep your eyes open.',
-    short: '↑ Phone up high · फ़ोन ऊपर',
-    yaw: [-0.08, 0.08],
-    dPitch: [-0.2, -0.06],
-    template: false,
-  },
-  {
     id: 'down-left',
     title: 'Chin down, and turn slightly to your left',
     hint: 'Like looking at your desk from the right side of the room.',
@@ -164,15 +155,6 @@ export const SHOTS = [
     yaw: [-0.3, -0.1],
     dPitch: [0.06, 0.2],
     template: false,
-  },
-  {
-    id: 'front2',
-    title: 'Look straight again, relaxed',
-    hint: 'Natural face, one more time.',
-    short: 'Straight again · फिर सीधे',
-    yaw: [-0.07, 0.07],
-    dPitch: [-0.07, 0.07],
-    template: true,
   },
   {
     id: 'left-wide',

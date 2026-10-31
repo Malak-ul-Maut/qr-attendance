@@ -6,8 +6,9 @@
   "scripts": {
     "start": "node --import ./backend/load-env.js backend/index.js",
     "dev": "node --watch-path=backend --watch-path=.env --import ./backend/load-env.js backend/index.js",
+    "assets": "node backend/scripts/fetch-assets.mjs",
     "host": "zrok2 share public https://localhost:4000 --backend-mode proxy -n public:smart-attendance --insecure",
-    "build": "node backend/scripts/build-frontend.mjs --proxy=https://scrimmage-unlucky-dispersed.ngrok-free.dev --assets=https://cdn.jsdelivr.net/gh/malak-ul-maut/qr-attendance@v1/frontend"
+    "build": "node backend/scripts/build-frontend.mjs --proxy=https://scrimmage-unlucky-dispersed.ngrok-free.dev"
   },
   "keywords": [
     "qr-attendance"

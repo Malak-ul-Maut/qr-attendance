@@ -2,6 +2,7 @@ import express from 'express';
 import { dbGet } from '../utils/db.js';
 import { issueAdminToken } from '../utils/admin-auth.js';
 import { issueStudentToken } from '../utils/student-auth.js';
+import { issueFacultyToken } from '../utils/faculty-auth.js';
 import { todayLocal } from '../utils/dates.js';
 import { hasGalleryPhotos } from '../utils/gallery.js';
 
@@ -56,6 +57,7 @@ router.post('/login', async (req, res) => {
       subjectName: account.subjectName ?? null,
     };
     if (role === 'admin') result.adminToken = issueAdminToken(account.username);
+    if (role === 'faculty') result.token = issueFacultyToken(account.username); // lets the faculty screen receive the rotating QR
     if (role === 'student') {
       result.token = issueStudentToken(account.username);
       // Passwords are still plain text for now. Students on the default one must change it.

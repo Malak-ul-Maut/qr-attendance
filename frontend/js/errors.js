@@ -10,6 +10,21 @@ const MESSAGES = {
     text: "Point at the QR on your teacher's screen.",
     keepScanning: true,
   },
+  need_more_frames: {
+    tone: 'warning',
+    title: 'Hold your phone steady on the QR.',
+    text: 'It needs to see the code change for a moment. A photo will not work.',
+    keepScanning: true,
+  },
+  student_login_required: { tone: 'warning', title: 'Please sign in again.', text: 'Your sign-in has expired.' },
+  expired_student_token: { tone: 'warning', title: 'Please sign in again.', text: 'Your sign-in has expired.' },
+  invalid_student_token: { tone: 'warning', title: 'Please sign in again.', text: 'Your sign-in has expired.' },
+  ticket_expired: {
+    tone: 'warning',
+    title: 'That took too long.',
+    text: "Scan the QR on your teacher's screen again.",
+    retryable: true,
+  },
   not_a_class_qr: {
     tone: 'warning',
     title: "This isn't a class attendance QR.",
@@ -173,5 +188,5 @@ export function cameraErrorCode(error) {
   }
 }
 
-// Class tokens are 24 hex characters (12 random bytes). Anything else is some other QR code.
-export const looksLikeClassToken = value => /^[0-9a-f]{24}$/.test(value);
+// Class QR frames look like "A2.1k.9f86d081884c7d65" (utils/qr-feed.js on the server). Anything else is some other QR code.
+export const looksLikeClassToken = value => /^A[1-4]\.[0-9a-z]{1,8}\.[0-9a-f]{16}$/.test(value);
