@@ -25,11 +25,8 @@
 
     <header class="app-header">
       <a class="brand" href="faculty.html" aria-label="Smart Attendance Marker, home">
-        <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
-          <g class="mk-ring"><rect x="5.7" y="5.7" width="12.6" height="12.6" rx="3" /><rect x="29.7" y="5.7" width="12.6" height="12.6" rx="3" /><rect x="5.7" y="29.7" width="12.6" height="12.6" rx="3" /></g>
-          <g class="mk-dot"><rect x="9.6" y="9.6" width="4.8" height="4.8" rx="1.2" /><rect x="33.6" y="9.6" width="4.8" height="4.8" rx="1.2" /><rect x="9.6" y="33.6" width="4.8" height="4.8" rx="1.2" /></g>
-          <rect class="mk-cell" x="28" y="28" width="16" height="16" rx="4" />
-          <path class="mk-tick" d="M31.6 36.4l3.6 3.6 6-7.2" />
+        <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+          <use href="icons/brand-mark.svg#verified" />
         </svg>
         <span class="brand-name" data-brand="product-name">Smart Attendance Marker</span>
       </a>
@@ -159,8 +156,7 @@
         <section id="afterStart" hidden>
           <!-- Shown only while the live-update connection is down -->
           <p id="connBanner" class="alert alert-warning" role="status" hidden>
-            Live updates paused. Reconnecting; the list still refreshes every few
-            seconds.
+            Live updates paused, reconnecting...
           </p>
 
           <!-- One compact bar: subject, where and when, merged classes, and the present count -->

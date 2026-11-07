@@ -5,7 +5,7 @@
 | Fixed for every college | Set per college |
 |---|---|
 | Product name: **Smart Attendance Marker** | College name, short name and logo |
-| Logo mark (`frontend/brand/mark.svg`, inline in the page headers) | Everything in `frontend/utils/brand-config.js` |
+| Verified logo mark (`frontend/icons/brand-mark.svg`, used in the page headers) | Everything in `frontend/utils/brand-config.js` |
 | Colours, type and layout | |
 
 ## Putting another college on the site
@@ -31,15 +31,15 @@ window.BRAND = {
 
 ## The mark
 
-A QR code with one cell replaced by a red check: the three finder squares are ink (they follow light and dark), and
-the checked cell is the brand red. It reads as "QR attendance" at a glance and still holds at 24px.
+The line-art mark combines a QR frame and a central scan target. Its strokes follow the active light or dark theme,
+while the target remains the brand red.
 
-- In pages: inline SVG, classes `mk-ring`, `mk-dot`, `mk-cell`, `mk-tick` in `css/brand.css`.
-- As a file: `brand/mark.svg` (light backgrounds) and `brand/favicon.svg` (switches to light ink in a dark browser tab).
+- In pages: the reusable `verified` symbol in `frontend/icons/brand-mark.svg`, with theme colors inherited from the page.
+- In the header: inline `<svg><use href="icons/brand-mark.svg#verified"></use></svg>` so it stays sharp at small sizes.
 - Two alternates were drawn and are kept in `docs/brand-alternates/`: a viewfinder with a check, and a face in a
   viewfinder with a check badge.
 
-Do not recolour the check cell or put the mark on a red background.
+Keep the check badge red and avoid placing the mark on a red background.
 
 ## Backgrounds and foregrounds
 

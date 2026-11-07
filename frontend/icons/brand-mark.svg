@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" class="sam-logo" role="img" aria-labelledby="sam-v-title" xmlns:c2pa="http://c2pa.org/manifest">
+  <title id="sam-v-title">Smart Attendance Marker</title>
+  <style>
+    :where(.sam-logo) { color: #111111; }
+    @media (prefers-color-scheme: dark) { :where(.sam-logo) { color: #ffffff; } }
+  </style>
+  <symbol id="verified" viewBox="0 0 64 64">
+  <defs>
+    <mask id="sam-verified-cut" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+      <rect width="64" height="64" fill="#ffffff"/>
+      <circle cx="32" cy="39" r="9" fill="#000000"/>
+      <circle cx="53.5" cy="53.5" r="12.5" fill="#000000"/>
+    </mask>
+  </defs>
+
+  <!-- QR finder squares -->
+  <g fill="none" stroke="currentColor" stroke-width="4">
+    <rect x="2" y="2" width="12" height="12" rx="3"/>
+    <rect x="50" y="2" width="12" height="12" rx="3"/>
+    <rect x="2" y="50" width="12" height="12" rx="3"/>
+  </g>
+  <g fill="currentColor">
+    <rect x="6" y="6" width="4" height="4" rx="1"/>
+    <rect x="54" y="6" width="4" height="4" rx="1"/>
+    <rect x="6" y="54" width="4" height="4" rx="1"/>
+  </g>
+
+  <!-- QR modules -->
+  <g fill="currentColor" fill-opacity="0.55">
+    <rect x="22" y="2" width="6" height="6" rx="1.5"/>
+    <rect x="31" y="9" width="6" height="6" rx="1.5"/>
+    <rect x="39" y="2" width="6" height="6" rx="1.5"/>
+    <rect x="2" y="24" width="6" height="6" rx="1.5"/>
+    <rect x="2" y="36" width="6" height="6" rx="1.5"/>
+    <rect x="56" y="22" width="6" height="6" rx="1.5"/>
+    <rect x="56" y="34" width="6" height="6" rx="1.5"/>
+    <rect x="21" y="57" width="6" height="6" rx="1.5"/>
+    <rect x="31" y="57" width="6" height="6" rx="1.5"/>
+  </g>
+
+  <!-- Dome camera silhouette (lens and badge areas are cut out transparently) -->
+  <path d="M12 26 Q12 22 16 22 H48 Q52 22 52 26 V30 H47 C48 44 41 52 32 52 C23 52 16 44 17 30 H12 Z"
+        fill="currentColor" mask="url(#sam-verified-cut)"/>
+
+  <!-- Lens -->
+  <circle cx="32" cy="39" r="6.5" fill="currentColor"/>
+  <circle cx="32" cy="39" r="3.5" fill="#E02424"/>
+
+  <!-- Attendance tick badge -->
+  <circle cx="53.5" cy="53.5" r="10" fill="#E02424"/>
+  <path d="M48 54 L52 58 L59.5 49" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <use href="#verified"/>
+</svg>

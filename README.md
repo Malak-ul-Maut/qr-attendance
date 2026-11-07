@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/screenshots/brand-logo.svg" alt="Smart Attendance Marker logo" width="96" />
+<img src="frontend/icons/brand-mark.svg" alt="Smart Attendance Marker logo" width="96" />
 
 # Smart Attendance Marker
 

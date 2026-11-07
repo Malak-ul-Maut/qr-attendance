@@ -443,12 +443,11 @@ dialog.dialog[data-nudge] { animation: dialog-nudge 0.3s ease; }
 }
 
 /* ---------- Theme switch ----------
-   A real on/off switch (role="switch", aria-checked). On means dark. The sun and moon sit inside the track
-   and the thumb slides over the one that is not active. theme.js keeps aria-checked in step with the theme. */
+   A real on/off switch (role="switch", aria-checked). On means dark. theme.js keeps aria-checked in step with the theme. */
 .theme-switch {
   display: inline-flex;
   align-items: center;
-  min-width: var(--touch-target);
+  justify-content: center;
   min-height: var(--touch-target);
   padding: 0;
   background: none;
@@ -457,46 +456,143 @@ dialog.dialog[data-nudge] { animation: dialog-nudge 0.3s ease; }
 }
 .theme-switch-track {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: block;
+  flex: none;
   width: 3.5rem;
   height: 1.875rem;
-  padding: 0 0.4rem;
-  color: var(--ink-500);
-  background: var(--surface);
-  border: 1px solid var(--control-edge);
+  background: linear-gradient(145deg, #e1e4ea, #cbd0d9);
+  border: 1px solid #aeb4bf;
   border-radius: 999px;
+  box-shadow:
+    0 1px 1px rgba(255, 255, 255, 0.7),
+    inset 0 1px 2px rgba(32, 35, 40, 0.3),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.45);
+  transition: box-shadow 0.22s ease;
 }
-.theme-switch-track svg {
-  width: 0.9rem;
-  height: 0.9rem;
+.theme-switch-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--ink-500);
+}
+.theme-switch-icon svg {
+  width: 100%;
+  height: 100%;
+}
+.theme-switch > .theme-switch-icon {
+  display: none;
 }
 .theme-switch-thumb {
   position: absolute;
   top: 50%;
-  left: 0.2rem;
-  width: 1.875rem;
-  height: 1.375rem;
-  margin-top: -0.6875rem;
-  background: var(--ink-900);
+  left: 0.15rem;
+  width: 1.4rem;
+  height: 1.4rem;
+  margin-top: -0.7rem;
+  background: linear-gradient(145deg, #ffffff, #eef0f4);
+  border: 1px solid #c6cbd4;
   border-radius: 999px;
-  transition: transform 0.18s ease;
+  box-shadow: 0 2px 5px rgba(32, 35, 40, 0.22);
+  transition:
+    transform 0.22s ease,
+    background-color 0.22s ease,
+    border-color 0.22s ease,
+    box-shadow 0.22s ease;
+  display: grid;
+  place-items: center;
 }
-.theme-switch[aria-checked='true'] .theme-switch-thumb {
-  transform: translateX(1.2rem);
+.theme-switch:not(.account-item)[aria-checked='true'] .theme-switch-thumb {
+  transform: translateX(1.75rem);
 }
-/* The icon under the thumb is hidden; the other one stays visible as the label for the other state */
-.theme-switch[aria-checked='false'] .ts-sun,
-.theme-switch[aria-checked='true'] .ts-moon {
+.theme-switch-thumb svg {
+  position: absolute;
+  width: 0.85rem;
+  height: 0.85rem;
+  color: #535b69;
+  opacity: 0;
+  transform: scale(0.65) rotate(-25deg);
   visibility: hidden;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease,
+    visibility 0s linear 0.18s;
+}
+.theme-switch[aria-checked='false'] .theme-switch-thumb .ts-sun,
+.theme-switch[aria-checked='true'] .theme-switch-thumb .ts-moon {
+  opacity: 1;
+  transform: scale(1) rotate(0);
+  visibility: visible;
+  transition-delay: 0s;
+}
+.account-item.theme-switch .theme-switch-track {
+  width: 3.5rem;
+  height: 1.875rem;
+  background: var(--canvas);
+  border-color: var(--control-edge);
+  box-shadow: inset 0 2px 5px rgba(32, 35, 40, 0.12);
+}
+.account-item.theme-switch .theme-switch-track::after {
+  display: none;
+}
+.account-item.theme-switch .theme-switch-thumb {
+  left: 0.15rem;
+  width: 1.4rem;
+  height: 1.4rem;
+  margin-top: -0.7rem;
+  background: var(--surface);
+  border-color: var(--control-edge);
+  box-shadow: var(--shadow-sm);
+}
+.account-item.theme-switch[aria-checked='true'] .theme-switch-thumb {
+  transform: translateX(1.75rem);
+}
+.account-item.theme-switch .theme-switch-thumb svg {
+  width: 0.85rem;
+  height: 0.85rem;
+  color: var(--ink-700);
 }
 .theme-switch:focus-visible .theme-switch-track {
   outline: 3px solid var(--ink-900);
   outline-offset: 2px;
 }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .theme-switch:not(.account-item) .theme-switch-track {
+    background: linear-gradient(145deg, #202431, #141720);
+    border-color: #11141c;
+    box-shadow:
+    0 1px 1px rgba(190, 199, 222, 0.2),
+    inset 0 1px 2px rgba(0, 0, 0, 0.78),
+    inset 0 -1px 1px rgba(160, 173, 204, 0.22);
+  }
+  :root:not([data-theme='light']) .theme-switch:not(.account-item) .theme-switch-thumb {
+    background: linear-gradient(145deg, #858da0, #687186);
+    border-color: #a2a9b8;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  }
+}
+:root[data-theme='dark'] .theme-switch:not(.account-item) .theme-switch-track {
+  background: linear-gradient(145deg, #202431, #141720);
+  border-color: #11141c;
+  box-shadow:
+    0 1px 1px rgba(190, 199, 222, 0.2),
+    inset 0 1px 2px rgba(0, 0, 0, 0.78),
+    inset 0 -1px 1px rgba(160, 173, 204, 0.22);
+}
+:root[data-theme='dark'] .theme-switch:not(.account-item) .theme-switch-thumb {
+  background: linear-gradient(145deg, #858da0, #687186);
+  border-color: #a2a9b8;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
 @media (prefers-reduced-motion: reduce) {
-  .theme-switch-thumb { transition: none; }
+  .theme-switch-track,
+  .theme-switch-thumb,
+  .theme-switch-thumb svg { transition: none; }
+}
+@media (forced-colors: active) {
+  .theme-switch-track,
+  .theme-switch-thumb { border: 1px solid ButtonText; }
 }
 
 /* Long words/emails never push a card wider than the screen */

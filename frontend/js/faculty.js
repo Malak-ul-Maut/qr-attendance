@@ -1449,7 +1449,7 @@ function openLive({
   $('#panelTitle').focus({ preventScroll: true });
   $('#liveStatus').textContent = '';
   connBanner.textContent = socket
-    ? 'Live updates paused. Reconnecting; the list still refreshes every few seconds.'
+    ? 'Live updates paused, reconnecting...'
     : 'Live updates are not available on this page. The list refreshes every few seconds.';
   connBanner.hidden = Boolean(socket);
   setQrLive(true);

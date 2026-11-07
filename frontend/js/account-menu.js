@@ -62,7 +62,9 @@ export function mountAccountMenu(slot, { user = {}, role, onChangePassword } = {
 
   const themeRow = el('button', { class: 'account-item theme-switch', type: 'button', role: 'switch', 'aria-checked': 'false' },
     el('span', { text: 'Dark mode' }),
-    el('span', { class: 'theme-switch-track', 'aria-hidden': 'true', html: `${SVG.sun}${SVG.moon}<span class="theme-switch-thumb"></span>` }));
+    el('span', { class: 'theme-switch-icon', 'aria-hidden': 'true', html: SVG.sun }),
+    el('span', { class: 'theme-switch-track', 'aria-hidden': 'true', html: `<span class="theme-switch-thumb">${SVG.sun}${SVG.moon}</span>` }),
+    el('span', { class: 'theme-switch-icon', 'aria-hidden': 'true', html: SVG.moon }));
 
   const passwordRow = onChangePassword
     ? el('button', { class: 'account-item', type: 'button', 'data-act': 'password' }, el('span', { text: 'Change password' }), el('span', { 'aria-hidden': 'true', html: SVG.key }))

@@ -53,26 +53,6 @@
   min-width: 0;
 }
 
-/* The mark is inline SVG so it follows the theme: ink for the QR, the brand red for the checked cell */
-.mk-ring {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 3.4;
-}
-.mk-dot {
-  fill: currentColor;
-}
-.mk-cell {
-  fill: var(--red-600);
-}
-.mk-tick {
-  fill: none;
-  stroke: var(--on-red, #fff);
-  stroke-width: 3.2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
 /* ---------- The college, always visible ---------- */
 .institute {
   display: flex;
