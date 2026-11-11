@@ -161,7 +161,7 @@ DEFAULT_SETTINGS = {
                             # rejected if another live track already holds that student with a clearly higher score.
     "max_attempts": 10,      # recognition attempts allowed per track before giving up on it
     "every": 18,            # process every Nth frame
-    "duration": 10.0,        # seconds of video to scan; 0 = no limit
+    "duration": 2.0,        # seconds of video to scan; 0 = no limit
     "min_face": 0,          # skip faces shorter than this (px) - free, no attempt spent
     "min_sharpness": 0.0,   # skip blurry crops below this Laplacian variance - free
     "min_norm": 0.0,        # distrust an attempt whose AdaFace quality score is below this

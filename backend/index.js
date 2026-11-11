@@ -5,8 +5,9 @@ import cors from 'cors';
 import compression from 'compression';
 import https from 'https';
 import os from 'os';
-import selfsigned from 'selfsigned';
+// import selfsigned from 'selfsigned';
 import { fileURLToPath } from 'url';
+import { execFileSync } from 'child_process';
 
 import hostTunnel from './utils/host-tunnel.js';
 import { precompressed, staticHeaders } from './utils/static-fast.js';
@@ -63,24 +64,42 @@ app.use('/api/attendance/cctv', cctvRouter);
 
 // ------------------ Initialize server ---------------------
 
-const attrs = [{ name: 'commonName', value: 'localhost' }];
-const pems = await selfsigned.generate(attrs, {
-  algorithm: 'sha256',
-});
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const FRONTEND_DIR = path.join(__dirname, '../frontend');
+
+const certPath = path.join(__dirname, 'cert.pem');
+const keyPath = path.join(__dirname, 'key.pem');
+const mkcertPath = path.join(__dirname, 'mkcert.exe');
+
+// 1. Check if the local CA is already created; if not, install it on first run
+const caRoot = execFileSync(mkcertPath, ['-CAROOT'], { encoding: 'utf8' }).trim();
+if (!fs.existsSync(path.join(caRoot, 'rootCA.pem'))) {
+  console.log('First-time setup: Installing local mkcert Certificate Authority...');
+  execFileSync(mkcertPath, ['-install'], { stdio: 'inherit' });
+}
+
+// 2. Generate fresh leaf certificates for the current IP
+const serverIp = getServerIpAddress() || 'localhost';
+const PORT = process.env.PORT || 4000;
+
+const hosts = ['localhost', '127.0.0.1', '::1'];
+if (serverIp) hosts.push(serverIp);
+
+execFileSync(
+  mkcertPath,
+  ['-cert-file', certPath, '-key-file', keyPath, ...hosts],
+  { stdio: 'ignore' }, // Keeps your terminal output clean
+);
 
 const options = {
-  key: pems.private,
-  cert: pems.cert,
+  key: fs.readFileSync(keyPath),
+  cert: fs.readFileSync(certPath),
 };
 const server = https.createServer(options, app);
 
 const io = initializeSocket(server); // Initialize Socket.io server
 
-// Serve frontend
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const FRONTEND_DIR = path.join(__dirname, '../frontend');
 
 // Which copy of the frontend to serve. `npm run build` makes ../frontend-dist (bundled, hashed, brotli files).
 // It is used only when you start the server with SERVE_DIST=1, so an old build can never hide your edits by accident.
@@ -142,8 +161,6 @@ app.get(/^\/(?!api).*/, (req, res) => {
 });
 
 // --------------- Start server --------------
-const serverIp = getServerIpAddress() || 'localhost';
-const PORT = process.env.PORT || 4000;
 
 server.listen(PORT, '0.0.0.0', () =>
   console.log(`🚀 Server running at https://${serverIp}:${PORT}`),

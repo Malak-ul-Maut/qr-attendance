@@ -7,113 +7,138 @@
   color: var(--ink-500);
 }
 
-/* ---- Start-session card ---- */
+/* ---- Start-session page: steps on the left, a summary with the Start button on the right ---- */
 .setup {
-  max-width: 60rem;
+  max-width: 74rem;
   margin: 0 auto;
-  padding: var(--space-5);
+}
+.setup-grid {
   display: grid;
   gap: var(--space-4);
+  align-items: start;
+}
+@media (min-width: 62rem) {
+  .setup-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(20rem, 25rem);
+    gap: var(--space-5);
+  }
+  .setup-summary {
+    position: sticky;
+    top: calc(3.5rem + var(--space-5));
+  }
+}
+.setup-steps,
+.setup-summary {
+  display: grid;
+  gap: var(--space-4);
+  align-content: start;
+  padding: var(--space-5);
+  min-width: 0;
+}
+.setup-summary {
+  background: var(--summary-surface);
+}
+.setup-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
 }
 .setup-title {
   font-size: var(--text-2xl);
   line-height: 1.2;
-  overflow-wrap: anywhere;
-}
-.setup-title.is-placeholder {
-  color: var(--ink-500);
-}
-/* Two columns on desktop: when and what on the left; room, method and start on the right */
-.setup-grid {
-  display: grid;
-  gap: var(--space-5);
-  align-items: start;
-}
-@media (min-width: 52rem) {
-  .setup-grid {
-    grid-template-columns: minmax(0, 1.7fr) minmax(16rem, 1fr);
-  }
-  .setup-where {
-    padding-left: var(--space-5);
-    border-left: 1px solid var(--line-strong);
-  }
-}
-.setup-col {
-  display: grid;
-  gap: var(--space-4);
-  min-width: 0;
-}
-.field-label {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--ink-900);
-}
-.legend-hint {
-  font-weight: 400;
-  color: var(--ink-500);
-  margin-left: var(--space-2);
-}
-
-/* Date chip and session type share a row */
-.when-row {
-  display: flex;
-  gap: var(--space-3);
-  align-items: center;
-  flex-wrap: wrap;
 }
 .type-switch {
   border: 0;
   margin: 0;
   padding: 0;
   min-width: 0;
-  flex: 0 0 11rem;
+  flex: 0 0 12rem;
 }
-.date-chip {
+.setup-lead {
+  margin: calc(var(--space-2) * -1) 0 0;
+  font-size: var(--text-sm);
+  color: var(--ink-500);
+}
+.legend-hint {
+  font-weight: 400;
+  color: var(--ink-500);
+  margin-left: var(--space-2);
+}
+.setup-block {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+/* Week strip */
+.week {
   position: relative;
-  display: flex;
-  align-items: stretch;
-  flex: 1 1 14rem;
-  min-height: var(--touch-target);
-  border: 1px solid var(--control-edge);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  overflow: hidden;
+  display: grid;
+  gap: var(--space-2);
 }
-.date-step,
-.date-label {
-  all: unset;
-  box-sizing: border-box;
-  cursor: pointer;
+.week-head {
   display: flex;
   align-items: center;
-  justify-content: center;
-  min-height: var(--touch-target);
-  color: var(--ink-900);
+  justify-content: space-between;
+  gap: var(--space-3);
 }
-.date-step {
-  width: var(--touch-target);
-  flex: none;
+.week-month {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink-500);
 }
-.date-step:hover,
-.date-label:hover {
-  background: var(--surface-2, var(--red-50));
+.link-action {
+  min-height: 2.25rem;
+  padding: 0 var(--space-3);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--red-600);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-md);
+  cursor: pointer;
 }
-.date-step:focus-visible,
-.date-label:focus-visible {
-  outline: 2px solid var(--red-600);
-  outline-offset: -3px;
+.link-action:hover {
+  background: var(--red-50);
 }
-.date-label {
+.week-strip {
+  display: flex;
+  gap: var(--space-2);
+  align-items: stretch;
+}
+.week-days {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: var(--space-2);
-  font-weight: 700;
-  white-space: nowrap;
-  border-inline: 1px solid var(--control-edge);
 }
-.date-step svg,
-.date-icon {
+.week-step,
+.day-chip {
+  min-height: 4.25rem;
+  font: inherit;
+  color: var(--ink-900);
+  background: var(--surface);
+  border: 1px solid var(--control-edge);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.week-step:hover,
+.day-chip:hover {
+  background: var(--canvas);
+}
+.week-step {
+  flex: none;
+  width: var(--touch-target);
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+.week-step svg {
   width: 1.15rem;
   height: 1.15rem;
   fill: none;
@@ -121,12 +146,49 @@
   stroke-width: 1.9;
   stroke-linecap: round;
   stroke-linejoin: round;
-  flex: none;
 }
-.date-icon {
+.day-chip {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 2px;
+  padding: var(--space-2) 0;
+}
+.day-chip small {
+  font-size: 0.75rem;
+  font-weight: 500;
   color: var(--ink-500);
 }
-/* Kept in the layout (not display:none) so the browser's calendar opens next to the chip */
+.day-chip b {
+  font-size: var(--text-lg);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.day-chip i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: transparent;
+}
+.day-chip[data-today] i {
+  background: var(--red-600);
+}
+.day-chip[aria-pressed='true'] {
+  background: var(--ink-900);
+  border-color: var(--ink-900);
+  color: var(--surface);
+}
+.day-chip[aria-pressed='true'] small {
+  color: inherit;
+  opacity: 0.8;
+}
+.link-action:focus-visible,
+.week-step:focus-visible,
+.day-chip:focus-visible {
+  outline: 2px solid var(--red-600);
+  outline-offset: 2px;
+}
+/* Kept in the layout (not display:none) so the browser's calendar opens next to the week strip */
 .date-native {
   position: absolute;
   left: 50%;
@@ -139,9 +201,9 @@
   padding: 0;
 }
 
+/* Regular: the day's periods as rows */
 .slot-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
   gap: var(--space-2);
 }
 .slot-card {
@@ -159,38 +221,65 @@
 }
 .slot-body {
   display: grid;
-  gap: 1px;
-  padding: var(--space-2) var(--space-4);
-  min-height: var(--touch-target);
-  align-content: center;
+  grid-template-columns: 9.5rem minmax(0, 1fr) auto 1.25rem;
+  gap: var(--space-3);
+  align-items: center;
+  min-height: 4rem;
+  padding: var(--space-3) var(--space-4);
   background: var(--surface);
   border: 2px solid var(--control-edge);
   border-radius: var(--radius-md);
+}
+.slot-when {
+  display: grid;
+  gap: 1px;
 }
 .slot-time {
   font-weight: 700;
   color: var(--ink-900);
 }
-.slot-details {
-  font-size: var(--text-sm);
+.slot-len {
+  font-size: 0.75rem;
   color: var(--ink-500);
 }
-.slot-card .slot-badge {
-  position: absolute;
-  top: 0.5rem;
-  right: 0.6rem;
-  pointer-events: none;
+.slot-subject {
+  min-width: 0;
+  font-weight: 600;
+  color: var(--ink-900);
+}
+.slot-room {
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  background: var(--canvas);
+  color: var(--ink-700);
+  white-space: nowrap;
+}
+.slot-room[hidden] {
+  display: none;
+}
+.slot-mark {
+  width: 1.25rem;
+  height: 1.25rem;
+  box-sizing: border-box;
+  border: 2px solid var(--control-edge);
+  border-radius: 50%;
 }
 .slot-card input:checked + .slot-body {
   border-color: var(--red-600);
   background: var(--red-50);
+}
+.slot-card input:checked + .slot-body .slot-mark {
+  border-color: var(--red-600);
+  background: radial-gradient(circle, var(--red-600) 45%, transparent 50%);
 }
 .slot-card input:focus-visible + .slot-body {
   outline: 2px solid var(--ink-900);
   outline-offset: 2px;
 }
 .slot-skeleton {
-  height: 3.4rem;
+  height: 4rem;
 }
 .slot-card input:disabled {
   cursor: not-allowed;
@@ -198,6 +287,11 @@
 .slot-card input:disabled + .slot-body {
   opacity: 0.55;
   background: var(--surface-2, var(--surface));
+}
+#slots .slot-badge {
+  position: static;
+  margin-left: var(--space-2);
+  vertical-align: middle;
 }
 
 /* ---- Extra: classes, subject and periods ---- */
@@ -227,7 +321,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  min-height: var(--touch-target);
+  min-height: 3rem;
   padding: 0 var(--space-4);
   font-weight: 600;
   color: var(--ink-900);
@@ -240,9 +334,22 @@
   font-size: var(--text-sm);
   color: var(--ink-500);
 }
+.chip-check {
+  display: none;
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: var(--red-600);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .pick-chip input:checked + span {
   border-color: var(--red-600);
   background: var(--red-50);
+}
+.pick-chip input:checked + span .chip-check {
+  display: block;
 }
 .pick-chip input:focus-visible + span {
   outline: 2px solid var(--ink-900);
@@ -250,30 +357,39 @@
 }
 .period-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(3.7rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(4.25rem, 1fr));
   gap: var(--space-2);
 }
 .period-grid .slot-body {
+  grid-template-columns: none;
+  justify-items: center;
+  align-content: center;
+  gap: 0;
+  min-height: 6rem;
   padding: var(--space-2) var(--space-1);
   text-align: center;
-  gap: 0;
 }
 .period-grid .slot-time {
-  font-size: var(--text-base);
+  font-size: var(--text-lg);
 }
 .period-grid .slot-details {
   font-size: 0.75rem;
   line-height: 1.2;
+  color: var(--ink-500);
 }
 .period-grid .slot-state {
-  font-size: 0.7rem;
+  margin-top: var(--space-1);
+  font-size: 0.6875rem;
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--ink-500);
 }
 .period-grid [data-status='borrow'] .slot-state {
   color: var(--red-600);
+}
+.period-grid [data-status='free'] .slot-state {
+  color: var(--success-600);
 }
 .pick-note {
   margin: var(--space-2) 0 0;
@@ -282,32 +398,104 @@
   min-height: 1.25rem;
   white-space: pre-line;
 }
+.pick-note.single-column {
+  columns: 1;
+}
 
-/* ---- Room chip, hint and start row ---- */
+/* ---- Summary card ---- */
+.sum-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.sum-kicker {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-500);
+}
+.sum-type {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  background: var(--canvas);
+  color: var(--ink-700);
+}
+.sum-type[data-type='extra'] {
+  background: var(--ink-900);
+  color: var(--surface);
+}
+.sum-subject {
+  font-size: var(--text-xl);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.sum-subject.is-placeholder {
+  color: var(--ink-500);
+}
+.sum-chips {
+  list-style: none;
+  margin: calc(var(--space-2) * -1) 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.sum-chips:empty {
+  display: none;
+}
+.sum-chips li {
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  background: var(--canvas);
+  color: var(--ink-700);
+}
+.sum-rows {
+  margin: 0;
+  display: grid;
+}
+.sum-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 3rem;
+  font-size: var(--text-sm);
+  border-bottom: 1px solid var(--line);
+}
+.sum-row[hidden] {
+  display: none;
+}
+.sum-row dt {
+  color: var(--ink-500);
+}
+.sum-row dd {
+  margin: 0;
+  font-weight: 600;
+  color: var(--ink-900);
+  text-align: right;
+}
 .room-chip {
   position: relative;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   min-height: var(--touch-target);
-  padding: 0 var(--space-4);
-  background: var(--surface);
-  border: 1px solid var(--control-edge);
+  padding: 0 var(--space-2);
+  margin-right: calc(var(--space-2) * -1);
   border-radius: var(--radius-md);
-  font-weight: 700;
+  font-weight: 600;
   color: var(--ink-900);
   cursor: pointer;
 }
 .room-chip:focus-within {
   outline: 2px solid var(--red-600);
   outline-offset: 2px;
-}
-.room-chip #roomText {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .room-change {
   font-weight: 600;
@@ -327,22 +515,176 @@
 #roomHint.warn {
   color: var(--danger-600);
 }
-.start-row {
+.method-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+.method-card {
+  position: relative;
+  display: block;
+}
+.method-card input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.method-body {
+  display: grid;
+  gap: 2px;
+  min-height: 4rem;
+  padding: var(--space-3);
+  color: var(--ink-900);
+  background: var(--surface);
+  border: 1px solid var(--control-edge);
+  border-radius: var(--radius-md);
+}
+.method-title {
   display: flex;
   align-items: center;
+  gap: var(--space-2);
+}
+.attendance-icon {
+  display: inline-block;
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+.attendance-icon-qr {
+  background-color: currentColor;
+  -webkit-mask: url('../icons/qr-code-favicon.png') center / contain no-repeat;
+  mask: url('../icons/qr-code-favicon.png') center / contain no-repeat;
+}
+.method-body small {
+  font-size: 0.75rem;
+  color: var(--ink-500);
+}
+.method-card input:checked + .method-body {
+  color: var(--surface);
+  background: var(--ink-900);
+  border-color: var(--ink-900);
+}
+.method-card input:checked + .method-body small {
+  color: inherit;
+  opacity: 0.8;
+}
+.method-card input:focus-visible + .method-body {
+  outline: 2px solid var(--red-600);
+  outline-offset: 2px;
+}
+.borrow-box {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--warning-600);
+  background: var(--warning-50);
+  border-radius: var(--radius-md);
+}
+.borrow-box[hidden] {
+  display: none;
+}
+.borrow-box strong {
+  font-size: var(--text-base);
+}
+.borrow-box p {
+  margin: var(--space-1) 0 0;
+}
+.borrow-row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   gap: var(--space-3);
-  flex-wrap: wrap;
+  align-items: start;
+}
+.borrow-row b {
+  white-space: nowrap;
+}
+.borrow-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.start-row {
+  display: grid;
+  gap: var(--space-2);
 }
 .start-row .btn {
-  flex: none;
-  min-width: 10rem;
+  width: 100%;
+  min-height: 3.25rem;
+  font-size: var(--text-lg);
+  font-weight: 700;
 }
 .start-reason {
   margin: 0;
-  flex: 1 1 8rem;
+  min-height: 1.25rem;
+  text-align: center;
   font-size: var(--text-sm);
   color: var(--ink-500);
 }
+
+/* Stacked layout (phones and tablets): Start stays in reach above the tab bar */
+@media (max-width: 61.99rem) {
+  .setup-summary .start-row {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    padding-top: var(--space-3);
+    background: var(--summary-surface);
+    box-shadow: 0 -10px 12px -10px rgba(32, 35, 40, 0.25);
+  }
+}
+@media (max-width: 899px) {
+  .setup-summary .start-row {
+    bottom: calc(3.6rem + env(safe-area-inset-bottom));
+  }
+}
+@media (max-width: 600px) {
+  .setup-steps,
+  .setup-summary {
+    padding: var(--space-4);
+  }
+  .type-switch {
+    flex: 1 1 100%;
+  }
+  .legend-hint {
+    display: none;
+  }
+  .pick-note:empty {
+    display: none;
+  }
+  .week-step {
+    width: 2.25rem;
+  }
+  .week-step,
+  .day-chip {
+    min-height: 3.75rem;
+  }
+  .day-chip b {
+    font-size: var(--text-base);
+  }
+  .slot-body {
+    grid-template-columns: minmax(0, 1fr) 1.25rem;
+    gap: var(--space-1) var(--space-3);
+  }
+  .slot-body > * {
+    grid-column: 1;
+  }
+  .slot-body .slot-mark {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    align-self: center;
+  }
+  .slot-room {
+    justify-self: start;
+  }
+  .period-grid .slot-body > * {
+    grid-column: auto;
+  }
+}
+
 .link-btn {
   background: none;
   border: 0;
@@ -375,41 +717,59 @@
   font-size: var(--text-lg);
 }
 
-/* ---- Session bar: one compact line for what this session is ---- */
-.session-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  margin-bottom: var(--space-4);
-  padding: var(--space-3) var(--space-5);
-  border-left: 4px solid var(--line-strong);
+/* ---- Session info: the top of the QR card. What the session is, where and when, and how many are here ---- */
+.session-info {
+  display: grid;
+  flex: none;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--line);
 }
-.session-bar[hidden] {
+.session-info[hidden] {
   display: none;
 }
-/* Classes taken together get the brand accent, so a combined lecture is obvious at a glance */
-.session-bar[data-merged='true'] {
-  border-left-color: var(--red-600);
+.si-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
 }
-.sb-main {
+.si-title {
   display: grid;
   gap: var(--space-1);
   min-width: 0;
 }
-.sb-title {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-3);
-}
-.sb-subject {
+.si-subject {
   margin: 0;
   font-size: var(--text-xl);
-  line-height: 1.2;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
-.sb-tags,
-.sb-chips {
+.si-tags,
+.si-classes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.si-tags:empty {
+  display: none;
+}
+.si-tags li {
+  padding: 0 var(--space-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ink-700);
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+/* When and where: each fact is one pill (icon + text), the same family as the "5A" tag, so "10:20 am – 11:10 am"
+   reads as a single unit. They are plain labels; the class chips below are the buttons (white, stronger edge). */
+.si-facts {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
@@ -417,88 +777,104 @@
   padding: 0;
   list-style: none;
 }
-.sb-tags:empty {
+.si-facts[hidden] {
   display: none;
 }
-.sb-tags li {
-  padding: 0 var(--space-2);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--ink-700);
-  background: var(--canvas);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-}
-.sb-meta {
-  margin: 0;
-  font-size: var(--text-sm);
-  color: var(--ink-700);
-}
-.sb-meta:empty {
-  display: none;
-}
-.sb-chips[hidden] {
-  display: none;
-}
-.sb-chip {
+.si-fact {
   display: inline-flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  padding: 0 var(--space-3);
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.125rem 0.75rem 0.125rem 0.5rem;
   font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--ink-700);
+  white-space: nowrap;
   background: var(--canvas);
   border: 1px solid var(--line);
   border-radius: 999px;
 }
-.sb-chip-name {
+.si-fact svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  color: var(--ink-500);
+}
+.si-fact[data-kind='time'] {
   font-weight: 600;
   color: var(--ink-900);
 }
-.sb-chip-count {
-  color: var(--ink-500);
-  font-variant-numeric: tabular-nums;
-}
-.sb-count {
-  display: flex;
+/* The number the teacher watches: big, and the same place for the whole class */
+.si-count {
+  display: grid;
   flex: none;
-  align-items: baseline;
-  gap: var(--space-2);
+  justify-items: end;
+  gap: 2px;
   margin: 0;
-  color: var(--ink-500);
+  line-height: 1;
   white-space: nowrap;
 }
-.sb-count-num b {
+.si-count-num b {
   font-size: var(--text-3xl);
   font-weight: 700;
-  line-height: 1;
   color: var(--ink-900);
   font-variant-numeric: tabular-nums;
 }
 #shTotal {
-  font-size: var(--text-xl);
+  font-size: var(--text-lg);
   font-weight: 600;
+  color: var(--ink-500);
   font-variant-numeric: tabular-nums;
 }
-.sb-count-label {
-  font-size: var(--text-sm);
+.si-count-label {
+  font-size: 0.75rem;
+  color: var(--ink-500);
 }
-@media (max-width: 600px) {
-  .session-bar {
-    gap: var(--space-3);
-    margin-bottom: var(--space-3);
-    padding: var(--space-3) var(--space-4);
-  }
-  .sb-subject {
-    font-size: var(--text-lg);
-  }
-  .sb-count {
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 0;
-  }
-  .sb-count-num b {
-    font-size: var(--text-2xl);
-  }
+/* Facts (time, date) and the class chips share a row and wrap together only when they really do not fit */
+.si-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.si-row:not(:has(> :not([hidden]))) {
+  display: none;
+}
+.si-classes[hidden] {
+  display: none;
+}
+/* A class chip is a filter: it narrows the list to that class, and a second tap shows everyone again */
+.si-chip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2rem;
+  padding: 0 var(--space-3);
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--ink-900);
+  background: var(--surface);
+  border: 1px solid var(--control-edge);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.si-chip-btn:hover {
+  background: var(--canvas);
+}
+.si-chip-btn[aria-pressed='true'] {
+  color: var(--surface);
+  background: var(--ink-900);
+  border-color: var(--ink-900);
+}
+.si-chip-btn:focus-visible {
+  outline: 2px solid var(--red-600);
+  outline-offset: 2px;
+}
+.si-chip-name {
+  font-weight: 600;
+}
+.si-chip-count {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
 }
 
 /* ---- Live session ---- */
@@ -507,18 +883,23 @@
   gap: var(--space-4);
   align-items: start;
 }
-/* Wide screens: the live view is exactly as tall as the window, so the roster gets all the height the bar leaves */
+/* Wide screens: the live view is exactly as tall as the window. Both cards start at the top of the page,
+   so the list gets every pixel of height there is. */
 @media (min-width: 900px) {
+  .app-main.wide:has(#view-session:not([hidden]) > #afterStart:not([hidden])) {
+    padding-block: var(--space-4);
+  }
   #afterStart:not([hidden]) {
     display: flex;
     flex-direction: column;
-    height: calc(100dvh - 7.5rem); /* header and page padding */
+    height: calc(100dvh - 5.5rem); /* header and page padding */
     min-height: 26rem;
   }
   .live-grid {
     flex: 1;
     min-height: 0;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+    /* The QR card also carries the session info, so it gets real room; one column of rows needs less than two did */
+    grid-template-columns: minmax(22rem, 7fr) minmax(0, 8fr);
     grid-template-rows: minmax(0, 1fr);
     align-items: stretch;
   }
@@ -534,15 +915,51 @@
   overflow: auto;
 }
 
+/* The heading is only shown for CCTV (QR is obvious); for QR it stays for screen readers and takes no room */
 .panel-head {
   display: flex;
+  flex: none;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2) var(--space-3);
   margin-bottom: var(--space-3);
+}
+.qr-panel[data-method='qr'] .panel-head {
+  margin: 0;
 }
 .panel-head h2 {
   font-size: var(--text-lg);
+}
+.qr-fullscreen-btn {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+  color: var(--ink-900);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.qr-fullscreen-btn:hover {
+  color: var(--red-600);
+}
+.qr-fullscreen-btn:focus-visible {
+  outline: 2px solid var(--ink-900);
+  outline-offset: 2px;
+}
+.fullscreen-icon {
+  display: block;
+  width: 1.5rem;
+  height: 1.5rem;
 }
 .panel-title-wrap {
   display: flex;
@@ -560,27 +977,42 @@
 .cctv-summary[hidden] {
   display: none;
 }
+/* Scan again sits at the right end of the heading row, so it costs no height of its own */
 .cctv-rescan {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3);
-  margin-bottom: var(--space-3);
+  flex: none;
 }
 .cctv-rescan[hidden] {
   display: none;
 }
-.cctv-rescan p {
-  margin: 0;
-  color: var(--ink-500);
-  font-size: 0.875rem;
+.rescan-icon {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+}
+.cctv-rescan .btn {
+  gap: var(--space-2);
+}
+/* Narrow phones: icon only, so the button stays on the heading row instead of wrapping onto its own */
+@media (max-width: 30rem) {
+  .rescan-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .cctv-rescan .btn {
+    width: 36px;
+    padding: 0;
+  }
 }
 
 /* The stage takes whatever room the panel has; drawQR() sizes the canvas to fit it, in whole pixels */
 .qr-stage {
   position: relative;
   flex: 1 1 0;
-  min-height: 0;
+  min-height: 11rem; /* a smaller window scrolls the card rather than shrinking the code until it will not scan */
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -590,6 +1022,7 @@
 }
 #qrCanvas {
   display: block;
+  z-index: 0;
   image-rendering: pixelated; /* the canvas is shown at its own pixel size, so squares stay sharp */
 }
 @media (max-width: 899px) {
@@ -600,17 +1033,19 @@
     margin: 0 auto;
   }
 }
+/* ---- CCTV result image with zoom ----
+   The picture is the point of this card, so it takes every pixel the heading row leaves. The zoom toolbar and the
+   hint float over it instead of getting rows of their own. */
 #cctvPanel .skeleton {
   aspect-ratio: 16 / 9;
 }
-/* ---- CCTV result image with zoom ---- */
 .cctv-viewer {
-  display: grid;
-  gap: var(--space-3);
+  position: relative;
+  display: flex;
+  flex-direction: column;
 }
 .zoom-bar {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
 }
@@ -621,8 +1056,10 @@
   font-variant-numeric: tabular-nums;
   color: var(--ink-900);
 }
-.zoom-fs {
-  margin-left: auto;
+.zoom-fs-icon {
+  display: block;
+  width: 1rem;
+  height: 1rem;
 }
 /* Buttons at their limit stay focusable (so focus is never lost) but look off */
 .zoom-bar [aria-disabled='true'] {
@@ -632,8 +1069,11 @@
 .cctv-stage {
   position: relative;
   overflow: hidden;
+  cursor: grab;
+  /* Phones: the card is as tall as it needs to be, so the frame follows the picture's own shape (set on load) */
+  aspect-ratio: var(--cctv-ar, 16 / 9);
   border-radius: var(--radius-md);
-  background: var(--canvas);
+  background: #0e1013; /* a dark mat: any spare room around the picture looks intended, and the toolbar stands out */
   user-select: none;
   touch-action: pan-y; /* a finger can still scroll the page until the image is zoomed */
 }
@@ -644,16 +1084,126 @@
 .cctv-stage.is-panning {
   cursor: grabbing;
 }
+/* The picture is fitted inside the frame (never cropped), the same as in full screen */
 #cctvResultImage {
   display: block;
   width: 100%;
+  height: 100%;
   max-width: none;
+  object-fit: contain;
   transform-origin: 0 0;
   will-change: transform;
 }
-.zoom-hint {
+
+/* Floating toolbar: a small see-through pill in the top-right corner of the picture */
+.cctv-viewer .zoom-bar {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  z-index: 2;
+  padding: var(--space-1);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(2px);
+}
+.cctv-viewer:not(:fullscreen) .zoom-bar .icon-btn {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+.cctv-viewer:not(:fullscreen) .zoom-bar .btn-sm {
+  min-height: 2rem;
+}
+.cctv-viewer:not(:fullscreen) .zoom-bar .zoom-level {
+  min-width: 3rem;
+  font-size: var(--text-sm);
+}
+/* The usage hint shows for a few seconds each time a picture appears, then fades away */
+.cctv-viewer .zoom-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--space-2);
+  z-index: 2;
+  width: fit-content;
+  max-width: calc(100% - var(--space-4));
+  margin: 0 auto;
+  padding: var(--space-1) var(--space-3);
+  font-size: 0.8125rem;
+  color: #fff;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.62);
+  border-radius: 999px;
+  pointer-events: none;
+  animation: zoom-hint-fade 0.5s ease 8s forwards;
+}
+/* Plenty of room under the picture (always on phones, where the page just grows): the hint stays, as a plain line */
+@media (max-width: 899px) {
+  .cctv-viewer:not(:fullscreen) .zoom-hint {
+    position: static;
+    width: auto;
+    max-width: none;
+    margin: var(--space-2) 0 0;
+    padding: 0;
+    font-size: var(--text-sm);
+    color: var(--ink-500);
+    text-align: left;
+    background: none;
+    border-radius: 0;
+    animation: none;
+    pointer-events: auto;
+  }
+}
+.cctv-viewer.has-room:not(:fullscreen) .zoom-hint {
+  position: static;
+  width: auto;
+  max-width: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
   font-size: var(--text-sm);
   color: var(--ink-500);
+  text-align: left;
+  background: none;
+  border-radius: 0;
+  animation: none;
+  pointer-events: auto;
+}
+@keyframes zoom-hint-fade {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+/* Wide screens: the card is exactly window height, so the picture frame stretches to fill what is left.
+   Because a picture is limited by its width as much as its height, the CCTV card also gets the wider column. */
+@media (min-width: 900px) {
+  #cctvPanel:not([hidden]) {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    min-height: 0;
+  }
+  #cctvPanel .skeleton {
+    flex: 1 1 0;
+    min-height: 12rem;
+    aspect-ratio: auto;
+  }
+  .cctv-viewer {
+    flex: 0 1 auto;
+    min-height: 14rem; /* a very short window scrolls the card instead of shrinking the picture to a thumbnail */
+  }
+  /* The frame keeps the picture's own shape (no empty bars above and below) and only gives up height when the card is short */
+  .cctv-stage {
+    flex: 0 1 auto;
+    width: 100%;
+    min-height: 0;
+  }
+  /* faculty.js (fitCctvLayout) sets --cctv-col so the card is exactly as wide as a 16:9 picture needs at this window
+     height, never leaving the roster narrower than ROSTER_MIN_REM (js). Without it the split matches the QR card (7 : 8). */
+  .live-grid:has(.qr-panel[data-method='cctv']) {
+    grid-template-columns: minmax(0, var(--cctv-col, 7fr)) minmax(0, var(--roster-col, 8fr));
+  }
 }
 /* Full screen: the picture takes the whole screen; the toolbar and hint float over it on a see-through band */
 .cctv-viewer:fullscreen {
@@ -665,13 +1215,9 @@
 .cctv-viewer:fullscreen .cctv-stage {
   position: absolute;
   inset: 0;
+  aspect-ratio: auto;
   border-radius: 0;
   background: #000;
-}
-.cctv-viewer:fullscreen #cctvResultImage {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
 }
 .cctv-viewer:fullscreen .zoom-bar,
 .cctv-viewer:fullscreen .zoom-hint {
@@ -679,14 +1225,23 @@
   left: 0;
   right: 0;
   z-index: 2;
+  width: auto;
+  max-width: none;
   margin: 0;
   padding: var(--space-3) var(--space-4);
   color: #fff;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
   pointer-events: none; /* only the buttons catch clicks; the picture underneath stays draggable */
 }
 .cctv-viewer:fullscreen .zoom-bar {
   top: 0;
   background: linear-gradient(rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0));
+}
+.cctv-viewer:fullscreen .zoom-fs {
+  margin-left: auto;
 }
 .cctv-viewer:fullscreen .zoom-hint {
   bottom: 0;
@@ -698,6 +1253,11 @@
 }
 .cctv-viewer:fullscreen .zoom-level {
   color: #fff;
+}
+.cctv-viewer:fullscreen .zoom-bar .icon-btn {
+  color: #fff;
+  background: rgba(0, 0, 0, 0.35);
+  border-color: rgba(255, 255, 255, 0.55);
 }
 
 .roster-panel {
@@ -711,33 +1271,202 @@
 #liveStatus:empty {
   display: none;
 }
+
+/* One row of tools: search, order, add */
 .roster-tools {
   display: flex;
-  gap: var(--space-3);
+  align-items: center;
+  flex-wrap: nowrap;
+  flex: none;
+  gap: var(--space-2);
   margin-bottom: var(--space-3);
+}
+.roster-search {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+}
+.roster-search-icon {
+  position: absolute;
+  top: 50%;
+  left: var(--space-3);
+  width: 1rem;
+  height: 1rem;
+  color: var(--ink-500);
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform: translateY(-50%);
+  pointer-events: none;
 }
 .roster-tools .input {
   flex: 1;
   min-width: 0;
+  min-height: 2.5rem;
+  padding-inline: var(--space-3);
+  border-radius: var(--radius-md);
+}
+.roster-search .input {
+  width: 100%;
+  padding-left: 2.5rem;
+}
+.roster-search .input:focus-visible {
+  border-color: transparent;
+  outline: 2px solid var(--ink-900);
+  outline-offset: 0;
+}
+.roster-tools .btn {
+  flex: none;
+  min-height: 2.5rem;
+  padding-inline: var(--space-3);
+  border-radius: var(--radius-md);
+  white-space: nowrap;
+}
+/* The sort icon and trigger share one edge as a single control */
+.sort-pick {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.5rem;
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--ink-500);
+  background: var(--surface);
+  border: 1px solid var(--control-edge);
+  border-radius: var(--radius-md);
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.sort-pick.is-open {
+  z-index: 20;
+}
+.sort-icon {
+  display: block;
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-width: 32;
+  stroke-linejoin: round;
+}
+.sort-pick:hover,
+.sort-pick.is-open {
+  border-color: var(--ink-500);
+  background: var(--canvas);
+  box-shadow: var(--shadow-sm);
+}
+.sort-pick:focus-within {
+  border-color: var(--ink-900);
+  outline: 2px solid var(--ink-900);
+  outline-offset: 1px;
+}
+.sort-trigger {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  width: auto;
+  min-height: inherit;
+  margin: 0 calc(var(--space-3) * -1);
+  padding: 0 var(--space-3);
+  font-family: inherit;
+  font-size: var(--text-base);
+  font-weight: 600;
+  line-height: inherit;
+  color: var(--ink-900);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  border-radius: inherit;
+}
+.sort-trigger:focus-visible {
+  outline: none;
+}
+.sort-menu {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  z-index: 30;
+  display: grid;
+  min-width: 100%;
+  padding: var(--space-1);
+  color: var(--ink-900);
+  background: var(--surface);
+  border: 1px solid var(--control-edge);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+.sort-menu[hidden] {
+  display: none;
+}
+.sort-option {
+  min-height: 2.5rem;
+  padding: 0 var(--space-3);
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.sort-option:hover,
+.sort-option[aria-checked='true'] {
+  background: var(--canvas);
+}
+.sort-option:focus-visible {
+  outline: 2px solid var(--ink-900);
+  outline-offset: -2px;
+}
+.sort-option[aria-checked='true'] {
+  font-weight: 600;
+}
+@media (pointer: coarse) {
+  .roster-tools .input,
+  .roster-tools .btn,
+  .sort-pick {
+    min-height: var(--touch-target);
+  }
+  .si-chip-btn {
+    min-height: var(--touch-target);
+  }
 }
 
-/* One scroll area. Two columns once the panel is wide enough for them. */
+/* ---- The list: one column, one student per line, columns that line up from row to row ----
+   Name first (that is what is scanned), then the roll number with its tell-apart digits strong, then
+   how and when they were marked, and the remove button at the end of the line. */
 .roster {
+  --act: 2.5rem; /* keeps the row action at the far edge */
+  --av: 1.90rem; /* the initials circle */
+  --via: 1.25rem; /* the "added manually" memo; QR and CCTV are the default, so they get no icon */
+  --cols: var(--av) minmax(0, 15rem) 7.5rem var(--via) minmax(0, 1fr) var(--act);
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-2);
   align-content: start;
   flex: 1 1 0;
   min-height: 6rem;
   overflow-y: auto;
+  border-top: 1px solid var(--line);
 }
-@container roster (min-width: 34rem) {
-  .roster {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+/* Classes taken together: one more narrow column for the section */
+.roster[data-merged='true'] {
+  --cols: var(--av) minmax(0, 15rem) 7.5rem 3rem var(--via) minmax(0, 1fr)
+    var(--act);
+}
+/* "Latest first" adds the time after the memo slot, so the memo keeps its place when the sort changes */
+.roster[data-sort='recent'] {
+  --via: 6.5rem;
 }
 @media (max-width: 899px) {
   /* On a phone the page scrolls, not a small box inside it */
@@ -747,21 +1476,50 @@
   }
 }
 .roster-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--cols);
+  align-items: center;
+  column-gap: var(--space-3);
+  min-height: 2.25rem;
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+.roster-row:hover {
+  background: var(--canvas);
+}
+/* Initials in a circle, the same look as the account button in the top bar */
+.roster-avatar {
+  grid-column: 1;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  min-height: 2.75rem;
-  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+  justify-content: center;
+  width: var(--av);
+  height: var(--av);
+  box-sizing: border-box;
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ink-700);
+  background: var(--canvas);
   border: 1px solid var(--line);
-  border-radius: var(--radius-md);
+  border-radius: 50%;
+  user-select: none;
 }
-.roster-info {
-  flex: 1;
+/* Quiet for the many, loud for the exception: only a student taken off the list gets a ring */
+.roster-row:hover .roster-avatar {
+  background: var(--surface);
+}
+.roster-row[data-mode='absent'] .roster-avatar {
+  color: var(--danger-600);
+  background: var(--surface);
+  border: 2px solid var(--danger-600);
+}
+.roster-row .roster-name {
+  grid-column: 2;
   min-width: 0;
-}
-.roster-name {
-  display: block;
+  max-width: 15rem;
   overflow: hidden;
   font-size: var(--text-base);
   font-weight: 600;
@@ -770,56 +1528,307 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.roster-meta {
-  display: block;
-  overflow: hidden;
-  font-size: 0.8125rem;
-  line-height: 1.25;
-  color: var(--ink-500);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.roster-roll {
-  margin-left: var(--space-2);
-  font-size: var(--text-sm);
+.roster-row .roster-roll {
+  grid-column: 3;
+  margin: 0;
+  font-size: 0.9375rem;
   font-weight: 500;
-  color: var(--ink-500);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
   white-space: nowrap;
 }
-/* Remove / undo is an icon: it keeps rows short. Bigger on touch screens. */
-.row-action {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 2.25rem;
-  height: 2.25rem;
-  padding: 0;
+.roll-pre {
   color: var(--ink-500);
+}
+.roll-end {
+  font-weight: 700;
+  color: var(--ink-900);
+}
+.roster-tag {
+  grid-column: 4;
+  justify-self: start;
+  padding: 0 var(--space-2);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--ink-700);
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.roster-tag[hidden] {
+  display: none;
+}
+/* How they were marked: icon, the word, and the time ("QR  10:24 am") */
+.roster-via {
+  grid-column: 4;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-500);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.via-icon {
+  display: inline-flex;
+  flex: none;
+  min-width: 1.125rem; /* the slot is kept even when empty, so the time lines up in "Latest first" */
+}
+.via-icon svg {
+  display: block;
+  width: 1.125rem;
+  height: 1.125rem;
+}
+.via-icon .attendance-icon {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+.via-how {
+  position: absolute; /* read aloud, not drawn: the icon says it */
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.via-icon {
+  color: var(--ink-700);
+}
+.via-time {
+  display: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.roster[data-sort='recent'] .via-time {
+  display: inline-block;
+  min-width: 4.5rem; /* "9:05 am" and "10:39 am" take the same room, so the times line up */
+}
+.roster[data-merged='true'] .roster-via {
+  grid-column: 5;
+}
+/* A student the teacher took off: stays in place on a red tint, with the way back (Undo) in plain words */
+.roster-row[data-mode='absent'] {
+  background: var(--danger-50);
+  box-shadow: inset 3px 0 0 var(--danger-600);
+}
+.roster-row[data-mode='absent'] .roster-via {
+  display: none;
+}
+.roster-row[data-mode='absent'] .roll-end,
+.roster-row[data-mode='absent'] .roster-name {
+  color: var(--ink-700);
+}
+/* Remove is an icon at the end of the line; Undo says what it does */
+.row-action {
+  grid-column: -2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: end;
+  gap: var(--space-1);
+  box-sizing: border-box;
+  min-width: 2.5rem;
+  height: 2rem;
+  padding: 0 var(--space-2);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink-500);
+  white-space: nowrap;
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
+  transition: transform 0.1s ease;
 }
 .row-action:hover {
   color: var(--danger-600);
-  background: var(--surface);
-  border-color: var(--control-edge);
+  transform: scale(1.2);
+  /* background: var(--surface);
+  border-color: var(--control-edge); */
+}
+.row-action:focus-visible {
+  outline: 2px solid var(--red-600);
+  outline-offset: 1px;
 }
 .row-action svg {
+  display: block;
+  flex: none;
+  align-self: center;
+  box-sizing: border-box;
   width: 1.125rem;
   height: 1.125rem;
+}
+.row-action .ic-remove,
+.row-action .ic-undo {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+.undo-hover-bg {
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.undo-text {
+  display: none;
 }
 .roster-row[data-mode='present'] .ic-undo,
 .roster-row[data-mode='absent'] .ic-remove {
   display: none;
 }
-.roster-row[data-mode='absent'] .row-action:hover {
+.roster-row[data-mode='absent'] .undo-text {
+  display: inline;
+}
+.roster-row[data-mode='absent'] .row-action {
+  padding: 0 var(--space-2);
   color: var(--ink-900);
+  background: transparent;
+  border-color: transparent;
+}
+.roster-row[data-mode='absent'] .ic-undo {
+  color: var(--danger-600);
+}
+.roster-row[data-mode='absent'] .row-action:hover {
+  background: transparent;
+  border-color: transparent;
+}
+.roster-row[data-mode='absent'] .row-action:hover .undo-hover-bg,
+.roster-row[data-mode='absent'] .row-action:focus-visible .undo-hover-bg {
+  opacity: 1;
+}
+/* Someone just got marked: their row glows green for a moment, even if it landed out of view above or below */
+@keyframes row-arrive {
+  from {
+    background: var(--success-50);
+    box-shadow: inset 3px 0 0 var(--success-600);
+  }
+  to {
+    background: transparent;
+    box-shadow: inset 3px 0 0 transparent;
+  }
+}
+.roster-row.is-new {
+  animation: row-arrive 2.4s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .roster-row.is-new {
+    animation-timing-function: steps(
+      1,
+      end
+    ); /* the same highlight, held, with no fade */
+  }
+}
+
+/* A narrow list (phone, tablet, small window): two lines per student, name above and the rest below.
+   Placed by line and column rather than by order, so the section tag (merged classes only) can sit beside the name. */
+/* ---- Roster: give the name the width the other columns do not need ---- */
+@container roster (min-width: 36rem) {
+  .roster-row {
+    column-gap: var(--space-2);
+  }
+  .roster {
+    --cols: var(--av) minmax(0, 17rem) 8rem var(--via) minmax(0, 1fr) var(--act);
+  }
+  .roster[data-merged='true'] {
+    --cols: var(--av) minmax(0, 17rem) 8rem var(--via) minmax(0, 1fr) var(--act);
+  }
+  .roster[data-merged='true']:not(:has(.roster-tag:not([hidden]))) .roster-via {
+    grid-column: 4;
+  }
+}
+@container roster (max-width: 35.99rem) {
+  .roster,
+  .roster[data-merged='true'] {
+    --act: 2.75rem;
+    --av: 2.2rem;
+  }
+  .roster-row,
+  .roster[data-merged='true'] .roster-row {
+    grid-template-columns: var(--av) minmax(0, 1fr) auto var(--act);
+    padding-block: var(--space-2);
+    min-height: 3.5rem;
+  }
+  .roster-avatar {
+    grid-area: 1 / 1 / 3 / 2;
+    align-self: center;
+  }
+  .roster-name {
+    grid-area: 1 / 2 / 2 / 4; /* spans the tag's column too, when there is no tag */
+  }
+  .roster[data-merged='true'] .roster-name {
+    grid-area: 1 / 2;
+  }
+  .roster-tag {
+    grid-area: 1 / 3;
+  }
+  .roster-row .roster-roll {
+    grid-area: 2 / 2; /* same weight as the wide rule that puts it in column 3, or the two would overlap */
+  }
+  .roster-via {
+    grid-area: 2 / 3;
+  }
+  .roster[data-merged='true'] .roster-via {
+    grid-area: 2 / 3;
+  }
+  .roster-tag {
+    justify-self: end; /* right edges line up from row to row */
+  }
+  .roster-via {
+    justify-self: start;
+  }
+  .row-action {
+    grid-area: 1 / 4 / 3 / 5;
+    align-self: center;
+  }
+  .roster-row .roster-roll {
+    font-size: var(--text-sm);
+  }
+  /* Undo is icon-only on narrow rows. */
+  .roster-row[data-mode='absent'] .undo-text {
+    display: none;
+  }
+  .row-action {
+    min-width: 2.5rem;
+    padding-inline: var(--space-2);
+  }
+}
+/* Keep the sort icon visible on narrow rosters. */
+@container roster (max-width: 35.99rem) {
+  .sort-pick {
+    padding-inline: var(--space-3);
+  }
+}
+/* Keep the search, sort and add controls on a single line on phones. */
+@container roster (max-width: 29.99rem) {
+  .roster-tools {
+    gap: var(--space-1);
+  }
+  .roster-search .input {
+    flex: none;
+    padding-left: 2rem;
+  }
+  .sort-pick {
+    gap: var(--space-1);
+    padding-inline: var(--space-1);
+  }
+  .sort-trigger {
+    font-size: var(--text-sm);
+  }
+  .roster-tools .btn {
+    gap: var(--space-1);
+    padding-inline: var(--space-1);
+    font-size: var(--text-sm);
+  }
 }
 @media (pointer: coarse) {
   .row-action {
-    width: var(--touch-target);
+    min-width: var(--touch-target);
     height: var(--touch-target);
+  }
+  .roster-row {
+    min-height: var(--touch-target);
   }
 }
 .empty {
@@ -833,6 +1842,18 @@
 .empty[hidden] {
   display: none;
 }
+/* Nobody in the list yet: the message fills the space where the rows will go, instead of sinking to the bottom */
+.roster:empty {
+  flex: none;
+  min-height: 0;
+  border-top: 0;
+}
+.roster:empty + .empty:not([hidden]) {
+  display: grid;
+  flex: 1 1 0;
+  place-content: center;
+  border-top: 1px solid var(--line);
+}
 
 /* Discard and Submit sit at opposite ends and look different */
 .roster-foot {
@@ -841,12 +1862,46 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  margin-top: var(--space-3);
-  padding-top: var(--space-3);
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
   border-top: 1px solid var(--line);
 }
+@media (pointer: fine) {
+  .roster-foot .btn {
+    min-height: 2.5rem;
+  }
+}
 .roster-foot .btn-primary {
-  min-width: 12rem;
+  min-width: 10.5rem;
+}
+/* Colour carries meaning here: red is only for taking things away. Submit is green; Discard stays outlined. */
+.roster-foot #submit-attendance-btn {
+  background: var(--success-600);
+  color: var(--on-red, #fff);
+  --spinner-color: var(--on-red, #fff);
+}
+.roster-foot #submit-attendance-btn:hover {
+  background: var(--success-600);
+  filter: brightness(0.9);
+}
+.foot-tally {
+  flex: 1;
+  margin: 0;
+  text-align: right;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  color: var(--ink-700);
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 600px) {
+  .foot-tally {
+    display: none; /* the session bar already shows the count on a phone */
+  }
+}
+@container roster (max-width: 33rem) {
+  .foot-tally {
+    display: none; /* no room beside the buttons; the session bar still shows the count */
+  }
 }
 @media (max-width: 899px) {
   /* Submit stays reachable above the tab bar while the list scrolls */
@@ -948,11 +2003,16 @@ dialog.dialog-tall[open] {
   max-height: min(42rem, calc(100dvh - 2rem));
   overflow: hidden;
 }
-dialog.dialog-wide {
-  width: min(36rem, calc(100vw - 2rem));
+
+#manual-attendance-dialog {
+  width: min(32rem, calc(100vw - 2rem));
 }
+
 .dialog-tall .dialog-actions {
   flex: none;
+}
+#manual-attendance-dialog .dialog-actions .btn {
+  min-height: 2.5rem;
 }
 .pick-tools {
   display: flex;
@@ -964,6 +2024,14 @@ dialog.dialog-wide {
 .pick-tools .input {
   flex: 1;
   min-width: 0;
+}
+.pick-tools .manual-search {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.pick-tools .manual-search .input {
+  flex: none;
+  min-height: 2.5rem;
 }
 .pick-all {
   display: flex;
@@ -988,42 +2056,63 @@ dialog.dialog-wide {
 .pick-list li {
   border-bottom: 1px solid var(--line);
 }
-/* The whole row is the target. Checkbox on the left, then the name, with the roll number at the right. */
+/* Match roster rows: initials, name, roll number, then the selection control. */
 .pick-row {
   display: grid;
-  grid-template-columns: 1.5rem minmax(0, 1fr) auto;
+  grid-template-columns: 1.375rem var(--av, 1.75rem) minmax(0, 1fr) auto;
+  grid-template-areas: 'check avatar name roll';
   align-items: center;
   column-gap: var(--space-3);
-  min-height: 3rem;
-  padding: var(--space-1) var(--space-3);
+  min-height: 2.5rem;
+  box-sizing: border-box;
+  padding: 0 var(--space-3);
   cursor: pointer;
 }
-.pick-row input {
-  order: -1;
+.pick-row > input {
+  grid-area: check;
+  align-self: center;
 }
-.pick-roll {
-  order: 3;
+.pick-row > .pick-avatar {
+  grid-area: avatar;
+}
+.pick-row > .pick-name {
+  grid-area: name;
+}
+.pick-row > .pick-roll {
+  grid-area: roll;
 }
 .pick-row:hover {
   background: var(--canvas);
 }
 .pick-row[data-selected='true'] {
-  background: var(--red-50);
+  /* Green, not the red of "absent": ticking someone here marks them present */
+  background: var(--success-50);
+}
+.pick-avatar {
+  width: 1.75rem;
+  height: 1.75rem;
 }
 .pick-roll {
-  font-size: var(--text-sm);
+  font-size: 0.9375rem;
+  font-weight: 500;
   color: var(--ink-500);
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
   white-space: nowrap;
 }
 .pick-name {
+  overflow: hidden;
+  font-size: var(--text-base);
   font-weight: 600;
+  line-height: 1.25;
   color: var(--ink-900);
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-/* No roll numbers at all: just checkbox and name */
+/* No roll numbers: keep the avatar, name and checkbox aligned. */
 .pick-list[data-has-roll='false'] .pick-row {
-  grid-template-columns: 1.5rem minmax(0, 1fr);
+  grid-template-columns: 1.375rem var(--av, 1.75rem) minmax(0, 1fr);
+  grid-template-areas: 'check avatar name';
 }
 .pick-list[data-has-roll='false'] .pick-roll {
   display: none;
@@ -1130,82 +2219,10 @@ dialog.dialog-wide {
   white-space: nowrap;
 }
 
-/* Phones and small tablets: setup card and roster use the full width; buttons wrap */
+/* Phones and small tablets: the roster uses the full width */
 @media (max-width: 600px) {
-  .setup {
-    padding: var(--space-4);
-    gap: var(--space-3);
-    border-radius: var(--radius-md);
-  }
-  .setup-title {
-    font-size: var(--text-xl, 1.25rem);
-  }
-  .setup-col,
-  .setup-grid {
-    gap: var(--space-3);
-  }
-  .type-switch {
-    flex: 1 1 100%;
-  }
-  .legend-hint {
-    display: none;
-  }
-  .pick-note:empty {
-    display: none;
-  }
-  .date-chip {
-    flex: 1 1 100%;
-  }
   .app-main {
     padding-top: var(--space-3);
-  }
-  /* "Now" is a small green dot on phones; the word is still there for screen readers */
-  .slot-badge {
-    position: absolute;
-    top: 0.45rem;
-    right: 0.5rem;
-    width: 0.55rem;
-    height: 0.55rem;
-    padding: 0;
-    border-radius: 50%;
-    background: var(--success-600);
-    font-size: 0;
-    overflow: hidden;
-  }
-  .date-step {
-    width: 2.6rem;
-  }
-  .date-chip .date-icon {
-    display: none;
-  }
-  .slot-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .slot-body {
-    padding: 0.375rem var(--space-3);
-  }
-  .slot-time {
-    font-size: var(--text-sm);
-    white-space: nowrap;
-  }
-  /* Two columns on a phone have no room for the end time; the full range is in the tooltip */
-  .slot-time .t-end {
-    display: none;
-  }
-  .slot-details {
-    font-size: 0.8125rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .setup-title {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-  .start-row .btn {
-    flex: 1 1 auto;
   }
   .qr-panel,
   .roster-panel {
@@ -1255,12 +2272,6 @@ dialog.dialog-wide {
   justify-content: space-between;
 }
 
-/* ---- Added: roster tabs + search ---- */
-.roster-filter {
-  display: grid;
-  gap: var(--space-3);
-  margin-bottom: var(--space-3);
-}
 /* ---- Please verify: students the camera was not sure about ---- */
 .cctv-verify {
   display: grid;
@@ -1311,35 +2322,7 @@ dialog.dialog-wide {
   display: flex;
   gap: var(--space-2);
 }
-/* In the Present list, an unconfirmed student has a yellow edge */
-.roster-row[data-verify='true'] {
-  border: 2px solid var(--warning-600);
-  background: var(--warning-50);
-}
-.roster-row[data-verify='true'] .roster-meta {
-  color: var(--warning-600);
-  font-weight: 600;
-}
-
-/* A student the teacher took off stays in the list, outlined in red with the name struck through (Undo brings them back) */
-.roster-row[data-mode='absent'] {
-  border: 2px solid var(--danger-600);
-  background: var(--danger-50);
-}
-.roster-row[data-mode='absent'] .roster-name {
-  /* text-decoration: line-through; */
-  text-decoration-thickness: 2px;
-  color: var(--ink-500);
-}
-.roster-row[data-mode='absent'] .roster-meta {
-  color: var(--danger-600);
-  font-weight: 600;
-}
-
-/* ---- Projector full screen: the QR in one half, the live roster in the other, the count on top ---- */
-.fs-only {
-  display: none;
-}
+/* ---- Projector full screen: the QR and who is here in one half, the live list in the other ---- */
 .live-grid:fullscreen {
   box-sizing: border-box;
   width: 100%;
@@ -1355,17 +2338,36 @@ dialog.dialog-wide {
 .live-grid:fullscreen .roster-panel {
   height: 100%;
 }
-.live-grid:fullscreen #qrPanel .panel-title-wrap {
-  display: none;
-}
-.live-grid:fullscreen #qrPanel .fs-only {
-  display: block;
-}
-/* Nothing to click on a projector: no search, add, discard, submit or remove while presenting */
+/* Keep session-changing controls out of projector mode, but leave per-student
+   Remove and Undo actions available in the roster. */
 .live-grid:fullscreen .roster-tools,
-.live-grid:fullscreen .roster-foot,
-.live-grid:fullscreen .row-action {
+.live-grid:fullscreen .roster-foot {
   display: none;
+}
+.live-grid:fullscreen .roster {
+  border-top: 0;
+}
+/* Read from the back of the room */
+.live-grid:fullscreen .si-subject {
+  font-size: var(--text-xl);
+}
+.live-grid:fullscreen .si-fact {
+  font-size: var(--text-base);
+}
+.live-grid:fullscreen .si-count-num b {
+  font-size: var(--text-4xl);
+}
+.live-grid:fullscreen #shTotal {
+  font-size: var(--text-xl);
+}
+.live-grid:fullscreen .si-count-label {
+  font-size: var(--text-sm);
+}
+.live-grid:fullscreen .roster-row {
+  min-height: 3rem;
+}
+.live-grid:fullscreen .roster-row .roster-name {
+  font-size: var(--text-lg);
 }
 .live-grid:fullscreen .qr-stage {
   flex: 1 1 0;
@@ -1380,18 +2382,17 @@ dialog.dialog-wide {
     grid-template-rows: repeat(2, minmax(0, 1fr));
   }
 }
-.fs-count {
-  margin: 0;
-  font-size: var(--text-xl);
-  color: var(--ink-500);
-}
-.fs-count b {
-  font-size: var(--text-3xl);
-  color: var(--ink-900);
-  font-variant-numeric: tabular-nums;
-}
 
 /* ---- Added: submit dialog ---- */
+#submit-dialog {
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+}
+#submitSummary {
+  margin-top: var(--space-3);
+  white-space: pre-line;
+  line-height: 1.5;
+}
 .absent-heading {
   margin-top: var(--space-3);
   font-size: var(--text-sm);
@@ -1401,15 +2402,28 @@ dialog.dialog-wide {
 .absent-list {
   list-style: none;
   margin: var(--space-2) 0 0;
-  padding: var(--space-2) var(--space-3);
-  max-height: 10rem;
+  padding: 0;
+  max-height: min(24rem, 55dvh);
   overflow-y: auto;
-  font-size: var(--text-sm);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
 }
-.absent-list li {
-  padding: var(--space-1) 0;
+.absent-row {
+  display: grid;
+  grid-template-columns: 1.75rem minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-3);
+  min-height: 2.5rem;
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+.absent-row:last-child {
+  border-bottom: 0;
+}
+@media (max-width: 600px) {
+  .absent-row {
+    column-gap: var(--space-2);
+  }
 }
 #submitWarn {
   margin-top: var(--space-3);
@@ -1424,47 +2438,500 @@ dialog.dialog-wide {
   display: none;
 }
 
-/* Short phones (360x640): the labels the controls already explain go to screen readers only */
-@media (max-width: 600px) and (max-height: 700px) {
-  .date-chip {
-    min-width: 0;
-  }
-  .date-step {
-    width: 1.9rem;
-  }
-  .type-switch {
-    flex: 0 0 6.25rem;
-  }
-  .date-chip {
-    flex: 1 1 0;
-  }
-  .date-label {
-    font-size: 0.8125rem;
-  }
-  .type-switch .segmented span {
-    font-size: 0.8125rem;
-  }
-  .when-row {
-    gap: var(--space-2);
-  }
-  .setup-title {
-    font-size: 1.125rem;
-  }
-  .setup-where .field-label,
-  .setup-where legend,
-  #regularSetup legend {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-  }
-}
-
 /* Below 900px the tab bar is at the bottom (4rem): leave just enough room for it, so the setup card can fit */
 @media (max-width: 899px) {
   .app-main {
     padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* =====================================================================
+   Start-session page: fit the viewport.
+   On a laptop or projector the whole page (steps + summary + Start) now
+   fits without scrolling the page. Only the periods list (or the Extra
+   form) and the summary scroll inside their own card, and only if they
+   really have to. Phones and short windows keep the natural flow.
+   ===================================================================== */
+
+/* Compact pieces that help at every size */
+.setup-titles {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.setup-lead {
+  margin: 0;
+}
+.setup-title {
+  font-size: var(--text-xl);
+}
+.setup-steps,
+.setup-summary {
+  gap: var(--space-3);
+}
+.week {
+  gap: var(--space-1);
+}
+.week-head {
+  min-height: 1.75rem;
+}
+.link-action {
+  min-height: 1.75rem;
+}
+.week-step,
+.day-chip {
+  min-height: 3.25rem;
+}
+.day-chip {
+  padding: var(--space-1) 0;
+  gap: 0;
+}
+.day-chip b {
+  font-size: var(--text-base);
+}
+
+/* Regular periods: chronological rows with the period number as a clear anchor. */
+#slots {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  align-content: start;
+}
+#slots .slot-body {
+  grid-template-columns:
+    3.5rem minmax(9rem, 0.8fr) minmax(0, 1.5fr)
+    minmax(6rem, auto) 1.1rem;
+  grid-template-areas: 'period when subject room mark';
+  gap: var(--space-3);
+  min-height: 4.5rem;
+  padding: var(--space-2) var(--space-3);
+  align-content: center;
+}
+#slots .slot-period {
+  grid-area: period;
+}
+#slots .slot-when {
+  grid-area: when;
+  display: flex;
+  align-items: center;
+}
+#slots .slot-time {
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+#slots .slot-info {
+  grid-area: subject;
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  min-width: 0;
+}
+#slots .slot-subject {
+  display: block;
+  overflow: visible;
+  font-size: var(--text-sm);
+  line-height: 1.3;
+}
+#slots .slot-classes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+#slots .slot-classes:empty {
+  display: none;
+}
+#slots .slot-class {
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: var(--canvas);
+  color: var(--ink-700);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+#slots .slot-room {
+  grid-area: room;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#slots .slot-room[hidden] {
+  display: none;
+}
+#slots .slot-room svg {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#slots .slot-room.is-taken svg {
+  display: none;
+}
+#slots .slot-room-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#slots .slot-mark {
+  grid-area: mark;
+  align-self: center;
+  width: 1.1rem;
+  height: 1.1rem;
+}
+#slots .slot-period {
+  display: grid;
+  place-items: center;
+  min-height: 2.5rem;
+  border-radius: var(--radius-sm);
+  background: var(--ink-900);
+  color: var(--surface);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+#slots .slot-card input:checked + .slot-body .slot-period {
+  background: var(--red-600);
+}
+.slot-skeleton {
+  height: 4rem;
+}
+@media (max-width: 720px) {
+  #slots .slot-body {
+    grid-template-columns: 3.25rem minmax(0, 1fr) auto 1.1rem;
+    grid-template-areas:
+      'period when when mark'
+      'period subject subject mark'
+      'period room room mark';
+    gap: var(--space-1) var(--space-3);
+    padding: var(--space-2) var(--space-3);
+  }
+  #slots .slot-period {
+    grid-row: 1 / span 3;
+  }
+  #slots .slot-room {
+    justify-self: start;
+  }
+}
+
+/* Summary: facts in a two-column grid instead of four tall rows */
+.sum-subject {
+  font-size: var(--text-lg);
+  line-height: 1.3;
+}
+.sum-chips {
+  margin-top: calc(var(--space-1) * -1);
+}
+.sum-rows {
+  grid-template-columns: 1fr 1fr;
+  column-gap: var(--space-4);
+}
+.sum-row {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
+  min-height: 3.25rem;
+  padding: var(--space-2) 0;
+}
+.sum-row dd {
+  text-align: left;
+}
+.sum-row:nth-child(1) {
+  order: 1;
+} /* Date */
+.sum-row:nth-child(3) {
+  order: 2;
+} /* Time */
+.sum-row:nth-child(2) {
+  order: 3;
+} /* Periods (Extra only) */
+.sum-row:nth-child(4) {
+  order: 4;
+} /* Classroom */
+.sum-rows:has(#sumPeriodsRow[hidden]) .sum-row:nth-child(4) {
+  grid-column: 1 / -1;
+}
+.sum-row .room-chip {
+  min-height: 2rem;
+  margin: -0.25rem 0 -0.25rem calc(var(--space-2) * -1);
+}
+.method-body {
+  min-height: 3rem;
+  padding: var(--space-2) var(--space-3);
+}
+.setup-summary .alert,
+.borrow-box {
+  padding: var(--space-2) var(--space-3);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+.borrow-box strong {
+  font-size: var(--text-sm);
+}
+.start-reason {
+  min-height: 0;
+}
+.start-reason:empty {
+  display: none;
+}
+
+/* Extra: tighter controls, notes in two columns */
+.extra-setup {
+  gap: var(--space-3);
+}
+.extra-setup .pick-chip span {
+  min-height: 2.5rem;
+}
+.extra-setup .input {
+  min-height: 2.5rem;
+}
+.period-grid {
+  grid-template-columns: repeat(auto-fill, minmax(4.5rem, 1fr));
+}
+.period-grid .slot-body {
+  min-height: 4.25rem;
+}
+.period-grid .slot-time,
+.period-grid .slot-details,
+.period-grid .slot-state {
+  white-space: nowrap;
+}
+.pick-note {
+  margin-top: var(--space-1);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  columns: 2 15rem;
+  column-gap: var(--space-4);
+}
+.pick-note:empty {
+  display: none;
+}
+
+/* ---- Wide and tall enough: lock the page to the viewport ---- */
+@media (min-width: 62rem) and (min-height: 34rem) {
+  .app-main.wide:has(#view-session:not([hidden]) > #beforeStart:not([hidden])) {
+    padding-block: var(--space-4);
+  }
+  .setup {
+    height: calc(100dvh - 3.5rem - 2 * var(--space-4));
+  }
+  .setup-grid {
+    height: 100%;
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .setup-steps {
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-4) var(--space-5);
+    overflow: hidden;
+  }
+  .setup-head {
+    flex-wrap: nowrap;
+  }
+
+  /* The periods list takes whatever height is left, and scrolls only if it must */
+  #regularSetup {
+    flex: 1 1 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  #regularSetup legend {
+    margin-bottom: var(--space-2);
+  }
+  #slots {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 2px;
+    margin: -2px;
+  }
+  #extraSetup {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 2px;
+    margin: -2px;
+    align-content: start;
+  }
+
+  .setup-summary {
+    position: static;
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-4) var(--space-4) 0;
+    overflow-y: auto;
+  }
+  /* Start stays pinned to the bottom of the card, however much is above it */
+  .setup-summary .start-row {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    margin-top: auto;
+    padding: var(--space-2) 0 var(--space-4);
+    background: var(--summary-surface);
+    box-shadow: none;
+  }
+  .start-row .btn {
+    min-height: 3rem;
+  }
+  #startSessionBtn {
+    min-height: 3rem;
+  }
+}
+
+/* Very large screens (projector scaling): keep the same fit */
+@media (min-width: 1600px) {
+  #slots {
+    grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  }
+}
+
+/* ---- Round 3 ---- */
+/* A long placeholder ("Search name or roll no.") is cut with an ellipsis rather than mid-letter on a narrow screen */
+.roster-search .input,
+.manual-search .input {
+  text-overflow: ellipsis;
+}
+/* Thin scrollbars: the classic wide ones cost 15px of every row and look dated */
+.roster,
+.pick-list,
+.absent-list {
+  scrollbar-width: thin;
+  scrollbar-color: var(--control-edge) transparent;
+}
+/* Sort menu: the chosen option gets a tick, not just a faint fill */
+.sort-option {
+  position: relative;
+  padding-right: var(--space-6, 2rem);
+}
+.sort-option[aria-checked='true']::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: var(--space-3);
+  width: 0.65rem;
+  height: 0.35rem;
+  border-left: 2px solid var(--ink-900);
+  border-bottom: 2px solid var(--ink-900);
+  transform: translateY(-70%) rotate(-45deg);
+}
+/* One focus ring on the sort button (not a ring plus a dark border), and none while the menu's own items hold focus */
+.sort-pick:focus-within {
+  border-color: var(--ink-500);
+  outline: none;
+}
+.sort-pick:has(.sort-trigger:focus-visible) {
+  border-color: var(--ink-900);
+  outline: 2px solid var(--ink-900);
+  outline-offset: 1px;
+}
+.sort-pick.is-open:not(:has(.sort-trigger:focus-visible)) {
+  outline: none;
+}
+
+/* "Select all": its checkbox sits exactly over the row checkboxes below it */
+.pick-all {
+  flex: none;
+  gap: var(--space-3);
+  min-height: 2.25rem;
+  margin-top: var(--space-2);
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+}
+.pick-all input {
+  width: 1.375rem;
+  height: 1.375rem;
+  margin: 0;
+}
+.pick-row input {
+  width: 1.375rem;
+  height: 1.375rem;
+  margin: 0;
+}
+.pick-all + .pick-list {
+  margin-top: var(--space-1);
+}
+
+/* Connection lost: the LIVE chip turns amber (no banner pushing the page down) ... */
+body[data-conn='down'] .header-status {
+  background: var(--warning-50);
+  border-color: var(--warning-600);
+}
+body[data-conn='down'] .live-dot,
+body[data-conn='down'] .live-label {
+  color: var(--warning-600);
+  background-color: transparent;
+}
+body[data-conn='down'] .live-dot {
+  background: var(--warning-600);
+}
+/* ... and the QR is dimmed with its message in the middle, so nobody tries to scan a code that has stopped */
+.qr-live {
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-width: calc(100% - 2rem);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-base);
+  line-height: 1.35;
+  box-shadow: var(--shadow-md);
+}
+.qr-stage:has(.qr-live[data-state='stale']:not([hidden])) #qrCanvas {
+  opacity: 0.18;
+  filter: grayscale(1) blur(1.5px);
+}
+
+/* Red only ever means "take away". Things that mark students present are green, like Submit attendance on the page. */
+#add-selected-btn,
+#confirmSubmitBtn {
+  background: var(--success-600);
+  border-color: var(--success-600);
+  color: var(--on-red, #fff);
+  --spinner-color: var(--on-red, #fff);
+}
+#add-selected-btn:hover:not(:disabled),
+#confirmSubmitBtn:hover:not(:disabled) {
+  background: var(--success-600);
+  filter: brightness(0.9);
+}
+.pick-row input:checked,
+.pick-all input:checked,
+.pick-all input:indeterminate {
+  background: var(--success-600);
+  border-color: var(--success-600);
+}
+
+/* A phone: search on a line of its own (squeezed beside two buttons it was about 60px wide), sort and add share the next */
+@container roster (max-width: 29.99rem) {
+  .roster-tools {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  .roster-search {
+    flex: 1 1 100%;
+  }
+  .roster-search .input {
+    flex: 1;
+    padding-left: 2.5rem;
+  }
+  .sort-pick {
+    flex: 1 1 0;
+    justify-content: center;
+    padding-inline: var(--space-2);
+  }
+  .roster-tools .btn {
+    flex: 1 1 0;
+    justify-content: center;
+    padding-inline: var(--space-2);
+    font-size: var(--text-base);
+  }
+  .sort-trigger {
+    font-size: var(--text-base);
   }
 }

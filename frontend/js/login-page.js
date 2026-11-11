@@ -9,16 +9,16 @@ const allowedRoles = ['admin', 'student', 'faculty'];
 // The line shown beside the form on wide screens: what this role does in the system.
 const ROLE_COPY = {
   student: {
-    headline: 'Scan the class QR. Verify your face. You’re marked.',
-    sub: 'Your attendance and the 75% line, always up to date.',
+    headline: 'Your attendance, simplified.',
+    sub: 'Log in to view your attendance history, scan your QR codes, or check your CCTV status.',
   },
   faculty: {
-    headline: 'Start a session in two taps.',
-    sub: 'Show the QR code or use the classroom camera, and watch the roster fill live.',
+    headline: 'Reclaim your lecture time.',
+    sub: 'Take attendance via QR sessions or use classroom camera, and review student data instantly.',
   },
   admin: {
-    headline: 'Every term, timetable and record in one place.',
-    sub: 'Set up classes, check face photos and review attendance.',
+    headline: 'Complete campus oversight.',
+    sub: 'Every term, timetable and record in one place.',
   },
 };
 

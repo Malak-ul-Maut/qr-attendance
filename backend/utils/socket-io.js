@@ -77,7 +77,7 @@ export function initializeSocket(server) {
     });
 
     socket.on('disconnect', () => {
-      console.log('Disconnected');
+      // console.log('Disconnected');
     });
   });
   return io;

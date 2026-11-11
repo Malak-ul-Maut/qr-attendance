@@ -42,6 +42,19 @@ router.get('/slots', async (req, res) => {
         (rooms.camera_url IS NOT NULL AND TRIM(rooms.camera_url) <> '') AS has_camera,
         subjects.name AS subject_label,
         subjects.abbr AS subject_abbr,
+        (SELECT GROUP_CONCAT(DISTINCT
+                  branches.abbr || '-' || classes.semester || classes.section)
+           FROM timetable AS class_timetable
+           JOIN timetable_classes ON timetable_classes.timetable_id = class_timetable.id
+           JOIN classes ON classes.id = timetable_classes.class_id
+           JOIN branches ON branches.id = classes.branch_id
+          WHERE class_timetable.slot_id = timetable.slot_id
+            AND class_timetable.day = timetable.day
+            AND class_timetable.faculty_id = timetable.faculty_id
+            AND class_timetable.subject_id = timetable.subject_id
+            AND class_timetable.valid_from <= ?
+            AND (class_timetable.valid_to IS NULL OR class_timetable.valid_to >= ?)
+        ) AS class_labels,
         -- Someone else already holds this period for the same class(es): it was borrowed from this faculty,
         -- or the class was merged into another faculty's session.
         (SELECT other_faculty.name
@@ -67,7 +80,7 @@ router.get('/slots', async (req, res) => {
         AND (timetable.valid_to IS NULL OR timetable.valid_to >= ?)
       ORDER BY slots.start_time
       `,
-      [date, day, faculty_id, date, date],
+      [date, date, date, day, faculty_id, date, date],
     );
     return res.json(rows);
   } catch (err) {
@@ -709,14 +722,26 @@ router.get('/arranged/slots', async (req, res) => {
           [day, date, date, ...classIds],
         )
       : [];
-    const partial = new Set();
-    for (const row of planned.filter(row => row.counts)) {
-      const outside = await dbGet(
-        `SELECT 1 AS found FROM timetable_classes
-         WHERE timetable_id = ? AND class_id NOT IN (${marks}) LIMIT 1`,
-        [row.id, ...classIds],
+    const plannedIds = planned.filter(row => row.counts).map(row => row.id);
+    const partialClasses = new Map();
+    if (plannedIds.length) {
+      const plannedMarks = plannedIds.map(() => '?').join(', ');
+      const outsideClasses = await dbAll(
+        `SELECT DISTINCT timetable_classes.timetable_id,
+                branches.abbr || '-' || classes.semester || classes.section AS label
+         FROM timetable_classes
+         JOIN classes ON classes.id = timetable_classes.class_id
+         JOIN branches ON branches.id = classes.branch_id
+         WHERE timetable_classes.timetable_id IN (${plannedMarks})
+           AND timetable_classes.class_id NOT IN (${marks})
+         ORDER BY label, timetable_classes.timetable_id`,
+        [...plannedIds, ...classIds],
       );
-      if (outside) partial.add(row.id);
+      for (const row of outsideClasses) {
+        const labels = partialClasses.get(row.timetable_id) || [];
+        labels.push(row.label);
+        partialClasses.set(row.timetable_id, labels);
+      }
     }
     const held = await dbAll(
       `SELECT DISTINCT sessions.slot_id, sessions.faculty_id, faculties.name AS faculty
@@ -748,17 +773,22 @@ router.get('/arranged/slots', async (req, res) => {
           };
         if (holders.length)
           return { ...slot, status: 'mine', note: 'Already started: resumes' };
-        if (rows.some(row => partial.has(row.id)))
+        const combinedClasses = [
+          ...new Set(
+            rows.flatMap(row => partialClasses.get(row.id) || []),
+          ),
+        ].join(', ');
+        if (combinedClasses)
           return {
             ...slot,
             status: 'blocked',
-            note: `${subjects}: combined with other classes`,
+            note: `${subjects} - combined with ${combinedClasses}`,
           };
         if (lender.length)
           return {
             ...slot,
             status: 'borrow',
-            note: `Borrow from ${names} (${subjects})`,
+            note: `${names} (${subjects})`,
           };
         if (rows.length)
           return { ...slot, status: 'own', note: `Your period (${subjects})` };

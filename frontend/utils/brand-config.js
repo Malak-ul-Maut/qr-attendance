@@ -7,7 +7,7 @@ window.BRAND = {
     name: 'Smart Attendance Marker',
   },
   institute: {
-    name: 'Meerut Institute of Technology',
+    name: 'MIT Meerut',
     short: 'MIT Meerut', // shown where the full name does not fit (phones)
     logo: 'icons/mit-logo.webp', // path from the page, so keep logos in icons/
   },

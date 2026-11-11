@@ -31,12 +31,15 @@
 
 /* Live session chip (faculty): visible on every tab while a session runs; tapping it opens the Session tab */
 .header-status {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   flex: 0 1 auto;
   min-width: 0;
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  margin-inline: auto;
+  gap: 0;
+  margin: 0;
   padding: 0.3rem var(--space-3);
   font: inherit;
   font-size: var(--text-sm);
@@ -47,12 +50,13 @@
   cursor: pointer;
 }
 .header-status[hidden] { display: none; }
-.live-dot { flex: none; width: 0.6rem; height: 0.6rem; border-radius: 50%; background: var(--red-600); animation: live-pulse 1.6s ease-in-out infinite; }
+.live-dot { flex: none; width: 0.6rem; height: 0.6rem; margin-right: var(--space-2); border-radius: 50%; background: var(--red-600); animation: live-pulse 1.6s ease-in-out infinite; }
 .live-label { flex: none; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--red-600); }
-.live-what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-room { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-room::before, .live-count::before { content: '·'; padding: 0 var(--space-2); }
+.live-room:empty { display: none; }
 .live-count { flex: none; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 @keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-@media (max-width: 639px) { .live-what { display: none; } }
 @media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
 
 /* Avatar button and the account panel (js/account-menu.js) */

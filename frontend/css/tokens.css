@@ -41,6 +41,7 @@
   --control-edge: #86898e; /* inputs, segmented controls, icon buttons: 3:1 (WCAG 1.4.11) */
   --canvas: #f4f5f7; /* page background */
   --surface: #ffffff; /* cards, header */
+  --summary-surface: #f8fafc;
 
   /* ---- Brand accent: red from the MIT logo. Use sparingly. ---- */
   --red-600: #d1222e; /* primary buttons, links, active states */
@@ -131,6 +132,7 @@
     --control-edge: #707882;
     --canvas: #15171a;
     --surface: #1e2125;
+    --summary-surface: #1e293b;
     --red-600: #ef5560; /* lighter so it keeps 4.5:1 contrast on dark surfaces */
     --on-red: #1a0608; /* 5.7:1 on the lighter red */
     --head-bg: #2d333b;
@@ -163,6 +165,7 @@
   --control-edge: #707882;
   --canvas: #15171a;
   --surface: #1e2125;
+  --summary-surface: #1e293b;
   --red-600: #ef5560;
   --on-red: #1a0608;
   --head-bg: #2d333b;

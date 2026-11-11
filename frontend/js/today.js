@@ -36,6 +36,13 @@ const root = document.querySelector('#todayRoot');
 const greetingEl = document.querySelector('#todayGreeting');
 const subEl = document.querySelector('#todaySub');
 
+function qrIcon() {
+  const icon = document.createElement('span');
+  icon.className = 'scan-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  return icon;
+}
+
 let me = null;
 let schedule = null; // last good /schedule response (today)
 let week = null; // last good /schedule?week=1 response
@@ -490,7 +497,7 @@ function action(group, state, data) {
             }),
           ),
       },
-      h('img', { src: 'icons/generate-qr.svg', alt: '' }),
+      qrIcon(),
       h('span', { text: 'Scan QR' }),
     );
   if (state === 'open_camera')
@@ -591,7 +598,7 @@ function scanButton(group, focusKey) {
           }),
         ),
     },
-    h('img', { src: 'icons/generate-qr.svg', alt: '' }),
+    qrIcon(),
     h('span', { text: 'Scan QR' }),
   );
 }

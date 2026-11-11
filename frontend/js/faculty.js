@@ -1,9 +1,15 @@
 import { getCurrentUser } from '/utils/storage.js';
 import { enableLightDismiss, enableLightDismissAll } from '/utils/dialog.js';
-import { mountAccountMenu } from './account-menu.js';
+import { initialsOf, mountAccountMenu } from './account-menu.js';
 import postData from '/utils/fetch.js';
 import { showToast } from './ui.js';
-import { fmtClock, fmtDayDate, fmtTime, parseISODate } from './format.js';
+import {
+  fmtClock,
+  fmtDayDate,
+  fmtDayMonth,
+  fmtTime,
+  parseISODate,
+} from './format.js';
 
 const $ = sel => document.querySelector(sel);
 const currentUser = getCurrentUser() || {};
@@ -133,6 +139,7 @@ document.querySelectorAll('.nav-item').forEach(tab => {
       .querySelectorAll('.nav-item')
       .forEach(t => t.removeAttribute('aria-current'));
     tab.setAttribute('aria-current', 'page');
+    document.body.dataset.view = tab.dataset.view;
     document
       .querySelectorAll('.view')
       .forEach(v => (v.hidden = v.id !== `view-${tab.dataset.view}`));
@@ -350,6 +357,19 @@ const qrPanel = $('#qrPanel');
 const qrCanvas = $('#qrCanvas');
 const fullscreenBtn = $('#fullscreenBtn');
 const connBanner = $('#connBanner');
+
+// A dropped live connection shows in two places that cannot shift the page: the LIVE chip turns amber and says
+// "Reconnecting", and the QR is dimmed with its own message (setQrLive). Screen readers get one spoken notice.
+function setLiveConnection(up) {
+  const down = !up && Boolean(sessionCode);
+  if (document.body.dataset.conn === (down ? 'down' : 'up')) return;
+  document.body.dataset.conn = down ? 'down' : 'up';
+  $('#headerStatus .live-label').textContent = down ? 'Reconnecting' : 'Live';
+  if (down)
+    $('#srAnnounce').textContent =
+      'Live updates paused. Reconnecting. New students may not appear until it is back.';
+  updateHeaderStatus();
+}
 const studentList = $('#studentList');
 const startBtn = $('#startSessionBtn');
 const dateInput = $('#date');
@@ -368,6 +388,8 @@ let headerInfo = null; // what the session bar shows; fixed when the session ope
 let slotRequestId = 0;
 let classRequestId = 0;
 let rosterQuery = '';
+let rosterSort = 'roll'; // 'roll' | 'name' | 'recent'
+let classFilter = null; // class_id of the one class shown, when classes are taken together
 
 const slotInfo = new Map(); // slotId -> slot from the server
 const allStudents = new Map(); // studentId -> { id, name, username, roll_number }
@@ -388,6 +410,7 @@ const updateSubjectHeader = () => {
   const title = $('#sub-name');
   title.textContent = subject || 'Pick a class';
   title.classList.toggle('is-placeholder', !subject);
+  updateSummary();
 };
 
 // ---------- Setup: date, periods, classes ----------
@@ -399,8 +422,8 @@ function updateDateWarning() {
   const chosen = dateInput.value;
   warn.hidden = chosen === today;
   if (warn.hidden) return;
-  const when = chosen < today ? 'in the past' : 'in the future';
-  warn.textContent = `This date is ${when}. Attendance will be recorded for ${formatDate(chosen)}.`;
+  const when = chosen < today ? 'Past' : 'Future';
+  warn.textContent = `${when} date`;
 }
 
 // Pre-select the class happening now (or the next one) when taking today's attendance
@@ -467,8 +490,23 @@ async function loadSlots() {
         slotInfo.set(String(slot.id), slot);
         const label = document.createElement('label');
         label.className = 'slot-card';
-        label.innerHTML =
-          '<input type="radio" name="slot"><span class="slot-body"><span class="slot-time"></span><span class="slot-details"></span></span>';
+        label.innerHTML = `
+          <input type="radio" name="slot">
+          <span class="slot-body">
+            <span class="slot-period"></span>
+            <span class="slot-when"><span class="slot-time"></span></span>
+            <span class="slot-info">
+              <span class="slot-subject"></span>
+              <span class="slot-classes"></span>
+            </span>
+            <span class="slot-room">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M2.5 13.5h11M4 13.5V3.25h8v10.25M6.5 6h.01M9.5 6h.01M6.5 8.5h.01M9.5 8.5h.01M7 13.5v-2.75h2v2.75" />
+              </svg>
+              <span class="slot-room-name"></span>
+            </span>
+            <span class="slot-mark" aria-hidden="true"></span>
+          </span>`;
         const input = label.querySelector('input');
         input.value = slot.id;
         input.checked = i === pick;
@@ -480,22 +518,45 @@ async function loadSlots() {
           loadClasses();
           loadRooms();
         });
-        const time = label.querySelector('.slot-time');
-        time.innerHTML =
-          '<span class="t-start"></span><span class="t-end"></span>';
-        time.querySelector('.t-start').textContent = fmtTime(slot.start_time);
-        time.querySelector('.t-end').textContent =
-          ` – ${fmtTime(slot.end_time)}`;
+        label.querySelector('.slot-period').textContent = shortPeriod(slot.label);
+        label.querySelector('.slot-time').textContent = timeRange(slot);
+        // const minutes =
+        //   (toMinutes(slot.end_time) ?? NaN) -
+        //   (toMinutes(slot.start_time) ?? NaN);
+        // label.querySelector('.slot-len').textContent =
+        //   minutes > 0 ? `${minutes} min` : '';
         label.title = timeRange(slot);
+        const subject = label.querySelector('.slot-subject');
+        const subjectName = slot.subject_label || slot.subject_abbr || 'Class';
+        subject.textContent = subjectName;
+        const classLabels = String(slot.class_labels || '')
+          .split(',')
+          .map(text => text.trim())
+          .filter(Boolean)
+          .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+        label.querySelector('.slot-classes').replaceChildren(
+          ...classLabels.map(text =>
+            Object.assign(document.createElement('span'), {
+              className: 'slot-class',
+              textContent: text,
+            }),
+          ),
+        );
         if (nowId !== null && String(slot.id) === String(nowId)) {
           const badge = document.createElement('span');
           badge.className = 'badge badge-success slot-badge';
           badge.textContent = 'Now';
-          label.append(badge);
+          subject.append(badge);
         }
-        label.querySelector('.slot-details').textContent = slot.taken_by
-          ? `${slot.subject_abbr}: taken by ${slot.taken_by}`
-          : `${slot.subject_abbr}${slot.block ? ` · ${slot.block}-${slot.room_number}` : ''}`;
+        const room = label.querySelector('.slot-room');
+        if (slot.taken_by) {
+          room.querySelector('.slot-room-name').textContent =
+            `Taken by ${slot.taken_by}`;
+          room.classList.add('is-taken');
+        } else if (slot.block) {
+          room.querySelector('.slot-room-name').textContent =
+            `${slot.block}-${slot.room_number}`;
+        } else room.hidden = true;
         return label;
       }),
     );
@@ -532,6 +593,7 @@ async function loadClasses() {
     classes.forEach(item => {
       classIds.push(item.class_id);
     });
+    updateSummary();
   } catch {
     if (requestId === classRequestId)
       notify('Could not load the classes for this slot.', 'error');
@@ -582,6 +644,7 @@ function updateStartState() {
   const why = startBlocker();
   startBtn.disabled = Boolean(why);
   $('#startReason').textContent = why;
+  updateSummary();
 }
 
 function setStartLoading() {
@@ -647,11 +710,11 @@ async function loadRooms() {
   }
 }
 
-// The chip reads "Room F-307 · change"; this also tells the faculty what a room choice means.
+// The summary row reads "Classroom F-307 · Change"; this also tells the faculty what a room choice means.
 function updateRoomHint() {
   const hint = $('#roomHint');
   const room = roomInfo.get(String(roomSelect.value));
-  $('#roomText').textContent = room ? `Room ${roomName(room)}` : 'Pick a room';
+  $('#roomText').textContent = room ? roomName(room) : 'Pick a classroom';
   hint.classList.remove('warn');
   hint.hidden = true;
   if (!room) return;
@@ -684,6 +747,12 @@ function chipRow(value, text, small, name) {
     note.textContent = small;
     label.querySelector('span').append(note);
   }
+  label
+    .querySelector('span')
+    .insertAdjacentHTML(
+      'beforeend',
+      '<svg class="chip-check" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 8.5l3.2 3.2L13 4.8"/></svg>',
+    );
   return label;
 }
 
@@ -752,6 +821,7 @@ async function loadArranged() {
 }
 
 const STATE_WORD = {
+  free: 'Available',
   own: 'Yours',
   borrow: 'Borrow',
   mine: 'Resume',
@@ -763,18 +833,48 @@ const STATE_WORD = {
 function updateArrNote() {
   const picked = new Set(chosenArrSlotIds());
   const lines = [];
+  const borrowed = [];
   for (const slot of extraSlots) {
     const name = shortPeriod(slot.label);
     if (picked.has(slot.id) && slot.status === 'borrow')
-      lines.push(
-        `${name}: ${slot.note}. They can no longer take attendance for it.`,
-      );
+      borrowed.push({ name, note: slot.note });
     else if (picked.has(slot.id) && slot.status === 'mine')
       lines.push(`${name} was already started. It will resume.`);
     else if (slot.status === 'taken' || slot.status === 'blocked')
       lines.push(`${name}: ${slot.note}.`);
   }
-  $('#arrNote').textContent = lines.join('\n');
+  const note = $('#arrNote');
+  note.textContent = lines.join('\n');
+  note.classList.toggle('single-column', lines.length < 5);
+  renderBorrowBox(borrowed);
+}
+
+// Borrowed periods sit next to the Start button, because that is where the consequence matters.
+function renderBorrowBox(borrowed) {
+  const box = $('#borrowBox');
+  box.hidden = borrowed.length === 0;
+  if (!borrowed.length) {
+    box.replaceChildren();
+    return;
+  }
+  const title = document.createElement('strong');
+  title.textContent = `Borrowing:`;
+  const rows = borrowed.map(({ name, note }) => {
+    const row = document.createElement('div');
+    row.className = 'borrow-row';
+    const period = document.createElement('b');
+    period.textContent = name;
+    const who = document.createElement('span');
+    who.textContent = note;
+    row.append(period, who);
+    return row;
+  });
+  const foot = document.createElement('p');
+  // foot.textContent =
+  //   borrowed.length > 1
+  //     ? 'They can no longer take attendance for these periods.'
+  //     : 'They can no longer take attendance for this period.';
+  box.replaceChildren(title, ...rows);
 }
 
 async function loadArrangedSlots() {
@@ -818,9 +918,11 @@ async function loadArrangedSlots() {
         return label;
       }),
     );
-    if (classIdsChosen.length === 0)
+    if (classIdsChosen.length === 0) {
       $('#arrNote').textContent = 'Pick a class first.';
-    else updateArrNote();
+      $('#arrNote').classList.add('single-column');
+      renderBorrowBox([]);
+    } else updateArrNote();
     updateStartState();
     await loadRooms();
   } catch {
@@ -843,6 +945,10 @@ function applySessionType() {
   const extra = sessionType() === 'extra';
   $('#regularSetup').hidden = extra;
   $('#extraSetup').hidden = !extra;
+  // $('#setupLead').textContent = extra
+  //   ? 'Extra sessions can merge classes and take over periods from other faculty.'
+  //   : 'Regular follows your timetable. Use Extra to merge classes you teach.';
+  if (!extra) renderBorrowBox([]);
   userPickedRoom = false;
   refreshSetup();
 }
@@ -850,9 +956,58 @@ document
   .querySelectorAll('input[name="session-type"]')
   .forEach(r => r.addEventListener('change', applySessionType));
 
-// ---------- Date chip ----------
+// ---------- Date: week strip ----------
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+// Monday to Saturday of the chosen date's week (there are no classes on Sundays)
+function renderWeek() {
+  const selected = parseISODate(dateInput.value) || new Date();
+  const monday = new Date(selected);
+  monday.setDate(selected.getDate() - ((selected.getDay() + 6) % 7));
+  const today = localISODate();
+  const buttons = [];
+  for (let i = 0; i < 6; i++) {
+    const day = new Date(monday);
+    day.setDate(monday.getDate() + i);
+    const iso = localISODate(day);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'day-chip';
+    button.dataset.date = iso;
+    if (iso === today) button.dataset.today = '';
+    button.setAttribute('aria-pressed', String(iso === dateInput.value));
+    button.setAttribute(
+      'aria-label',
+      `${formatDate(iso)}${iso === today ? ', today' : ''}`,
+    );
+    button.innerHTML = '<small></small><b></b><i aria-hidden="true"></i>';
+    button.querySelector('small').textContent = WEEKDAYS[day.getDay()];
+    button.querySelector('b').textContent = pad(day.getDate());
+    buttons.push(button);
+  }
+  $('#weekDays').replaceChildren(...buttons);
+  $('#weekMonth').textContent =
+    `${MONTH_NAMES[selected.getMonth()]} ${selected.getFullYear()}`;
+}
+
 function syncDateChip() {
-  $('#dateText').textContent = formatDate(dateInput.value);
+  renderWeek();
+  // $('#periodsLegend').textContent = `Periods on ${formatDate(dateInput.value)}`;
+  updateSummary();
 }
 function dateChanged() {
   if (!dateInput.value) dateInput.value = localISODate(); // cleared with the picker's "Clear"
@@ -860,16 +1015,24 @@ function dateChanged() {
   userPickedRoom = false;
   refreshSetup();
 }
-// Previous / next day, skipping Sundays (there are no classes)
-function stepDate(delta) {
+// Previous / next week, never landing on a Sunday (there are no classes)
+function stepWeek(delta) {
   const d = parseISODate(dateInput.value) || new Date();
-  do d.setDate(d.getDate() + delta);
-  while (d.getDay() === 0);
+  d.setDate(d.getDate() + 7 * delta);
+  if (d.getDay() === 0) d.setDate(d.getDate() + delta);
   dateInput.value = localISODate(d);
   dateChanged();
 }
-$('#datePrev').addEventListener('click', () => stepDate(-1));
-$('#dateNext').addEventListener('click', () => stepDate(1));
+$('#datePrev').addEventListener('click', () => stepWeek(-1));
+$('#dateNext').addEventListener('click', () => stepWeek(1));
+$('#weekDays').addEventListener('click', event => {
+  const button = event.target.closest('.day-chip');
+  if (!button) return;
+  dateInput.value = button.dataset.date;
+  dateChanged();
+  // The strip was rebuilt: put keyboard focus back on the chosen day
+  $('#weekDays').querySelector('[aria-pressed="true"]')?.focus();
+});
 $('#dateChip').addEventListener('click', () => {
   try {
     dateInput.showPicker();
@@ -882,6 +1045,70 @@ dateInput.addEventListener('change', dateChanged);
 document
   .querySelectorAll('input[name="method"]')
   .forEach(r => r.addEventListener('change', updateRoomHint));
+
+// ---------- Summary card: what Start will open ----------
+function updateSummary() {
+  const extra = sessionType() === 'extra';
+  const type = $('#sumType');
+  type.textContent = extra ? 'Extra' : 'Regular';
+  type.dataset.type = extra ? 'extra' : 'regular';
+
+  const chosen = new Set(chosenArrClassIds());
+  const classes = extra
+    ? arrangedClasses.filter(c => chosen.has(c.class_id))
+    : classInfo;
+  $('#sumClasses').replaceChildren(
+    ...classes
+      .map(compactClassLabel)
+      .filter(Boolean)
+      .map(text =>
+        Object.assign(document.createElement('li'), { textContent: text }),
+      ),
+  );
+
+  $('#sumDate').textContent = formatDate(dateInput.value);
+
+  let periods = '';
+  let time = '';
+  if (extra) {
+    const picked = new Set(chosenArrSlotIds());
+    const slots = extraSlots
+      .filter(s => picked.has(s.id))
+      .sort(
+        (a, b) =>
+          (toMinutes(a.start_time) ?? 0) - (toMinutes(b.start_time) ?? 0),
+      );
+    if (slots.length) {
+      periods =
+        slots.map(s => shortPeriod(s.label)).join(' + ');
+      const ranges = [];
+      extraSlots.forEach((slot, index) => {
+        if (!picked.has(slot.id)) return;
+        const range = ranges.at(-1);
+        if (range && range.lastIndex === index - 1) {
+          range.last = slot;
+          range.lastIndex = index;
+        } else {
+          ranges.push({ first: slot, last: slot, lastIndex: index });
+        }
+      });
+      time = ranges
+        .map(({ first, last }) =>
+          timeRange({
+            start_time: first.start_time,
+            end_time: last.end_time,
+          }),
+        )
+        .join(', ');
+    }
+  } else {
+    const slot = selectedSlot();
+    if (slot) time = timeRange(slot);
+  }
+  $('#sumPeriodsRow').hidden = !extra;
+  $('#sumPeriods').textContent = periods || '\u2014';
+  $('#sumTime').textContent = time || '\u2014';
+}
 
 // ---------- Roster ----------
 const presentCount = () => {
@@ -901,6 +1128,8 @@ function markPresent(id, name, source, time = formatTime()) {
   if (entry)
     Object.assign(entry, { present: true, removed: false, source, time });
   else roster.set(id, { name, time, source, present: true });
+  flashIds.add(id);
+  setTimeout(() => flashIds.delete(id), 4000); // not rendered by then (filtered out?): do not flash later
   return true;
 }
 
@@ -916,7 +1145,6 @@ function updateCounts() {
   const present = presentCount();
   const total = allStudents.size;
   const shown = total ? `${present} / ${total}` : String(present);
-  $('#fsCount').textContent = shown;
   // Handy when the tab is in the background behind the slides
   if (sessionCode) document.title = `(${shown}) ${baseTitle}`;
   renderSessionHeader();
@@ -964,7 +1192,7 @@ function classCounts(c, isIn = isPresent) {
 }
 
 let headerKey = '';
-// The live chip in the top bar: subject, classes and the running count, so it shows on every tab.
+// The live chip in the top bar: room and running count, so it shows on every tab.
 // Tapping it opens the Session tab. It is not a live region: the count changes too often to announce.
 function updateHeaderStatus() {
   const chip = $('#headerStatus');
@@ -972,14 +1200,14 @@ function updateHeaderStatus() {
     chip.hidden = true;
     return;
   }
-  const { classes } = headerInfo;
-  const what = classes.map(compactClassLabel).filter(Boolean).join(' + ');
+  const room = sessionFacts(headerInfo.srv).room;
   const count = `${presentCount()}${allStudents.size ? ` / ${allStudents.size}` : ''}`;
-  $('#headerStatusWhat').textContent = what;
+  $('#headerStatusRoom').textContent = room;
   $('#headerStatusCount').textContent = count;
+  const down = document.body.dataset.conn === 'down';
   chip.setAttribute(
     'aria-label',
-    `Live session: ${what}. ${count.replace(' / ', ' of ')} present. Open the session.`,
+    `${down ? 'Reconnecting. ' : ''}Live session${room ? ` in ${room}` : ''}. ${count.replace(' / ', ' of ')} present. Open the session.`,
   );
   chip.hidden = false;
 }
@@ -1006,18 +1234,22 @@ function renderSessionHeader() {
     kinds.includes('borrowed') ? 'Borrowed' : '',
     facts.count > 1 ? `Double · ${facts.periodText}` : '',
   ].filter(Boolean);
+  // Each fact is a small unit of its own (icon + text), like the class chips: the time reads as one thing
   const meta = [
-    date !== localISODate() ? formatDate(date) : '',
-    merged ? '' : classes[0] ? classLabel(classes[0]) : '',
-    facts.room,
-    facts.time,
-  ].filter(Boolean);
+    ['time', facts.time],
+    ['date', date !== localISODate() ? fmtDayMonth(date) : ''],
+    ['class', merged ? '' : classes[0] ? compactClassLabel(classes[0]) : ''],
+  ].filter(([, text]) => text);
   const rows = merged
-    ? classes.map(c => ({ name: compactClassLabel(c), ...classCounts(c) }))
+    ? classes.map(c => ({
+        id: String(c.class_id),
+        name: compactClassLabel(c),
+        ...classCounts(c),
+      }))
     : [];
   const subject =
     srv?.subject_label || srv?.subject_abbr || defaultSubjectLabel || 'Class';
-  const key = JSON.stringify([subject, tags, meta, rows]);
+  const key = JSON.stringify([subject, tags, meta, rows, classFilter]);
   if (key === headerKey) return; // nothing new: leave the DOM alone
   headerKey = key;
 
@@ -1028,82 +1260,213 @@ function renderSessionHeader() {
       Object.assign(document.createElement('li'), { textContent: text }),
     ),
   );
-  $('#shMeta').textContent = meta.join(' · ');
+  $('#shMeta').replaceChildren(
+    ...meta.map(([kind, text]) => {
+      const li = document.createElement('li');
+      li.className = 'si-fact';
+      li.dataset.kind = kind;
+      li.innerHTML = ICON_FACT[kind] || '';
+      li.append(text);
+      return li;
+    }),
+  );
+  $('#shMeta').hidden = meta.length === 0;
   $('#shClasses').hidden = rows.length === 0;
   $('#shClasses').replaceChildren(
     ...rows.map(row => {
       const li = document.createElement('li');
-      li.className = 'sb-chip';
+      li.className = 'si-chip';
+      // Tapping a class shows only its students in the list; tapping it again shows everyone
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'si-chip-btn';
+      btn.dataset.classId = row.id;
+      btn.setAttribute('aria-pressed', String(classFilter === row.id));
+      btn.title =
+        classFilter === row.id
+          ? 'Show all classes'
+          : `Show only ${row.name} in the list`;
       const name = document.createElement('span');
-      name.className = 'sb-chip-name';
+      name.className = 'si-chip-name';
       name.textContent = row.name;
-      li.append(name);
+      btn.append(name);
       if (row.total !== null) {
         const count = document.createElement('span');
-        count.className = 'sb-chip-count';
+        count.className = 'si-chip-count';
         count.textContent =
           row.present === null ? `${row.total}` : `${row.present}/${row.total}`;
-        li.append(count);
+        btn.append(count);
       }
+      li.append(btn);
       return li;
     }),
   );
 }
 
-// One list: everyone marked present in this session. A student the teacher takes off stays in place, struck through,
+$('#shClasses').addEventListener('click', event => {
+  const btn = event.target.closest('.si-chip-btn');
+  if (!btn) return;
+  const id = btn.dataset.classId;
+  classFilter = classFilter === id ? null : id;
+  headerKey = '';
+  renderSessionHeader();
+  renderRoster({ force: true });
+});
+
+// One list: everyone marked present in this session. A student the teacher takes off stays in place on a red tint,
 // with an Undo button. Students who were never marked are found through "Add manually".
+const VIA_TEXT = { qr: 'QR code', cctv: 'CCTV', manual: 'Added manually' };
+const classOf = id => {
+  const st = allStudents.get(id);
+  const c = st?.class_id ?? st?.classId;
+  return c === undefined || c === null ? '' : String(c);
+};
+
+// Rows for everyone who has been marked (present, or taken off), before the tab, class and search filters
+function allRows() {
+  const merged = (headerInfo?.classes?.length || 0) > 1;
+  const tags = new Map(
+    (headerInfo?.classes || []).map(c => [
+      String(c.class_id),
+      compactClassLabel(c).replace(/^[^-]+-/, ''), // "CSE-5A" -> "5A"
+    ]),
+  );
+  return [...roster].map(([id, s], order) => {
+    const student = allStudents.get(id) || {};
+    return {
+      id,
+      order,
+      name: s.name,
+      label: idLabel(student),
+      present: s.present,
+      source: s.source,
+      time: s.time,
+      classId: classOf(id),
+      tag: merged ? tags.get(classOf(id)) || '' : '',
+    };
+  });
+}
+
 function buildRows() {
   const q = rosterQuery.trim().toLowerCase();
-  const via = { qr: 'QR', cctv: 'CCTV', manual: 'Manual' };
-  const rows = [...roster].map(([id, s]) => ({
-    id,
-    name: s.name,
-    label: idLabel(allStudents.get(id) || {}),
-    present: s.present,
-    meta: s.present
-      ? [idLabel(allStudents.get(id) || {}), via[s.source], s.time]
-          .filter(Boolean)
-          .join(' · ')
-      : ['Marked absent', idLabel(allStudents.get(id) || {})]
-          .filter(Boolean)
-          .join(' · '),
-  }));
-  return q
-    ? rows.filter(
-        r =>
-          r.name.toLowerCase().includes(q) || r.label.toLowerCase().includes(q),
-      )
-    : rows;
+  let rows = allRows();
+  if (classFilter) rows = rows.filter(r => r.classId === classFilter);
+  if (q)
+    rows = rows.filter(
+      r => r.name.toLowerCase().includes(q) || r.label.toLowerCase().includes(q),
+    );
+  const byRoll = (a, b) =>
+    a.label.localeCompare(b.label, undefined, { numeric: true }) ||
+    a.name.localeCompare(b.name);
+  const byName = (a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) ||
+    byRoll(a, b);
+  if (rosterSort === 'recent') return rows.sort((a, b) => b.order - a.order);
+  return rows.sort(rosterSort === 'name' ? byName : byRoll);
 }
 
 const ICON_REMOVE =
-  '<svg class="ic-remove" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+  '<svg class="ic-remove" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="7"/><path d="M8 12h8"/></svg>';
 const ICON_UNDO =
-  '<svg class="ic-undo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 7L4.5 11.5 9 16"/><path d="M5 11.5h8.5a5 5 0 0 1 0 10H11"/></svg>';
+  '<svg class="ic-undo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle class="undo-hover-bg" cx="12" cy="12" r="11" fill="var(--danger-50)" stroke="none" opacity="0"/><path d="M6 4 2 8l4 4M4 8h11c4.5 0 7 2 7 6s-2.5 5-6 5c-4.5 0-9-.5-13-2"/></svg>';
 
+const svg = path =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
+// How they were marked: a QR code, a memo (written in by hand), a CCTV camera on its wall bracket
+const ICON_VIA = {
+  manual: '<svg class="attendance-icon attendance-icon-manual" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4M9.5 12.5h6M9.5 16.5h4"/></svg>',
+};
+// The facts under the subject
+const ICON_FACT = {
+  time: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
+  room: svg(
+    '<path d="M12 21s-6-5.6-6-10a6 6 0 0 1 12 0c0 4.4-6 10-6 10z"/><circle cx="12" cy="11" r="2"/>',
+  ),
+  date: svg(
+    '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M8 3v4M16 3v4"/>',
+  ),
+  class: svg(
+    '<circle cx="9" cy="8" r="3"/><path d="M3.5 20c0-3.3 2.5-5.5 5.5-5.5s5.5 2.2 5.5 5.5"/><path d="M16 5.5a3 3 0 0 1 0 5.5M18 14.8c1.8.7 3 2.4 3 5.2"/>',
+  ),
+};
+
+// One row is one line of columns (the CSS decides how wide each is; on a phone they fold into two lines):
+//   name | roll number | section (only when classes are taken together) | how and when they were marked | action
 function createRow() {
   const li = document.createElement('li');
   li.className = 'roster-row';
-  const info = document.createElement('div');
-  info.className = 'roster-info';
+  const avatar = document.createElement('span');
+  avatar.className = 'roster-avatar';
+  avatar.setAttribute('aria-hidden', 'true');
   const name = document.createElement('span');
   name.className = 'roster-name';
-  const meta = document.createElement('span');
-  meta.className = 'roster-meta';
-  info.append(name, meta);
+  const roll = document.createElement('span');
+  roll.className = 'roster-roll';
+  // const tag = document.createElement('span');
+  // tag.className = 'roster-tag';
+  // How they were marked, in words, with the time: "QR 10:24 am"
+  const via = document.createElement('span');
+  via.className = 'roster-via';
+  const viaIcon = document.createElement('span');
+  viaIcon.className = 'via-icon';
+  viaIcon.setAttribute('aria-hidden', 'true');
+  const viaHow = document.createElement('span');
+  viaHow.className = 'via-how';
+  const viaTime = document.createElement('span');
+  viaTime.className = 'via-time';
+  via.append(viaIcon, viaHow, viaTime);
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'row-action';
+  const undoText = document.createElement('span');
+  undoText.className = 'undo-text';
+  // undoText.textContent = 'Undo';
   btn.innerHTML = ICON_REMOVE + ICON_UNDO;
-  li.append(info, btn);
+  btn.append(undoText);
+  li.append(avatar, name, roll, via, btn);
   return li;
+}
+
+// Roll numbers share a long prefix (2402920100002, 2402920100003 ...). The part that tells students apart is the end,
+// so it is drawn strong and the shared start is dimmed. The text itself is unchanged (search, screen readers).
+function setRoll(el, label) {
+  if (el.dataset.key === label) return;
+  el.dataset.key = label;
+  if (!/^\d{8,}$/.test(label)) return void (el.textContent = label);
+  const pre = document.createElement('span');
+  pre.className = 'roll-pre';
+  pre.textContent = label.slice(0, -3);
+  const end = document.createElement('span');
+  end.className = 'roll-end';
+  end.textContent = label.slice(-3);
+  el.replaceChildren(pre, end);
 }
 
 function fillRow(li, row) {
   li.dataset.id = row.id;
   li.dataset.mode = row.present ? 'present' : 'absent';
-  li.querySelector('.roster-name').textContent = row.name;
-  li.querySelector('.roster-meta').textContent = row.meta;
+  li.dataset.source = row.source;
+  const name = li.querySelector('.roster-name');
+  name.textContent = row.name;
+  name.title = row.name;
+  // "Abhishek Kumar" -> AK, like the account button; one word -> its first two letters (AB)
+  li.querySelector('.roster-avatar').textContent = /\s/.test(row.name.trim())
+    ? initialsOf(row.name, '?')
+    : Array.from(row.name.trim()).slice(0, 2).join('').toUpperCase() || '?';
+  setRoll(li.querySelector('.roster-roll'), row.label);
+  // const tag = li.querySelector('.roster-tag');
+  // tag.textContent = row.tag;
+  // tag.hidden = !row.tag;
+  // QR (or CCTV) is how every student of the session is marked, so only the exception is drawn: the memo.
+  const manual = row.source === 'manual';
+  const how = manual ? VIA_TEXT.manual : '';
+  const via = li.querySelector('.roster-via');
+  via.querySelector('.via-icon').innerHTML = manual ? ICON_VIA.manual : '';
+  via.querySelector('.via-how').textContent = how;
+  // The time is a column only in "Latest first"; otherwise it is in the tooltip: on the memo, or on the roll number
+  via.title = manual ? `${how}${row.time ? `, ${row.time}` : ''}` : '';
+  li.querySelector('.roster-roll').title = row.time ? `Marked at ${row.time}` : '';
+  via.querySelector('.via-time').textContent = row.time || '';
   const action = row.present ? 'Mark absent' : 'Undo';
   const btn = li.querySelector('.row-action');
   btn.title = action;
@@ -1112,6 +1475,19 @@ function fillRow(li, row) {
     `${action}: ${row.name}${row.label ? `, roll number ${row.label}` : ''}`,
   );
 }
+
+// A student who has just been marked gets a short highlight, so the teacher sees the list react
+// even when the new row lands out of view. Only arrivals while the page is open; never a re-draw.
+const flashIds = new Set();
+function flashRow(li) {
+  li.classList.remove('is-new');
+  void li.offsetWidth; // restart the animation if the same row is marked again
+  li.classList.add('is-new');
+}
+studentList.addEventListener('animationend', event => {
+  if (event.animationName === 'row-arrive')
+    event.target.classList.remove('is-new');
+});
 
 // While the teacher is aiming at a button, rows must not slide away from under it
 const hoverCapable = matchMedia('(hover: hover)').matches;
@@ -1129,6 +1505,8 @@ function scheduleRender() {
 // rebuilt, so buttons keep their position and keyboard focus while scans arrive.
 function renderRoster({ force = false } = {}) {
   updateCounts();
+  studentList.dataset.sort = rosterSort;
+  studentList.dataset.merged = String((headerInfo?.classes?.length || 0) > 1);
   const rows = buildRows();
   const wanted = new Set(rows.map(r => r.id));
   const hasStale = [...rowEls.keys()].some(id => !wanted.has(id));
@@ -1146,6 +1524,7 @@ function renderRoster({ force = false } = {}) {
     let li = rowEls.get(row.id);
     if (!li) rowEls.set(row.id, (li = createRow()));
     fillRow(li, row);
+    if (flashIds.delete(row.id)) flashRow(li);
     if (hold) {
       if (!li.isConnected) studentList.appendChild(li);
     } else if (studentList.children[index] !== li) {
@@ -1159,6 +1538,8 @@ function renderRoster({ force = false } = {}) {
   if (rows.length === 0) {
     const q = rosterQuery.trim();
     if (q) empty.textContent = `No students match "${q}".`;
+    else if (classFilter && roster.size)
+      empty.textContent = 'Nobody from this class is marked yet.';
     else
       empty.textContent =
         sessionMethod === 'cctv'
@@ -1209,6 +1590,83 @@ studentList.addEventListener('click', async event => {
 $('#rosterSearch').addEventListener('input', event => {
   rosterQuery = event.target.value;
   renderRoster({ force: true });
+});
+$('#rosterSearch').addEventListener('keydown', event => {
+  if (event.key !== 'Enter' || event.isComposing || event.keyCode === 229) return;
+  const matches = buildRows();
+  if (matches.length !== 1) return;
+  event.preventDefault();
+  rowEls.get(matches[0].id)?.querySelector('.row-action')?.click();
+});
+
+const rosterSortPicker = $('.sort-pick');
+const rosterSortButton = $('#rosterSortButton');
+const rosterSortMenu = $('#rosterSortMenu');
+const rosterSortOptions = [
+  ...rosterSortMenu.querySelectorAll('[role="menuitemradio"]'),
+];
+
+function closeRosterSort({ returnFocus = false } = {}) {
+  rosterSortMenu.hidden = true;
+  rosterSortButton.setAttribute('aria-expanded', 'false');
+  rosterSortPicker.classList.remove('is-open');
+  if (returnFocus) rosterSortButton.focus();
+}
+
+function openRosterSort({ focusSelected = false } = {}) {
+  rosterSortMenu.hidden = false;
+  rosterSortButton.setAttribute('aria-expanded', 'true');
+  rosterSortPicker.classList.add('is-open');
+  if (focusSelected)
+    rosterSortOptions.find(option => option.dataset.sort === rosterSort)?.focus();
+}
+
+rosterSortButton.addEventListener('click', () => {
+  if (rosterSortMenu.hidden) openRosterSort({ focusSelected: true });
+  else closeRosterSort();
+});
+
+rosterSortMenu.addEventListener('click', event => {
+  const option = event.target.closest('[data-sort]');
+  if (!option) return;
+  rosterSort = option.dataset.sort;
+  rosterSortButton.setAttribute(
+    'aria-label',
+    `Sort students: ${option.textContent}`,
+  );
+  rosterSortOptions.forEach(item =>
+    item.setAttribute(
+      'aria-checked',
+      String(item === option),
+    ),
+  );
+  closeRosterSort({ returnFocus: true });
+  renderRoster({ force: true });
+  studentList.scrollTop = 0;
+});
+
+rosterSortMenu.addEventListener('keydown', event => {
+  const current = rosterSortOptions.indexOf(document.activeElement);
+  let next = current;
+  if (event.key === 'ArrowDown') next = (current + 1) % rosterSortOptions.length;
+  else if (event.key === 'ArrowUp')
+    next = (current - 1 + rosterSortOptions.length) % rosterSortOptions.length;
+  else if (event.key === 'Home') next = 0;
+  else if (event.key === 'End') next = rosterSortOptions.length - 1;
+  else if (event.key === 'Escape') {
+    event.preventDefault();
+    closeRosterSort({ returnFocus: true });
+    return;
+  } else return;
+  event.preventDefault();
+  rosterSortOptions[next].focus();
+});
+
+document.addEventListener('pointerdown', event => {
+  if (!rosterSortPicker.contains(event.target)) closeRosterSort();
+});
+document.addEventListener('focusin', event => {
+  if (!rosterSortPicker.contains(event.target)) closeRosterSort();
 });
 
 function addStudents(list) {
@@ -1314,30 +1772,25 @@ onSocket('attendance_update', data => {
   const source = data.method === 'manual' ? 'manual' : 'qr';
   if (!markPresent(data.studentId, data.studentName, source)) return;
 
-  const nearBottom =
-    studentList.scrollHeight -
-      studentList.scrollTop -
-      studentList.clientHeight <
-    80;
+  // Sorted by roll number a new arrival lands wherever its number falls, so there is nothing to follow.
+  // In "Latest first" the newest is at the top: keep the view there when the teacher is already at the top.
+  const atTop = studentList.scrollTop < 40;
   renderRoster();
-  // Follow new arrivals only if the teacher has not scrolled up to read
-  if (nearBottom) studentList.scrollTop = studentList.scrollHeight;
+  if (rosterSort === 'recent' && atTop) studentList.scrollTop = 0;
   announcePresent(data.studentName);
 });
 
 onSocket('disconnect', () => {
   socketWasDown = true;
-  if (sessionCode) connBanner.hidden = false;
+  setLiveConnection(false);
 });
-onSocket('connect_error', () => {
-  if (sessionCode) connBanner.hidden = false;
-});
+onSocket('connect_error', () => setLiveConnection(false));
 onSocket('connect', async () => {
   if (!sessionCode) return;
   // After a reconnect the server has forgotten which room we were in
   socket.emit('join_session', sessionCode);
   subscribeQR();
-  connBanner.hidden = true;
+  setLiveConnection(true);
   if (socketWasDown) {
     socketWasDown = false;
     const upToDate = await syncMarks();
@@ -1417,7 +1870,12 @@ function openLive({
   headerInfo = {
     date,
     srv,
-    classes: srv.classes || [],
+    // A class can appear once per batch in the session header, but its chip/filter is class-wide.
+    classes: [
+      ...new Map(
+        (srv.classes || []).map(c => [String(c.class_id), c]),
+      ).values(),
+    ],
     method,
     kinds: srv.kinds || [],
   };
@@ -1428,6 +1886,7 @@ function openLive({
   studentList.replaceChildren();
   rosterQuery = '';
   $('#rosterSearch').value = '';
+  classFilter = null;
   mergeServerMarks(marks);
   for (const id of loadRemoved(code)) {
     const entry = roster.get(String(id));
@@ -1440,18 +1899,22 @@ function openLive({
   renderSessionHeader();
   const isQr = method === 'qr';
   qrStage.hidden = !isQr;
+  qrPanel.dataset.method = method;
+  fullscreenBtn.hidden = !isQr || !document.fullscreenEnabled;
   $('#qrLive').hidden = true;
   $('#cctvPanel').hidden = isQr;
-  fullscreenBtn.hidden = !isQr || !document.fullscreenEnabled;
+  $('#cctvRescan').hidden = true; // it moves into the heading row, so QR must not inherit a stale one
+  // QR: the heading is for screen readers only (the code speaks for itself). CCTV: it is the visible title.
+  $('#panelTitle').classList.toggle('visually-hidden', isQr);
   $('#panelTitle').textContent = isQr
     ? 'Scan to mark attendance'
     : 'CCTV result';
   $('#panelTitle').focus({ preventScroll: true });
   $('#liveStatus').textContent = '';
-  connBanner.textContent = socket
-    ? 'Live updates paused, reconnecting...'
-    : 'Live updates are not available on this page. The list refreshes every few seconds.';
+  connBanner.textContent =
+    'Live updates are not available on this page. The list refreshes every few seconds.';
   connBanner.hidden = Boolean(socket);
+  setLiveConnection(true);
   setQrLive(true);
   renderRoster({ force: true });
   loadAllStudents(); // runs alongside; the list fills in when it arrives
@@ -1468,6 +1931,8 @@ function showCctvAfterResume() {
   $('#cctvRescan').hidden = false;
   cctvResultImage.onload = () => {
     cctvViewer.hidden = false;
+    setCctvShape();
+    scheduleCctvLayout();
     resetView();
   };
   cctvResultImage.onerror = () => {};
@@ -1553,13 +2018,6 @@ async function resumeIfOpen() {
   }
 }
 
-// Closing the tab mid-class would lose the roster
-window.addEventListener('beforeunload', event => {
-  if (!sessionCode) return;
-  event.preventDefault();
-  event.returnValue = '';
-});
-
 // ---------- QR code ----------
 // Draw each new code off-screen and copy it over in one step, so the QR never blinks blank
 const qrStage = $('#qrStage');
@@ -1577,7 +2035,15 @@ function setQrLive(live, message) {
   const el = $('#qrLive');
   el.hidden = live && !message;
   el.dataset.state = live ? 'live' : 'stale';
-  el.textContent = message || (live ? '' : 'QR is not refreshing. Retrying...');
+  el.textContent = message || (live ? '' : 'QR not refreshing, retrying...');
+}
+
+function getQrColors() {
+  const styles = getComputedStyle(document.documentElement);
+  return {
+    dark: styles.getPropertyValue('--ink-900').trim(),
+    light: styles.getPropertyValue('--surface').trim(),
+  };
 }
 
 // Draws at the screen's real pixel density with a whole number of pixels per square, so the code is sharp and
@@ -1586,34 +2052,46 @@ function drawQR(token) {
   if (!sessionCode || !token) return;
   if (typeof QRCode === 'undefined') return ($('#qrError').hidden = false);
   const dpr = window.devicePixelRatio || 1;
-  const box =
-    Math.floor(Math.min(qrStage.clientWidth, qrStage.clientHeight)) || 320;
-  const target = Math.max(160, Math.round(box * dpr));
+  const box = Math.floor(
+    Math.min(qrStage.clientWidth, qrStage.clientHeight),
+  ) || 320;
+  const target = Math.max(1, Math.round(box * dpr));
+  const colors = getQrColors();
   const paint = () => {
     const scale = Math.max(2, Math.floor(target / qrSpan));
-    QRCode.toCanvas(offscreen, token, { scale, margin: 1 }, err => {
-      if (err || !sessionCode) return;
-      // Changing a canvas's size clears it, so only do that when it really changed
-      if (
-        qrCanvas.width !== offscreen.width ||
-        qrCanvas.height !== offscreen.height
-      ) {
-        qrCanvas.width = offscreen.width;
-        qrCanvas.height = offscreen.height;
-      }
-      qrCanvas.style.width = `${offscreen.width / dpr}px`;
-      qrCanvas.style.height = `${offscreen.height / dpr}px`;
-      qrCanvas.getContext('2d').drawImage(offscreen, 0, 0);
-    });
+    QRCode.toCanvas(
+      offscreen,
+      token,
+      { scale, margin: 1, color: colors },
+      err => {
+        if (err || !sessionCode) return;
+        // Changing a canvas's size clears it, so only do that when it really changed
+        if (
+          qrCanvas.width !== offscreen.width ||
+          qrCanvas.height !== offscreen.height
+        ) {
+          qrCanvas.width = offscreen.width;
+          qrCanvas.height = offscreen.height;
+        }
+        qrCanvas.style.width = `${offscreen.width / dpr}px`;
+        qrCanvas.style.height = `${offscreen.height / dpr}px`;
+        qrCanvas.getContext('2d').drawImage(offscreen, 0, 0);
+      },
+    );
   };
   if (qrSpan && qrSpanFor === token.length) return paint();
   // One-pixel squares tell how many squares this code has
-  QRCode.toCanvas(offscreen, token, { scale: 1, margin: 1 }, err => {
-    if (err) return;
-    qrSpan = offscreen.width;
-    qrSpanFor = token.length;
-    paint();
-  });
+  QRCode.toCanvas(
+    offscreen,
+    token,
+    { scale: 1, margin: 1, color: colors },
+    err => {
+      if (err) return;
+      qrSpan = offscreen.width;
+      qrSpanFor = token.length;
+      paint();
+    },
+  );
 }
 
 function renderQR(data) {
@@ -1630,6 +2108,12 @@ if (typeof ResizeObserver === 'function')
     cancelAnimationFrame(qrResizeFrame);
     qrResizeFrame = requestAnimationFrame(() => drawQR(lastToken));
   }).observe(qrStage);
+new MutationObserver(() => drawQR(lastToken)).observe(
+  document.documentElement,
+  { attributes: true, attributeFilter: ['data-theme'] },
+);
+const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
+systemTheme.addEventListener?.('change', () => drawQR(lastToken));
 
 // The rotating QR arrives over the socket: the server pushes a new frame several times a second, so there is one
 // request to start it instead of one per frame. Frames are made by the server (backend/utils/qr-feed.js); a photo of
@@ -1721,7 +2205,9 @@ function reportedFaces(response, recognised) {
   return Number.isFinite(sent) && sent >= recognised ? sent : null;
 }
 
-// "28 faces seen · 8 recognised · 20 not recognised" beside the CCTV result title
+// One compact badge beside the CCTV result title: "12/23 recognised" = 12 recognised out of 23 faces found.
+// The gap between the two numbers is the people the teacher may need to add by hand. Green when every face was
+// matched, amber when some were not. Without a face count from the server it falls back to "12 recognised".
 function renderCctvSummary() {
   const summary = $('#cctvSummary');
   if (!cctvResult) {
@@ -1730,21 +2216,26 @@ function renderCctvSummary() {
   }
   const recognised = cctvResult.recognisedIds.size;
   const { detected } = cctvResult;
-  const chip = (className, count, text) => {
-    const el = document.createElement('span');
-    el.className = `badge ${className}`.trim();
-    const num = document.createElement('b');
-    num.textContent = count;
-    el.append(num, ` ${text}`);
-    return el;
-  };
-  const chips = [];
-  if (detected !== null)
-    chips.push(chip('', detected, detected === 1 ? 'face seen' : 'faces seen'));
-  chips.push(chip('badge-success', recognised, 'recognised'));
-  if (detected !== null)
-    chips.push(chip('badge-warning', detected - recognised, 'not recognised'));
-  summary.replaceChildren(...chips);
+  const badge = document.createElement('span');
+  const num = document.createElement('b');
+  if (detected === null) {
+    badge.className = 'badge badge-success';
+    num.textContent = recognised;
+    badge.append(num, ' recognised');
+  } else if (detected === 0) {
+    badge.className = 'badge badge-warning';
+    badge.append('No faces found');
+  } else {
+    const missed = detected - recognised;
+    badge.className = `badge ${missed === 0 ? 'badge-success' : 'badge-warning'}`;
+    num.textContent = `${recognised}/${detected}`;
+    badge.append(num, ' recognised');
+    badge.title =
+      missed === 0
+        ? `All ${detected} faces were recognised`
+        : `${recognised} of ${detected} faces recognised, ${missed} not recognised`;
+  }
+  summary.replaceChildren(badge);
   summary.hidden = false;
 }
 
@@ -1852,6 +2343,8 @@ async function runCCTV() {
   cctvResultImage.onload = () => {
     $('#cctvSkeleton').hidden = true;
     cctvViewer.hidden = false;
+    setCctvShape();
+    scheduleCctvLayout();
     resetView(); // every new picture starts fitted
   };
   cctvResultImage.onerror = () => {
@@ -1888,6 +2381,82 @@ const view = { scale: 1, x: 0, y: 0 }; // x, y: where the picture's top-left cor
 const pointers = new Map(); // fingers (or the mouse button) currently down
 let pinchStart = null;
 
+// On phones the frame is as tall as the picture; on wide screens it fills the card and the picture sits fitted inside
+function setCctvShape() {
+  const { naturalWidth: w, naturalHeight: h } = cctvResultImage;
+  if (w && h) cctvStage.style.setProperty('--cctv-ar', `${w} / ${h}`);
+}
+
+// ---- On wide screens the CCTV card is exactly as wide as the picture needs ----
+// The picture is 16:9 and its height is whatever the card has left under the heading, so its width follows from that.
+// Taking that width for the card (instead of a fixed share) leaves no empty bars beside the picture; the roster gets
+// the rest, but never less than ROSTER_MIN_REM, the width where its rows stay on one line like the QR session's.
+const WIDE_SCREEN = window.matchMedia('(min-width: 900px)');
+const CCTV_MIN_REM = 22; // the card never gets narrower than this
+// Narrowest roster card whose rows still fit on one line (name | roll no. | class | actions). The roster's own
+// one-line threshold is 36rem of content (see @container roster in faculty.css), plus the card's padding and border.
+const ROSTER_MIN_REM = 38.25;
+const STATIC_HINT_ROOM = 32; // px of spare height under the picture needed to keep the usage hint as a plain line
+const px = value => parseFloat(value) || 0;
+let cctvLayoutFrame = 0;
+let cctvLastCol = 0; // last width applied, so an unchanged result touches nothing
+
+function fitCctvLayout() {
+  if (document.fullscreenElement) return; // the picture is on its own full screen layer; nothing to fit
+  const own = qrPanel.dataset.method === 'cctv' && WIDE_SCREEN.matches;
+  if (!own) {
+    liveGrid.style.removeProperty('--cctv-col');
+    liveGrid.style.removeProperty('--roster-col');
+    cctvViewer.classList.remove('has-room');
+    cctvLastCol = 0;
+    return;
+  }
+  const rem = px(getComputedStyle(document.documentElement).fontSize) || 16;
+  const card = getComputedStyle(qrPanel);
+  const rowsHeight = el => {
+    const c = getComputedStyle(el);
+    return el.getBoundingClientRect().height + px(c.marginTop) + px(c.marginBottom);
+  };
+  const shown = el => el.getClientRects().length > 0;
+  // Everything in the card except the picture area itself
+  let used = 0;
+  const panel = $('#cctvPanel');
+  for (const el of qrPanel.children) if (el !== panel && shown(el)) used += rowsHeight(el);
+  for (const el of panel.children)
+    if (el !== cctvViewer && el.id !== 'cctvSkeleton' && shown(el)) used += rowsHeight(el);
+  const inner = qrPanel.clientHeight - px(card.paddingTop) - px(card.paddingBottom);
+  const free = inner - used; // height the picture area can have
+  const padX = qrPanel.offsetWidth - (qrPanel.clientWidth - px(card.paddingLeft) - px(card.paddingRight));
+  const ratio = cctvResultImage.naturalWidth / cctvResultImage.naturalHeight || 16 / 9;
+
+  const total = liveGrid.clientWidth;
+  const gap = px(getComputedStyle(liveGrid).columnGap);
+  const rosterMin = ROSTER_MIN_REM * rem;
+  const qrShare = ((total - gap) * 7) / 15; // what the card gets in a QR session: never less than that
+  const widest = Math.max(qrShare, total - gap - rosterMin);
+  const left = Math.round(Math.max(CCTV_MIN_REM * rem, Math.min(free * ratio + padX, widest)));
+
+  if (left !== cctvLastCol) {
+    cctvLastCol = left;
+    liveGrid.style.setProperty('--cctv-col', `${left}px`);
+    liveGrid.style.setProperty('--roster-col', '1fr');
+  }
+  // Spare height under the picture: use it for the usage hint
+  cctvViewer.classList.toggle('has-room', free - (left - padX) / ratio >= STATIC_HINT_ROOM);
+}
+
+const scheduleCctvLayout = () => {
+  cancelAnimationFrame(cctvLayoutFrame);
+  cctvLayoutFrame = requestAnimationFrame(fitCctvLayout);
+};
+{
+  const watcher = new ResizeObserver(scheduleCctvLayout);
+  watcher.observe(liveGrid);
+  watcher.observe($('#sessionHeader'));
+  watcher.observe($('.panel-head'));
+  WIDE_SCREEN.addEventListener('change', scheduleCctvLayout);
+}
+
 function applyView() {
   const w = cctvStage.clientWidth;
   const h = cctvStage.clientHeight;
@@ -1903,7 +2472,6 @@ function applyView() {
     $(id).setAttribute('aria-disabled', String(atLimit));
   limit('#zoomOutBtn', view.scale <= ZOOM_MIN);
   limit('#zoomInBtn', view.scale >= ZOOM_MAX);
-  limit('#zoomResetBtn', view.scale === ZOOM_MIN);
 }
 
 // Zoom around a point (the cursor, the pinch centre, or the middle) so it stays put
@@ -1934,7 +2502,6 @@ $('#zoomInBtn').addEventListener('click', () => zoomTo(view.scale * ZOOM_STEP));
 $('#zoomOutBtn').addEventListener('click', () =>
   zoomTo(view.scale / ZOOM_STEP),
 );
-$('#zoomResetBtn').addEventListener('click', resetView);
 
 cctvStage.addEventListener(
   'wheel',
@@ -2031,6 +2598,17 @@ cctvStage.addEventListener('keydown', event => {
 
 // Full screen for the image keeps the zoom controls on screen
 cctvFullscreenBtn.hidden = !document.fullscreenEnabled;
+function syncCctvFullscreenButton() {
+  const isFullscreen = document.fullscreenElement === cctvViewer;
+  const [expandIcon, compressIcon] = cctvFullscreenBtn.querySelectorAll('svg');
+  expandIcon.hidden = isFullscreen;
+  compressIcon.hidden = !isFullscreen;
+  cctvFullscreenBtn.setAttribute(
+    'aria-label',
+    isFullscreen ? 'Exit full screen' : 'Full screen',
+  );
+}
+syncCctvFullscreenButton();
 cctvFullscreenBtn.addEventListener('click', async () => {
   try {
     if (document.fullscreenElement === cctvViewer)
@@ -2043,6 +2621,21 @@ cctvFullscreenBtn.addEventListener('click', async () => {
 window.addEventListener('resize', applyView);
 
 // ---------- Full screen (for projectors) ----------
+function syncProjectorFullscreenButton() {
+  const isFullscreen = document.fullscreenElement === liveGrid;
+  const iconPath = $('#fullscreenIconPath');
+  iconPath.setAttribute(
+    'd',
+    isFullscreen
+      ? 'M8 3v5H3m18 0h-5V3M3 16h5v5m8 0v-5h5'
+      : 'M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m8 0h3a2 2 0 0 0 2-2v-3',
+  );
+  fullscreenBtn.setAttribute(
+    'aria-label',
+    isFullscreen ? 'Exit full screen' : 'Full screen',
+  );
+}
+syncProjectorFullscreenButton();
 fullscreenBtn.addEventListener('click', () => {
   if (document.fullscreenElement) document.exitFullscreen();
   else
@@ -2051,14 +2644,9 @@ fullscreenBtn.addEventListener('click', () => {
     );
 });
 document.addEventListener('fullscreenchange', () => {
-  fullscreenBtn.textContent =
-    document.fullscreenElement === liveGrid
-      ? 'Exit full screen'
-      : 'Full screen';
-  cctvFullscreenBtn.textContent =
-    document.fullscreenElement === cctvViewer
-      ? 'Exit full screen'
-      : 'Full screen';
+  syncProjectorFullscreenButton();
+  syncCctvFullscreenButton();
+  scheduleCctvLayout(); // back from full screen: fit the card again
   applyView(); // the picture's frame just changed size
 });
 
@@ -2102,17 +2690,24 @@ function renderManualList() {
       label.dataset.selected = manualSelected.has(student.id)
         ? 'true'
         : 'false';
+      const avatar = document.createElement('span');
+      avatar.className = 'roster-avatar pick-avatar';
+      avatar.setAttribute('aria-hidden', 'true');
+      avatar.textContent = /\s/.test(student.name.trim())
+        ? initialsOf(student.name, '?')
+        : Array.from(student.name.trim()).slice(0, 2).join('').toUpperCase() ||
+          '?';
+      const name = document.createElement('span');
+      name.className = 'pick-name';
+      name.textContent = student.name;
       const roll = document.createElement('span');
       roll.className = 'pick-roll';
-      roll.textContent = idLabel(student);
+      setRoll(roll, idLabel(student));
       const box = document.createElement('input');
       box.type = 'checkbox';
       box.value = student.id;
       box.checked = manualSelected.has(student.id);
-      const name = document.createElement('span');
-      name.className = 'pick-name';
-      name.textContent = student.name;
-      label.append(roll, box, name);
+      label.append(box, avatar, name, roll);
       li.appendChild(label);
       return li;
     }),
@@ -2141,6 +2736,18 @@ function updateManualControls() {
 $('#manualSearch').addEventListener('input', event => {
   manualQuery = event.target.value;
   renderManualList();
+});
+$('#manualSearch').addEventListener('keydown', event => {
+  if (
+    event.key !== 'Enter' ||
+    event.isComposing ||
+    event.keyCode === 229 ||
+    manualShown.length !== 1
+  )
+    return;
+  event.preventDefault();
+  const checkbox = $('#manual-attendance-list input[type="checkbox"]');
+  checkbox?.click();
 });
 $('#manualSelectAll').addEventListener('change', event => {
   manualShown.forEach(s =>
@@ -2183,12 +2790,10 @@ $('#add-selected-btn').addEventListener('click', async event => {
 // ---------- Submit (asks first, because it ends the session) ----------
 $('#submit-attendance-btn').addEventListener('click', () => {
   const present = presentCount();
-  const total = allStudents.size;
   const absent = [...allStudents.values()].filter(s => !isPresent(s.id));
 
-  $('#submitSummary').textContent = total
-    ? `${present} of ${total} students will be marked present and ${absent.length} absent. This ends the session.`
-    : `${present} student${present === 1 ? '' : 's'} will be marked present. This ends the session.`;
+  // Both halves of the split: the number present is what catches an early submit
+  $('#submitSummary').textContent = `${present} present · ${absent.length} will be marked absent.`;
 
   const warn = $('#submitWarn');
   warn.hidden = present > 0;
@@ -2198,7 +2803,21 @@ $('#submit-attendance-btn').addEventListener('click', () => {
   $('#submitAbsentList').replaceChildren(
     ...absent.map(s => {
       const li = document.createElement('li');
-      setNameCell(li, s.name, idLabel(s));
+      li.className = 'absent-row';
+      const avatar = document.createElement('span');
+      avatar.className = 'roster-avatar pick-avatar';
+      avatar.setAttribute('aria-hidden', 'true');
+      avatar.textContent = /\s/.test(s.name.trim())
+        ? initialsOf(s.name, '?')
+        : Array.from(s.name.trim()).slice(0, 2).join('').toUpperCase() || '?';
+      const name = document.createElement('span');
+      name.className = 'pick-name';
+      name.textContent = s.name;
+      name.title = s.name;
+      const roll = document.createElement('span');
+      roll.className = 'pick-roll';
+      setRoll(roll, idLabel(s));
+      li.append(avatar, name, roll);
       return li;
     }),
   );
@@ -2244,7 +2863,7 @@ let discardCount = 0;
 function describeDiscard(count, changed = false) {
   discardCount = count;
   $('#discardText').textContent =
-    'The period becomes free again, so another faculty (or you) can start it. This cannot be undone.';
+    'The period becomes available again.';
   const warn = $('#discardWarn');
   warn.hidden = count === 0;
   warn.textContent = count
@@ -2308,10 +2927,12 @@ function endSessionUI() {
   studentList.replaceChildren();
   rosterQuery = '';
   $('#rosterSearch').value = '';
+  classFilter = null;
   document.title = baseTitle;
   if (document.fullscreenElement) document.exitFullscreen();
   cctvViewer.hidden = true;
   $('#cctvSummary').hidden = true;
+  $('#cctvRescan').hidden = true;
   cctvResult = null;
   cctvResultImage.removeAttribute('src');
   resetView();
@@ -2319,6 +2940,7 @@ function endSessionUI() {
   $('#cctvError').hidden = true;
   $('#qrError').hidden = true;
   connBanner.hidden = true;
+  setLiveConnection(true);
   refreshFailures = 0;
   afterStart.hidden = true;
   beforeStart.hidden = false;

@@ -5,8 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f4f5f7" />
     <title>Faculty | Smart Attendance Marker</title>
-    <link rel="icon" href="brand/favicon.svg" type="image/svg+xml" />
-    <link rel="icon" href="icons/qr-code.png" />
+    <link rel="icon" href="icons/qr-code-favicon.png" type="image/png" />
     <link rel="stylesheet" href="css/tokens.css" />
     <link rel="stylesheet" href="css/components.css" />
     <link rel="stylesheet" href="css/brand.css" />
@@ -20,7 +19,7 @@
     <script src="/utils/auth-guard.js" type="module"></script>
   </head>
 
-  <body>
+  <body data-view="session">
     <a class="skip-link" href="#main">Skip to content</a>
 
     <header class="app-header">
@@ -33,7 +32,7 @@
       <button id="headerStatus" class="header-status" type="button" hidden>
         <span class="live-dot" aria-hidden="true"></span>
         <span class="live-label">Live</span>
-        <span id="headerStatusWhat" class="live-what"></span>
+        <span id="headerStatusRoom" class="live-room"></span>
         <span id="headerStatusCount" class="live-count"></span>
       </button>
       <div class="header-right">
@@ -61,28 +60,15 @@
     <main id="main" class="app-main wide">
       <!-- Session tab: setup card, then live view once started -->
       <section id="view-session" class="view">
-        <section id="beforeStart" class="card setup" aria-labelledby="sub-name">
-          <h1 id="sub-name" class="setup-title">Pick a class</h1>
-
+        <section id="beforeStart" class="setup" aria-labelledby="setupHeading">
           <div class="setup-grid">
-            <!-- When and what -->
-            <div class="setup-col">
-              <div class="when-row">
-                <div class="date-chip">
-                  <button id="datePrev" class="date-step" type="button" aria-label="Previous day">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
-                  </button>
-                  <button id="dateChip" class="date-label" type="button" aria-label="Date. Open the calendar">
-                    <svg class="date-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5.5" width="16" height="14" rx="2.5" /><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4" /></svg>
-                    <span id="dateText"></span>
-                  </button>
-                  <button id="dateNext" class="date-step" type="button" aria-label="Next day">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
-                  </button>
-                  <!-- The calendar itself is the browser's; the chip above shows the date as DD/MM/YYYY on every device -->
-                  <input class="date-native" type="date" id="date" tabindex="-1" aria-hidden="true" />
+            <!-- Steps: when, then what -->
+            <div class="card setup-steps">
+              <div class="setup-head">
+                <div class="setup-titles">
+                  <h1 id="setupHeading" class="setup-title">Start a session</h1>
+                  <p id="setupLead" class="setup-lead">Regular follows your timetable. Use Extra to merge/borrow other classes.</p>
                 </div>
-
                 <fieldset class="type-switch">
                   <legend class="visually-hidden">Session type</legend>
                   <div class="segmented">
@@ -91,11 +77,29 @@
                   </div>
                 </fieldset>
               </div>
-              <p id="dateWarn" class="alert alert-warning" role="status" hidden></p>
+
+              <!-- Week strip: Monday to Saturday (no classes on Sundays). The real date lives in the hidden input below. -->
+              <div class="week">
+                <div class="week-head">
+                  <span id="weekMonth" class="week-month"></span>
+                  <button id="dateChip" class="link-action" type="button" aria-label="Jump to a date. Opens the calendar">Jump to date</button>
+                </div>
+                <div class="week-strip">
+                  <button id="datePrev" class="week-step" type="button" aria-label="Previous week">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
+                  </button>
+                  <div id="weekDays" class="week-days" role="group" aria-label="Pick a day"></div>
+                  <button id="dateNext" class="week-step" type="button" aria-label="Next week">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+                  </button>
+                </div>
+                <!-- The calendar itself is the browser's; dates are shown as DD/MM/YYYY on every device -->
+                <input class="date-native" type="date" id="date" tabindex="-1" aria-hidden="true" />
+              </div>
 
               <!-- Regular: one of the faculty's own planned periods -->
-              <fieldset id="regularSetup" class="field">
-                <legend>Period</legend>
+              <fieldset id="regularSetup" class="field setup-block">
+                <legend id="periodsLegend">Periods</legend>
                 <div id="slots" class="slot-grid"></div>
                 <p id="slotMsg" class="alert alert-danger" role="alert" hidden></p>
                 <p id="slotEmpty" class="muted" hidden>
@@ -105,7 +109,7 @@
 
               <!-- Extra: an extra class, a borrowed period, or classes taken together. Only classes you teach. -->
               <div id="extraSetup" class="extra-setup" hidden>
-                <fieldset class="field">
+                <fieldset class="field setup-block">
                   <legend>Classes <span class="legend-hint">pick more than one to take them together</span></legend>
                   <div id="arrClasses" class="pick-chips"></div>
                 </fieldset>
@@ -113,7 +117,7 @@
                   <label for="arrSubject">Subject</label>
                   <select id="arrSubject" class="input"></select>
                 </div>
-                <fieldset class="field">
+                <fieldset class="field setup-block">
                   <legend>Periods <span class="legend-hint">two or more for a double lecture</span></legend>
                   <div id="arrSlots" class="period-grid"></div>
                   <p id="arrNote" class="pick-note" role="status"></p>
@@ -122,80 +126,163 @@
               </div>
             </div>
 
-            <!-- Where and how -->
-            <div class="setup-col setup-where">
-              <div class="field">
-                <span class="field-label" id="roomLabel">Room</span>
-                <label class="room-chip" for="roomSelect">
-                  <svg class="date-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V5.5A1.5 1.5 0 0 1 6.5 4h11A1.5 1.5 0 0 1 19 5.5V20M3.5 20h17" /><circle cx="15" cy="12.5" r="0.9" /></svg>
-                  <span id="roomText">Pick a room</span>
-                  <span class="room-change">change</span>
-                  <select id="roomSelect" aria-labelledby="roomLabel"></select>
-                </label>
-                <p id="roomHint" class="field-msg info" role="status" hidden></p>
+            <!-- Summary: what Start will open, and the Start button -->
+            <aside class="card setup-summary" aria-labelledby="sub-name">
+              <div class="sum-top">
+                <span class="sum-kicker">Session summary</span>
+                <span id="sumType" class="sum-type" data-type="regular">Regular</span>
               </div>
+              <h2 id="sub-name" class="sum-subject is-placeholder">Pick a class</h2>
+              <ul id="sumClasses" class="sum-chips" aria-label="Classes"></ul>
+
+              <dl class="sum-rows">
+                <div class="sum-row"><dt>Date</dt><dd id="sumDate"></dd></div>
+                <div id="sumPeriodsRow" class="sum-row" hidden><dt>Periods</dt><dd id="sumPeriods">&mdash;</dd></div>
+                <div class="sum-row"><dt>Time</dt><dd id="sumTime">&mdash;</dd></div>
+                <div class="sum-row">
+                  <dt id="roomLabel">Classroom</dt>
+                  <dd>
+                    <label class="room-chip" for="roomSelect">
+                      <span id="roomText">Pick a classroom</span>
+                      <span class="room-change">Change</span>
+                      <select id="roomSelect" aria-labelledby="roomLabel"></select>
+                    </label>
+                  </dd>
+                </div>
+              </dl>
+              <p id="roomHint" class="field-msg info" role="status" hidden></p>
 
               <fieldset class="field">
                 <legend>Attendance method</legend>
-                <div class="segmented">
-                  <label><input type="radio" name="method" value="qr" checked /><span>QR code</span></label>
-                  <label><input type="radio" name="method" value="cctv" /><span>CCTV</span></label>
+                <div class="method-cards">
+                  <label class="method-card">
+                    <input type="radio" name="method" value="qr" checked />
+                    <span class="method-body">
+                      <span class="method-title">
+                        <span
+                          class="attendance-icon attendance-icon-qr"
+                          aria-hidden="true"></span>
+                        <b>QR code</b>
+                      </span>
+                      <small>Students scan a code</small>
+                    </span>
+                  </label>
+                  <label class="method-card">
+                    <input type="radio" name="method" value="cctv" />
+                    <span class="method-body">
+                      <span class="method-title">
+                        <svg class="attendance-icon attendance-icon-camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="m6.3 3.2 14 8.1-3.1 5.4-14-8.1a2.1 2.1 0 0 1-.8-2.9l1-1.7a2.1 2.1 0 0 1 2.9-.8Z" />
+                          <path d="m18.7 10.4 3.8-1.2v7.1l-3.8-1.1M9.1 12.2l-2.2 5.2a3.3 3.3 0 0 1-3 2H1.5" />
+                        </svg>
+                        <b>CCTV</b>
+                      </span>
+                      <small>Face recognition</small>
+                    </span>
+                  </label>
                 </div>
               </fieldset>
 
+              <div id="borrowBox" class="borrow-box" role="status" hidden></div>
+
               <div class="start-row">
+                <p id="dateWarn" class="alert alert-warning" role="status" hidden></p>
                 <button id="startSessionBtn" class="btn btn-primary" type="button" disabled aria-describedby="startReason">
                   Start session
                 </button>
                 <p id="startReason" class="start-reason" role="status"></p>
               </div>
-            </div>
+            </aside>
           </div>
         </section>
 
         <section id="afterStart" hidden>
-          <!-- Shown only while the live-update connection is down -->
+          <!-- Shown only when this page has no live connection at all (the list then refreshes by polling).
+               A dropped connection is shown on the LIVE chip and over the QR instead, so nothing here moves. -->
           <p id="connBanner" class="alert alert-warning" role="status" hidden>
             Live updates paused, reconnecting...
           </p>
 
-          <!-- One compact bar: subject, where and when, merged classes, and the present count -->
-          <section id="sessionHeader" class="card session-bar" aria-labelledby="shSubject" hidden>
-            <div class="sb-main">
-              <div class="sb-title">
-                <h2 id="shSubject" class="sb-subject"></h2>
-                <ul id="shTags" class="sb-tags" aria-label="Session type"></ul>
-              </div>
-              <p id="shMeta" class="sb-meta"></p>
-              <ul id="shClasses" class="sb-chips" aria-label="Classes taken together" hidden></ul>
-            </div>
-            <p class="sb-count">
-              <span class="sb-count-num"><b id="shPresent">0</b><span id="shTotal"></span></span>
-              <span class="sb-count-label">present</span>
-            </p>
-          </section>
-
           <div class="live-grid">
-            <!-- Full screen includes both the QR code and the live student roster -->
-            <div id="qrPanel" class="card qr-panel">
+            <!-- Full screen includes both the QR code and the live student roster.
+                 Session details and attendance counts stay at the top of this card, while the room and live count
+                 are also available in the app header. -->
+            <div id="qrPanel" class="card qr-panel" data-method="qr">
+              <header id="sessionHeader" class="session-info" aria-labelledby="shSubject" data-merged="false" hidden>
+                <div class="si-top">
+                  <div class="si-title">
+                    <h2 id="shSubject" class="si-subject"></h2>
+                    <ul id="shTags" class="si-tags" aria-label="Session type"></ul>
+                  </div>
+                  <p class="si-count">
+                    <span class="si-count-num"><b id="shPresent">0</b><span id="shTotal"></span></span>
+                    <span class="si-count-label">present</span>
+                  </p>
+                </div>
+                <!-- When/where facts and the class filter chips share one wrapping row, so they sit side by side
+                     when there is room instead of always taking a line each -->
+                <div class="si-row">
+                  <ul id="shMeta" class="si-facts" aria-label="When and where"></ul>
+                  <ul id="shClasses" class="si-classes" aria-label="Show only one class in the list" hidden></ul>
+                </div>
+              </header>
+              <!-- QR: only a screen-reader heading. CCTV: the visible title and the face counts. -->
               <div class="panel-head">
                 <div class="panel-title-wrap">
                   <h2 id="panelTitle" tabindex="-1">Scan to mark attendance</h2>
                   <!-- CCTV only: how many faces the camera found, and how many of them were recognised -->
                   <p id="cctvSummary" class="cctv-summary" hidden></p>
                 </div>
-                <p class="fs-only fs-count" aria-hidden="true">
-                  <b id="fsCount">0</b> present
-                </p>
-                <button
-                  id="fullscreenBtn"
-                  class="btn btn-secondary"
-                  type="button">
-                  Full screen
-                </button>
+                <!-- CCTV only: shares the heading row so it costs no height. The long explanation is a tooltip
+                     for sighted users and a description for screen readers. -->
+                <div id="cctvRescan" class="cctv-rescan" hidden>
+                  <button
+                    id="cctvRescanBtn"
+                    class="btn btn-secondary btn-sm"
+                    type="button"
+                    title="Students already marked stay marked."
+                    aria-describedby="cctvRescanHelp">
+                    <svg
+                      class="rescan-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      aria-hidden="true">
+                      <path d="M20 11a8 8 0 0 0-14.5-4.6L4 8m0-4v4h4M4 13a8 8 0 0 0 14.5 4.6L20 16m0 4v-4h-4" />
+                    </svg>
+                    <span class="rescan-label">Scan again</span>
+                  </button>
+                  <span id="cctvRescanHelp" class="visually-hidden">
+                    Students already marked
+                    stay marked.
+                  </span>
+                </div>
               </div>
               <div id="qrStage" class="qr-stage">
                 <canvas id="qrCanvas" aria-label="Attendance QR code"></canvas>
+                <button
+                  id="fullscreenBtn"
+                  class="qr-fullscreen-btn"
+                  type="button"
+                  title="Fullscreen"
+                  aria-label="Full screen">
+                  <svg
+                    class="fullscreen-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true">
+                    <path
+                      id="fullscreenIconPath"
+                      d="M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m8 0h3a2 2 0 0 0 2-2v-3" />
+                  </svg>
+                </button>
                 <!-- Hidden while the QR refreshes normally. Shown only when it stops refreshing. -->
                 <p id="qrLive" class="qr-live" data-state="stale" role="status" hidden></p>
               </div>
@@ -203,18 +290,6 @@
                 The QR library could not load. Check the network and reload.
               </p>
               <div id="cctvPanel" hidden>
-                <div id="cctvRescan" class="cctv-rescan" hidden>
-                  <button
-                    id="cctvRescanBtn"
-                    class="btn btn-secondary btn-sm"
-                    type="button">
-                    Scan again
-                  </button>
-                  <p>
-                    Finds students who arrived late. Students already marked
-                    stay marked.
-                  </p>
-                </div>
                 <p id="cctvCountdown" class="cctv-countdown" role="status" hidden></p>
                 <div id="cctvSkeleton" class="skeleton"></div>
                 <div
@@ -272,16 +347,34 @@
                       </svg>
                     </button>
                     <button
-                      id="zoomResetBtn"
-                      class="btn btn-secondary btn-sm"
-                      type="button">
-                      Fit
-                    </button>
-                    <button
                       id="cctvFullscreenBtn"
                       class="btn btn-secondary btn-sm zoom-fs"
-                      type="button">
-                      Full screen
+                      type="button"
+                      aria-label="Full screen">
+                      <svg
+                        class="zoom-fs-icon"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true">
+                        <path
+                          d="M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m8 0h3a2 2 0 0 0 2-2v-3" />
+                      </svg>
+                      <svg
+                        class="zoom-fs-icon"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                        hidden>
+                        <path d="M8 3v5H3m18 0h-5V3M3 16h5v5m8 0v-5h5" />
+                      </svg>
                     </button>
                   </div>
                   <div
@@ -295,9 +388,9 @@
                       alt="CCTV attendance result"
                       draggable="false" />
                   </div>
+                  <!-- Floats over the picture and fades out by itself, so it takes no row -->
                   <p class="zoom-hint">
-                    Pinch or Ctrl + scroll to zoom, drag to move, double-click
-                    to zoom in.
+                    Pinch to zoom, drag to move.
                   </p>
                 </div>
               </div>
@@ -305,19 +398,53 @@
 
             <div class="card roster-panel">
               <div class="roster-tools">
-                <input
-                  id="rosterSearch"
-                  class="input"
-                  type="search"
-                  placeholder="Search students"
-                  aria-label="Search students"
-                  autocomplete="off" />
+                <div class="roster-search">
+                  <svg
+                    class="roster-search-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden="true">
+                    <circle cx="10.8" cy="10.8" r="6.8" />
+                    <path d="m16 16 4.2 4.2" />
+                  </svg>
+                  <input
+                    id="rosterSearch"
+                    class="input"
+                    type="search"
+                    placeholder="Search name or roll no."
+                    aria-label="Search students by name or roll number"
+                    autocomplete="off" />
+                </div>
                 <button
                   id="add-manually-btn"
                   class="btn btn-secondary"
                   type="button">
+                  <svg class="attendance-icon attendance-icon-manual" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M6 3h9l4 4v14H6z" />
+                    <path d="M15 3v4h4M9.5 12.5h6M9.5 16.5h4" />
+                  </svg>
                   Add manually
                 </button>
+                <div class="sort-pick">
+                  <button
+                    id="rosterSortButton"
+                    class="sort-trigger"
+                    type="button"
+                    aria-label="Sort students: Roll number"
+                    aria-haspopup="menu"
+                    aria-expanded="false"
+                    aria-controls="rosterSortMenu">
+                    <svg class="sort-icon" viewBox="0 0 512 512" aria-hidden="true" >
+                      <path d="M363 0 469 89l-30 30-55-55v384h-43V64l-54 55-31-30zM128 0h43v448l54-55 31 30-75 75q-32 32-64 0l-74-75 30-30 55 55z" />
+                    </svg>
+                    <span>Sort</span>
+                  </button>
+                  <div id="rosterSortMenu" class="sort-menu" role="menu" aria-label="Sort students" hidden>
+                    <button class="sort-option" type="button" role="menuitemradio" aria-checked="true" data-sort="roll">Roll number</button>
+                    <button class="sort-option" type="button" role="menuitemradio" aria-checked="false" data-sort="name">Name A–Z</button>
+                    <button class="sort-option" type="button" role="menuitemradio" aria-checked="false" data-sort="recent">Latest first</button>
+                  </div>
+                </div>
               </div>
               <p id="liveStatus" class="live-status" role="status"></p>
 
@@ -367,18 +494,29 @@
       aria-labelledby="manualTitle">
       <h2 id="manualTitle">Add students manually</h2>
       <div class="pick-tools">
-        <input
-          id="manualSearch"
-          class="input"
-          type="search"
-          placeholder="Search by name or roll number"
-          aria-label="Search students"
-          autocomplete="off" />
-        <label class="pick-all">
-          <input id="manualSelectAll" type="checkbox" />
-          <span>Select all</span>
-        </label>
+        <div class="roster-search manual-search">
+          <svg
+            class="roster-search-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true">
+            <circle cx="10.8" cy="10.8" r="6.8" />
+            <path d="m16 16 4.2 4.2" />
+          </svg>
+          <input
+            id="manualSearch"
+            class="input"
+            type="search"
+            placeholder="Search name or roll no."
+            aria-label="Search students"
+            autocomplete="off" />
+        </div>
       </div>
+      <!-- Sits over the checkbox column of the rows below, so "Select all" lines up with what it selects -->
+      <label class="pick-all">
+        <input id="manualSelectAll" type="checkbox" />
+        <span>Select all</span>
+      </label>
       <ul id="manual-attendance-list" class="pick-list" data-checkbox="side"></ul>
       <p id="manualEmpty" class="muted" hidden></p>
       <div class="dialog-actions">
@@ -424,10 +562,9 @@
 
     <dialog id="submit-dialog" class="dialog" aria-labelledby="submitTitle">
       <h2 id="submitTitle">Submit attendance?</h2>
-      <p id="submitSummary"></p>
+      <p id="submitSummary" class="alert alert-warning" role="status"></p>
       <p id="submitWarn" class="alert alert-warning" role="alert" hidden></p>
       <div id="submitAbsentBox" hidden>
-        <p class="absent-heading">Will be marked absent</p>
         <ul id="submitAbsentList" class="absent-list"></ul>
       </div>
       <div class="dialog-actions">

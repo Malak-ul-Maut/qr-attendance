@@ -11,7 +11,6 @@ const dbPath = path.join(__dirname, '../database.db');
 // silently creating an empty database with no tables.
 const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, err => {
   if (err) console.error('Database connection failed:', err);
-  else console.log('Connected to SQLite database');
 });
 
 db.serialize(() => {
