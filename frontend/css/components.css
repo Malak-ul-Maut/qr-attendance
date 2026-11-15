@@ -425,7 +425,7 @@ dialog:focus { outline: none; }
 /* While a dialog is open the page behind it stays put (needs :has; older browsers simply scroll behind it) */
 body:has(dialog[open]) { overflow: hidden; }
 dialog.dialog { overscroll-behavior: contain; }
-/* A form dialog with unsaved edits shakes instead of closing when the dark area is clicked (utils/dialog.js) */
+/* A form dialog with unsaved edits shakes instead of closing when the dark area is clicked (js/utils/dialog.js) */
 @keyframes dialog-nudge { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
 dialog.dialog[data-nudge] { animation: dialog-nudge 0.3s ease; }
 @media (prefers-reduced-motion: reduce) { dialog.dialog[data-nudge] { animation: none; outline: 2px solid var(--red-600); } }
@@ -491,8 +491,8 @@ dialog.dialog[data-nudge] { animation: dialog-nudge 0.3s ease; }
   width: 1.4rem;
   height: 1.4rem;
   margin-top: -0.7rem;
-  background: linear-gradient(145deg, #30343c, #202328);
-  border: 1px solid #202328;
+  background: linear-gradient(145deg, #ffffff, #e8ebf0);
+  border: 1px solid #ffffff;
   border-radius: 999px;
   box-shadow: 0 2px 5px rgba(32, 35, 40, 0.22);
   transition:
@@ -510,7 +510,7 @@ dialog.dialog[data-nudge] { animation: dialog-nudge 0.3s ease; }
   position: absolute;
   width: 0.85rem;
   height: 0.85rem;
-  color: #ffffff;
+  color: #30343c;
   opacity: 0;
   transform: scale(0.65) rotate(-25deg);
   visibility: hidden;

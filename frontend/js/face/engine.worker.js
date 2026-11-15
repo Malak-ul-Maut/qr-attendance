@@ -8,7 +8,7 @@
 /* global ort */
 'use strict';
 
-const ORT_BASE = '/utils/ort/';
+const ORT_BASE = '/public/vendor/ort/';
 importScripts(ORT_BASE + 'ort.wasm.min.js');
 
 const STRIDES = [8, 16, 32];

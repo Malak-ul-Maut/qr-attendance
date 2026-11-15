@@ -1,4 +1,4 @@
-import { dbGet } from './db.js';
+import { dbGet } from '../db/db.js';
 import { issueToken, readToken } from './auth-token.js';
 
 // Not set by the answers so far; the plan assumed 12 hours.

@@ -37,7 +37,7 @@
   z-index: -1;
 }
 .hero::before {
-  background: url('../icons/mit-building.webp') center bottom / cover no-repeat;
+  background: url('../public/icons/mit-building.webp') center bottom / cover no-repeat;
 }
 /* Dark on the left so the white heading reads, clear on the right so the red building stays in the foreground */
 .hero::after {

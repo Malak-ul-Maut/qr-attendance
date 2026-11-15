@@ -1,4 +1,4 @@
-// brand.js - writes the names and logo from utils/brand-config.js into the page. Loaded with `defer`.
+// brand.js - writes the names and logo from js/utils/brand-config.js into the page. Loaded with `defer`.
 //
 // Mark an element and it is filled in:
 //   <span data-brand="product-name">      -> "Smart Attendance Marker"

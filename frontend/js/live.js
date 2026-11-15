@@ -5,7 +5,7 @@
 //   - liveSocket: the same connection, for the scan flow to listen to its own session.
 // If the library did not load or the connection is down, liveJoined() is false and the pages go back to checking on
 // their own timers, so nothing depends on this working.
-import { getCurrentUser } from '../utils/storage.js';
+import { getCurrentUser } from './utils/storage.js';
 
 export const liveSocket = typeof io === 'function' ? io(window.API_BASE || location.origin) : null;
 let joined = false;

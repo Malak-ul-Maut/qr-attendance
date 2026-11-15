@@ -89,7 +89,7 @@
   bottom: 0;
   width: min(62vw, 58rem);
   height: min(86%, 40rem);
-  background: url('../icons/mit-building.webp') center top / cover no-repeat;
+  background: url('../public/icons/mit-building.webp') center top / cover no-repeat;
   mix-blend-mode: multiply;
   pointer-events: none;
   -webkit-mask-image:

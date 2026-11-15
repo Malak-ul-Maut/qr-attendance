@@ -1,5 +1,5 @@
 import express from 'express';
-import { dbAll, dbGet, dbRun, withTransaction } from '../../utils/db.js';
+import { dbAll, dbGet, dbRun, withTransaction } from '../../db/db.js';
 import { todayLocal, isValidDate } from '../../utils/dates.js';
 import { HttpError, clean, describeError, makeUniqueAbbr, generatePassword, checkPassword, checkEmail, checkPhone, checkUsername, checkYear } from './common.js';
 import { working, mutateNow, lookups, conflictsFor, conflictError } from '../../utils/timetable-draft.js';

@@ -7,7 +7,7 @@
 // onChangePassword) and Log out. It is a plain show/hide panel, not an ARIA menu: every control is a normal
 // button reached with Tab, so no arrow-key handling is needed.
 //   Escape or a click or Tab outside closes it; Escape returns focus to the avatar button.
-import { logout } from '../utils/storage.js';
+import { logout } from './utils/storage.js';
 
 const TITLES = /^(dr|prof|mr|mrs|ms|mx|er|shri|smt)\.?$/i;
 const ROLE_LABEL = { student: 'Student', faculty: 'Faculty', admin: 'Admin' };

@@ -1,5 +1,0 @@
-[
-  "/utils/models/minifasnetv2_quant.onnx",
-  "/utils/models/det_500m.onnx",
-  "/utils/models/w600k_mbf.onnx"
-]

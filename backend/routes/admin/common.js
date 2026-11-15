@@ -1,6 +1,5 @@
-import { dbAll } from '../../utils/db.js';
 import { randomInt } from 'crypto';
-import { dbGet } from '../../utils/db.js';
+import { dbAll, dbGet } from '../../db/db.js';
 
 export class HttpError extends Error {
   constructor(status, code, message, extra = {}) {

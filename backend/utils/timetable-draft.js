@@ -1,7 +1,7 @@
 // timetable-draft.js - the timetable is edited as ONE shared draft (with undo / redo) and only
 // reaches the live tables when it is published with an effective date. Every publish becomes a
 // "version" (the date it took effect).
-import { dbAll, dbGet, dbRun, withTransaction } from './db.js';
+import { dbAll, dbGet, dbRun, withTransaction } from '../db/db.js';
 import { addDays, isValidDate, todayLocal } from './dates.js';
 import { HttpError } from '../routes/admin/common.js';
 

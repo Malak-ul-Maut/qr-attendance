@@ -1,5 +1,5 @@
 import express from 'express';
-import { dbAll } from '../../utils/db.js';
+import { dbAll } from '../../db/db.js';
 import { isValidDate, todayLocal } from '../../utils/dates.js';
 import { HttpError, wrap, clean } from './common.js';
 import {

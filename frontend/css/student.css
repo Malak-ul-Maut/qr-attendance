@@ -74,8 +74,8 @@
   height: 24px;
   flex: none;
   background-color: currentColor;
-  -webkit-mask: url('../icons/qr-code-favicon.png') center / contain no-repeat;
-  mask: url('../icons/qr-code-favicon.png') center / contain no-repeat;
+  -webkit-mask: url('../public/icons/qr-code-favicon.png') center / contain no-repeat;
+  mask: url('../public/icons/qr-code-favicon.png') center / contain no-repeat;
 }
 .lunch { list-style: none; text-align: center; font-size: var(--text-sm); font-weight: 600; color: var(--ink-500); padding: var(--space-2) 0; border-top: 1px dashed var(--line-strong); border-bottom: 1px dashed var(--line-strong); }
 

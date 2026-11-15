@@ -2,13 +2,14 @@
   "name": "qr-attendance",
   "version": "1.0.0",
   "description": "Mark attendance securely using dynamic QR codes",
-  "main": "backend/index.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node --import ./backend/load-env.js backend/index.js",
-    "dev": "node --watch-path=backend --watch-path=.env --import ./backend/load-env.js backend/index.js",
-    "assets": "node backend/scripts/fetch-assets.mjs",
+    "start": "node --import ./backend/load-env.js ./backend/index.js",
+    "dev": "node --watch-path=. --watch-path=../.env --import ./backend/load-env.js index.js",
+    "assets": "node scripts/fetch-assets.mjs",
     "host": "zrok2 share public https://localhost:4000 --backend-mode proxy -n public:smart-attendance --insecure",
-    "build": "node backend/scripts/build-frontend.mjs --proxy=https://scrimmage-unlucky-dispersed.ngrok-free.dev"
+    "build": "node scripts/build-frontend.mjs",
+    "deploy": "cd pages-worker && npx wrangler deploy"
   },
   "keywords": [
     "qr-attendance"
@@ -25,12 +26,12 @@
     "cors": "^2.8.5",
     "express": "^4.17.1",
     "qr-scanner": "^1.4.2",
-    "selfsigned": "^5.2.0",
     "socket.io": "^4.8.1",
     "sqlite3": "^5.1.7"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
+    "mkcert": "^3.2.0",
     "prettier": "3.7.4"
   },
   "prettier": {

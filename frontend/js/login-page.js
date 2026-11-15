@@ -1,5 +1,5 @@
-import postData from '../utils/fetch.js';
-import { storeUser } from '../utils/storage.js';
+import postData from './utils/fetch.js';
+import { storeUser } from './utils/storage.js';
 import { showToast } from './ui.js';
 
 // Read the role from the page address, e.g. login-page.html?role=faculty

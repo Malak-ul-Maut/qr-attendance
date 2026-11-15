@@ -1,9 +1,9 @@
 // Entry point of the student page: header, tabs, then the tab modules.
-import { getCurrentUser } from '../utils/storage.js';
+import { getCurrentUser } from './utils/storage.js';
 import { session } from './state.js';
 import { showToast } from './ui.js';
 import { mountAccountMenu } from './account-menu.js';
-import './today.js';
+import './student-dashboard.js';
 import './attendance.js';
 import './profile.js';
 import './password-dialog.js';
@@ -15,20 +15,30 @@ const user = getCurrentUser() ?? {}; // auth-guard.js redirects when nobody is s
 mountAccountMenu(document.querySelector('#accountMenu'), {
   user,
   role: 'student',
-  onChangePassword: () => window.dispatchEvent(new CustomEvent('student:change-password')),
+  onChangePassword: () =>
+    window.dispatchEvent(new CustomEvent('student:change-password')),
 });
 
 const tabs = [...document.querySelectorAll('.nav-item')];
 
 function showTab(name, { focus = true } = {}) {
-  tabs.forEach(t => (t.dataset.view === name ? t.setAttribute('aria-current', 'page') : t.removeAttribute('aria-current')));
-  document.querySelectorAll('.view').forEach(v => (v.hidden = v.id !== `view-${name}`));
+  tabs.forEach(t =>
+    t.dataset.view === name
+      ? t.setAttribute('aria-current', 'page')
+      : t.removeAttribute('aria-current'),
+  );
+  document
+    .querySelectorAll('.view')
+    .forEach(v => (v.hidden = v.id !== `view-${name}`));
   // Land on the new heading so screen-reader users hear where they are
-  if (focus) document.querySelector(`#view-${name} h1`)?.focus({ preventScroll: true });
+  if (focus)
+    document.querySelector(`#view-${name} h1`)?.focus({ preventScroll: true });
   window.dispatchEvent(new CustomEvent('student:tab', { detail: name }));
 }
 
-tabs.forEach(tab => tab.addEventListener('click', () => showTab(tab.dataset.view)));
+tabs.forEach(tab =>
+  tab.addEventListener('click', () => showTab(tab.dataset.view)),
+);
 // Other tabs can send the student somewhere (the "Finish setting up" card opens Profile)
 window.addEventListener('student:goto', ev => showTab(ev.detail));
 
@@ -51,7 +61,8 @@ function ensureModule(path) {
     const promise = LOADERS[path]().then(
       () => {
         // The real listeners exist now. Remove ours so an event is never handled twice.
-        for (const [name, target] of Object.entries(LAZY_EVENTS)) if (target === path) window.removeEventListener(name, onLazyEvent);
+        for (const [name, target] of Object.entries(LAZY_EVENTS))
+          if (target === path) window.removeEventListener(name, onLazyEvent);
       },
       error => {
         loading.delete(path); // allow another try
@@ -71,36 +82,48 @@ async function onLazyEvent(ev) {
     await ensureModule(path);
   } catch (error) {
     console.error('Could not load', path, error);
-    return showToast('Could not load this part of the page. Check your connection and try again.', 'error');
+    return showToast(
+      'Could not load this part of the page. Check your connection and try again.',
+      'error',
+    );
   } finally {
     button?.removeAttribute('aria-busy');
   }
   // The event has already passed; send it again to the module that has just started listening.
   window.dispatchEvent(new CustomEvent(ev.type, { detail: ev.detail }));
 }
-for (const name of Object.keys(LAZY_EVENTS)) window.addEventListener(name, onLazyEvent);
+for (const name of Object.keys(LAZY_EVENTS))
+  window.addEventListener(name, onLazyEvent);
 
 // Once Today has drawn, use the idle time to fetch what this student will need next, so the tap feels instant.
-window.addEventListener('student:ready', () => {
-  const idle = window.requestIdleCallback || (fn => setTimeout(fn, 1));
-  setTimeout(() => idle(async () => {
-    const me = session.me;
-    if (!me) return;
-    try {
-      if (me.faceEnrolled || me.galleryEnrolled) {
-        await ensureModule('./scan-flow.js');
-      } else {
-        await ensureModule('./enroll.js');
-        // Not enrolled yet: download the 27 MB of face files in the background while they read their page,
-        // so the enrolment dialog opens ready. Skipped on Data Saver and while their photos are being checked.
-        const saveData = navigator.connection?.saveData;
-        if (!saveData && me.faceStatus !== 'pending') {
-          const { engine } = await import('./face/engine.js');
-          engine.prefetch();
-        }
-      }
-    } catch (error) {
-      console.warn('Background loading did not finish', error);
-    }
-  }), 1500);
-}, { once: true });
+window.addEventListener(
+  'student:ready',
+  () => {
+    const idle = window.requestIdleCallback || (fn => setTimeout(fn, 1));
+    setTimeout(
+      () =>
+        idle(async () => {
+          const me = session.me;
+          if (!me) return;
+          try {
+            if (me.faceEnrolled || me.galleryEnrolled) {
+              await ensureModule('./scan-flow.js');
+            } else {
+              await ensureModule('./enroll.js');
+              // Not enrolled yet: download the 27 MB of face files in the background while they read their page,
+              // so the enrolment dialog opens ready. Skipped on Data Saver and while their photos are being checked.
+              const saveData = navigator.connection?.saveData;
+              if (!saveData && me.faceStatus !== 'pending') {
+                const { engine } = await import('./face/engine.js');
+                engine.prefetch();
+              }
+            }
+          } catch (error) {
+            console.warn('Background loading did not finish', error);
+          }
+        }),
+      1500,
+    );
+  },
+  { once: true },
+);

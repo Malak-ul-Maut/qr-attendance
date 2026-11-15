@@ -6,7 +6,7 @@
 //   const faces = await engine.detect(video);      // [{ box, landmarks, score }] in video pixels
 //   const vector = await engine.embed(alignFace(canvas, face.landmarks));
 
-// Where the big files come from: '' = the same host as the page. Set in utils/runtime-config.js.
+// Where the big files come from: '' = the same host as the page. Set in js/utils/runtime-config.js.
 const ASSET_BASE = window.ASSET_BASE || '';
 
 // Bump when a model file changes: the cached copies on phones are replaced.
@@ -15,15 +15,31 @@ const ASSET_BASE = window.ASSET_BASE || '';
 // If you replace a file, update its bytes here too. `npm run build` checks that they match.
 const VERSION = '3';
 const FILES = {
-  wasm: { path: '/utils/ort/ort-wasm-simd-threaded.wasm', bytes: 11210254 },
-  det: { path: '/utils/models/det_500m.onnx', bytes: 2524817 },
-  rec: { path: '/utils/models/w600k_mbf.onnx', bytes: 13616099 },
-  live: { path: '/utils/models/minifasnetv2_quant.onnx', bytes: 626197 },
+  wasm: {
+    path: '/public/vendor/ort/ort-wasm-simd-threaded.wasm',
+    bytes: 11210254,
+    cdnPath: '/utils/ort/ort-wasm-simd-threaded.wasm',
+  },
+  det: {
+    path: '/public/vendor/models/det_500m.onnx',
+    bytes: 2524817,
+    cdnPath: '/utils/models/det_500m.onnx',
+  },
+  rec: {
+    path: '/public/vendor/models/w600k_mbf.onnx',
+    bytes: 13616099,
+    cdnPath: '/utils/models/w600k_mbf.onnx',
+  },
+  live: {
+    path: '/public/vendor/models/minifasnetv2_quant.onnx',
+    bytes: 626197,
+    cdnPath: '/utils/models/minifasnetv2_quant.onnx',
+  },
 };
 // Built sites use the CDN only; source/dev sites can load the files from their server.
 const ASSETS = Object.fromEntries(
   Object.entries(FILES).map(([name, f]) => [name, {
-    url: ASSET_BASE + f.path,
+    url: ASSET_BASE + (ASSET_BASE && f.cdnPath ? f.cdnPath : f.path),
     fallback: ASSET_BASE ? '' : (window.API_BASE || '') + f.path,
     bytes: f.bytes,
   }]),

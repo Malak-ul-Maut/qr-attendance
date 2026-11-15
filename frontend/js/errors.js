@@ -188,5 +188,5 @@ export function cameraErrorCode(error) {
   }
 }
 
-// Class QR frames look like "A2.1k.9f86d081884c7d65" (utils/qr-feed.js on the server). Anything else is some other QR code.
+// Class QR frames look like "A2.1k.9f86d081884c7d65" (services/qr-feed.js on the server). Anything else is some other QR code.
 export const looksLikeClassToken = value => /^A[1-4]\.[0-9a-z]{1,8}\.[0-9a-f]{16}$/.test(value);

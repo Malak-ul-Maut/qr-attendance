@@ -1,0 +1,5 @@
+[
+  "/public/vendor/models/minifasnetv2_quant.onnx",
+  "/public/vendor/models/det_500m.onnx",
+  "/public/vendor/models/w600k_mbf.onnx"
+]

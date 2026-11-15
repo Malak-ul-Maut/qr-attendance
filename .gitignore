@@ -2,24 +2,27 @@
 # .env
 node_modules
 venv/
-__pycache__/
+.venv/
+backend/recognition/__pycache__/
+scripts/__pycache__/
 
 # Face-recognition data and generated output
-backend/gallery/
-backend/models
-backend/cache/
-backend/results/
-backend/*.avi
-backend/crop-staging
-backend/bakeoff_work
+backend/data/gallery/
+backend/data/crop-staging/
+backend/data/results/
+backend/data/cache/
+backend/data/bakeoff_work/
+backend/data/window_study/
+backend/recognition/*.avi
+backend/models/
 
 # Heavy files kept outside the repo (assets.manifest.json lists them; `npm run assets` downloads them)
-frontend/utils/ort/*.wasm
-frontend/utils/models/*.onnx
+frontend/public/vendor/ort/*.wasm
+frontend/public/vendor/models/*.onnx
 
 # Build
 frontend-dist
 
 # Transient database files
-backend/database.db-shm
-backend/database.db-wal
+backend/db/database.db-shm
+backend/db/database.db-wal

@@ -1,7 +1,7 @@
-import { getCurrentUser } from '/utils/storage.js';
-import { enableLightDismiss, enableLightDismissAll } from '/utils/dialog.js';
+import { getCurrentUser } from '/js/utils/storage.js';
+import { enableLightDismiss, enableLightDismissAll } from '/js/utils/dialog.js';
 import { initialsOf, mountAccountMenu } from './account-menu.js';
-import postData from '/utils/fetch.js';
+import postData from '/js/utils/fetch.js';
 import { showToast } from './ui.js';
 import {
   fmtClock,
@@ -130,7 +130,7 @@ mountAccountMenu($('#accountMenu'), { user: currentUser, role: 'faculty' });
 enableLightDismiss($('#manual-attendance-dialog'), {
   canDismiss: () => manualSelected.size === 0,
 });
-enableLightDismissAll(); // dialogs say how they behave with data-modal (see utils/dialog.js)
+enableLightDismissAll(); // dialogs say how they behave with data-modal (see js/utils/dialog.js)
 
 // Tabs: Session / History
 document.querySelectorAll('.nav-item').forEach(tab => {
@@ -2116,7 +2116,7 @@ const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
 systemTheme.addEventListener?.('change', () => drawQR(lastToken));
 
 // The rotating QR arrives over the socket: the server pushes a new frame several times a second, so there is one
-// request to start it instead of one per frame. Frames are made by the server (backend/utils/qr-feed.js); a photo of
+// request to start it instead of one per frame. Frames are made by the server (backend/services/qr-feed.js); a photo of
 // one frame cannot be redeemed because phones must hand in several frames shown right after each other.
 function subscribeQR() {
   if (!sessionCode || sessionMethod !== 'qr' || !socket?.connected) return;

@@ -1,10 +1,9 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import { dbAll, dbGet, dbRun } from '../../utils/db.js';
-import { GALLERY_DIR, IMAGE_FILE, galleryFolderName, hasGalleryPhotos } from '../../utils/gallery.js';
-import { refreshEnrolmentQa } from '../cctv.routes.js';
+import { dbAll, dbGet, dbRun } from '../../db/db.js';
+import { GALLERY_DIR, IMAGE_FILE, galleryFolderName, hasGalleryPhotos } from '../../services/gallery.js';
+import { refreshEnrolmentQa } from '../cctv.js';
 import { HttpError, wrap, clean, classroomMap } from './common.js';
 
 const router = express.Router();

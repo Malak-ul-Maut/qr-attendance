@@ -1,0 +1,10 @@
+fastapi
+gdown
+insightface
+numpy
+onnxruntime
+opencv-python
+openvino
+pydantic
+scipy
+uvicorn[standard]

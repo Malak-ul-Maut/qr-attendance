@@ -5,15 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f4f5f7" />
     <title>Student | Smart Attendance Marker</title>
-    <link rel="icon" href="icons/qr-code-favicon.png" type="image/png" />
+    <link rel="icon" href="public/icons/qr-code-favicon.png" type="image/png" />
     <link rel="stylesheet" href="css/tokens.css" />
     <link rel="stylesheet" href="css/components.css" />
     <link rel="stylesheet" href="css/brand.css" />
     <link rel="stylesheet" href="css/shell.css" />
     <link rel="stylesheet" href="css/student.css" />
 
-    <script src="/utils/runtime-config.js"></script>
-    <script src="utils/brand-config.js"></script>
+    <script src="/js/utils/runtime-config.js"></script>
+    <script src="js/utils/brand-config.js"></script>
     <script defer src="js/brand.js"></script>
     <!-- Start the two requests the Today tab needs now, while the scripts below are still loading.
          js/api.js picks up these answers (once). Skipped when nobody is signed in. -->
@@ -26,7 +26,9 @@
           ['/api/student/me', '/api/student/schedule'].forEach(function (p) {
             window.__early[p] = {
               at: performance.now(),
-              promise: fetch(p, { headers: { Authorization: 'Bearer ' + u.token } }),
+              promise: fetch(p, {
+                headers: { Authorization: 'Bearer ' + u.token },
+              }),
             };
           });
         } catch (e) {}
@@ -35,10 +37,10 @@
 
     <!-- build:preload -->
     <!-- Ask for every module at once instead of discovering them one import at a time. Replaced by the bundle in the build. -->
-    <link rel="modulepreload" href="utils/auth-guard.js" />
-    <link rel="modulepreload" href="utils/storage.js" />
+    <link rel="modulepreload" href="js/utils/auth-guard.js" />
+    <link rel="modulepreload" href="js/utils/storage.js" />
     <link rel="modulepreload" href="js/app.js" />
-    <link rel="modulepreload" href="js/today.js" />
+    <link rel="modulepreload" href="js/student-dashboard.js" />
     <link rel="modulepreload" href="js/attendance.js" />
     <link rel="modulepreload" href="js/profile.js" />
     <link rel="modulepreload" href="js/password-dialog.js" />
@@ -46,12 +48,12 @@
     <link rel="modulepreload" href="js/api.js" />
     <link rel="modulepreload" href="js/dom.js" />
     <link rel="modulepreload" href="js/state.js" />
-    <link rel="modulepreload" href="js/today-logic.js" />
+    <link rel="modulepreload" href="js/student-schedule.js" />
     <link rel="modulepreload" href="js/ui.js" />
     <!-- /build:preload -->
 
     <script src="js/theme.js"></script>
-    <script src="utils/auth-guard.js" type="module"></script>
+    <script src="js/utils/auth-guard.js" type="module"></script>
     <!-- The face models run in js/face/engine.worker.js, which loads its own copy of ONNX Runtime -->
     <!-- socket.io client (deferred, so it never blocks the page). js/live.js copes if it did not load. -->
     <script defer src="/socket.io/socket.io.js"></script>
@@ -62,17 +64,36 @@
     <a class="skip-link" href="#main">Skip to content</a>
 
     <header class="app-header">
-      <a class="brand" href="student.html" aria-label="Smart Attendance Marker, home">
-        <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-          <use href="icons/brand-mark.svg#verified" />
+      <a
+        class="brand"
+        href="student.html"
+        aria-label="Smart Attendance Marker, home">
+        <svg
+          class="brand-mark"
+          viewBox="0 0 64 64"
+          aria-hidden="true"
+          focusable="false">
+          <use href="public/icons/brand-mark.svg#verified" />
         </svg>
-        <span class="brand-name" data-brand="product-name">Smart Attendance Marker</span>
+        <span class="brand-name" data-brand="product-name"
+          >Smart Attendance Marker</span
+        >
       </a>
       <span class="header-fill"></span>
       <div class="header-right">
         <div class="institute">
-          <img class="institute-logo" data-brand-logo src="icons/mit-logo.webp" alt="" width="46" height="36" />
-          <span class="institute-name"><span class="inst-short" data-brand="institute-short">MIT Meerut</span></span>
+          <img
+            class="institute-logo"
+            data-brand-logo
+            src="public/icons/mit-logo.webp"
+            alt=""
+            width="46"
+            height="36" />
+          <span class="institute-name"
+            ><span class="inst-short" data-brand="institute-short"
+              >MIT Meerut</span
+            ></span
+          >
         </div>
         <div id="accountMenu"></div>
       </div>
@@ -84,13 +105,47 @@
         type="button"
         data-view="today"
         aria-current="page">
-        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v10h13V10"/><path d="M10 20v-6h4v6"/></svg>Today
+        <svg
+          class="nav-icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true">
+          <path d="M3 11.5 12 4l9 7.5" />
+          <path d="M5.5 10v10h13V10" />
+          <path d="M10 20v-6h4v6" /></svg
+        >Today
       </button>
       <button class="nav-item" type="button" data-view="attendance">
-        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 12.3l2.4 2.4 4.6-5"/></svg>Attendance
+        <svg
+          class="nav-icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true">
+          <circle cx="12" cy="12" r="8.5" />
+          <path d="M8.5 12.3l2.4 2.4 4.6-5" /></svg
+        >Attendance
       </button>
       <button class="nav-item" type="button" data-view="profile">
-        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8.5" r="3.7"/><path d="M4.5 20c1-4 4-6 7.5-6s6.5 2 7.5 6"/></svg>Profile
+        <svg
+          class="nav-icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true">
+          <circle cx="12" cy="8.5" r="3.7" />
+          <path d="M4.5 20c1-4 4-6 7.5-6s6.5 2 7.5 6" /></svg
+        >Profile
       </button>
     </nav>
 
@@ -147,7 +202,7 @@
         </div>
         <div class="slider-row" id="zoomRow">
           <button type="button" class="slider-icon left" aria-label="Zoom out">
-            <img src="icons/zoom-out.svg" alt="" />
+            <img src="public/icons/zoom-out.svg" alt="" />
           </button>
           <input
             id="zoom-slider"
@@ -158,7 +213,7 @@
             value="1"
             aria-label="Zoom" />
           <button type="button" class="slider-icon right" aria-label="Zoom in">
-            <img src="icons/zoom-in.svg" alt="" />
+            <img src="public/icons/zoom-in.svg" alt="" />
           </button>
         </div>
       </div>
@@ -187,44 +242,87 @@
     </div>
 
     <!-- Change password. Opens from the avatar menu, the Profile tab, the setup card, and once on first sign-in. -->
-    <dialog id="password-dialog" class="dialog" data-modal="strict" aria-labelledby="pwTitle">
+    <dialog
+      id="password-dialog"
+      class="dialog"
+      data-modal="strict"
+      aria-labelledby="pwTitle">
       <form id="pwForm" novalidate>
         <h2 id="pwTitle">Change password</h2>
         <p id="pwIntro" class="pw-intro" hidden>
-          You are still using the default password. Choose your own now, or do it later from your profile.
+          You are still using the default password. Choose your own now, or do
+          it later from your profile.
         </p>
         <div class="field">
           <label for="pwCurrent">Current password</label>
           <div class="input-group">
-            <input class="input" id="pwCurrent" type="password" autocomplete="current-password" required />
-            <button class="input-toggle" type="button" data-for="pwCurrent" aria-label="Show current password" aria-pressed="false"></button>
+            <input
+              class="input"
+              id="pwCurrent"
+              type="password"
+              autocomplete="current-password"
+              required />
+            <button
+              class="input-toggle"
+              type="button"
+              data-for="pwCurrent"
+              aria-label="Show current password"
+              aria-pressed="false"></button>
           </div>
           <p id="pwCurrentMsg" class="field-msg err" role="alert" hidden></p>
         </div>
         <div class="field">
           <label for="pwNew">New password</label>
           <div class="input-group">
-            <input class="input" id="pwNew" type="password" autocomplete="new-password" aria-describedby="pwRules" required />
-            <button class="input-toggle" type="button" data-for="pwNew" aria-label="Show new password" aria-pressed="false"></button>
+            <input
+              class="input"
+              id="pwNew"
+              type="password"
+              autocomplete="new-password"
+              aria-describedby="pwRules"
+              required />
+            <button
+              class="input-toggle"
+              type="button"
+              data-for="pwNew"
+              aria-label="Show new password"
+              aria-pressed="false"></button>
           </div>
         </div>
         <div class="field">
           <label for="pwConfirm">Repeat new password</label>
           <div class="input-group">
-            <input class="input" id="pwConfirm" type="password" autocomplete="new-password" aria-describedby="pwRules" required />
-            <button class="input-toggle" type="button" data-for="pwConfirm" aria-label="Show repeated password" aria-pressed="false"></button>
+            <input
+              class="input"
+              id="pwConfirm"
+              type="password"
+              autocomplete="new-password"
+              aria-describedby="pwRules"
+              required />
+            <button
+              class="input-toggle"
+              type="button"
+              data-for="pwConfirm"
+              aria-label="Show repeated password"
+              aria-pressed="false"></button>
           </div>
         </div>
         <ul id="pwRules" class="pw-rules" aria-label="Password rules">
           <li data-rule="length">At least 8 characters</li>
-          <li data-rule="plain">Not your username, roll number or &ldquo;password&rdquo;</li>
+          <li data-rule="plain">
+            Not your username, roll number or &ldquo;password&rdquo;
+          </li>
           <li data-rule="different">Different from your current password</li>
           <li data-rule="match">Both new passwords match</li>
         </ul>
         <p id="pwError" class="field-msg err" role="alert" hidden></p>
         <div class="dialog-actions">
-          <button id="pwLater" class="btn btn-secondary" type="button">Cancel</button>
-          <button id="pwSave" class="btn btn-primary" type="submit" disabled>Save password</button>
+          <button id="pwLater" class="btn btn-secondary" type="button">
+            Cancel
+          </button>
+          <button id="pwSave" class="btn btn-primary" type="submit" disabled>
+            Save password
+          </button>
         </div>
       </form>
     </dialog>
@@ -263,7 +361,11 @@
       </div>
       <p id="captureStatus" role="status"></p>
       <!-- Coaching that names a direction ("a bit more to the left"): read out by screen readers, not shown -->
-      <p id="captureSR" class="visually-hidden" role="status" aria-live="polite"></p>
+      <p
+        id="captureSR"
+        class="visually-hidden"
+        role="status"
+        aria-live="polite"></p>
       <div id="capturePanel" class="card result-panel" hidden></div>
     </div>
   </body>

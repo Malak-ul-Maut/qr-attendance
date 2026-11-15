@@ -1,7 +1,7 @@
 // Calls to /api/student/*. Sends the student token and always resolves to an object
 // (never throws), in the same shape as postJson: { ok, status, error, ...body }.
 // A 401 means the token is missing, wrong or expired, so the student is sent to sign in again.
-import { getCurrentUser } from '../utils/storage.js';
+import { getCurrentUser } from './utils/storage.js';
 
 function signOut() {
   localStorage.removeItem('user');

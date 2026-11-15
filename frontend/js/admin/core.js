@@ -1,5 +1,5 @@
 // core.js - helpers shared by every admin tab: DOM builder, API calls, forms, tables, dialogs.
-import { getCurrentUser, endSession } from '/utils/storage.js';
+import { getCurrentUser, endSession } from '/js/utils/storage.js';
 import { showToast } from '../ui.js';
 
 export { showToast };

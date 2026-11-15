@@ -556,8 +556,8 @@
 }
 .attendance-icon-qr {
   background-color: currentColor;
-  -webkit-mask: url('../icons/qr-code-favicon.png') center / contain no-repeat;
-  mask: url('../icons/qr-code-favicon.png') center / contain no-repeat;
+  -webkit-mask: url('../public/icons/qr-code-favicon.png') center / contain no-repeat;
+  mask: url('../public/icons/qr-code-favicon.png') center / contain no-repeat;
 }
 .method-body small {
   font-size: 0.75rem;

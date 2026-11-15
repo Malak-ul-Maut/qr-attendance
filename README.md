@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="frontend/icons/brand-mark.svg" alt="Smart Attendance Marker logo" width="96" />
+<img src="frontend/public/icons/brand-mark.svg" alt="Smart Attendance Marker logo" width="96" />
 
 # Smart Attendance Marker
 
@@ -116,7 +116,7 @@ Classroom attendance driven by the timetable: live QR codes, in-browser face ver
 ```bash
 git clone https://github.com/Malak-ul-Maut/qr-attendance.git
 cd qr-attendance
-npm install
+npm --prefix backend install
 ```
 
 ### 2. Configure
@@ -129,7 +129,7 @@ Edit `.env`. At minimum, decide on `TUNNEL` and, if you use ngrok, set `NGROK_AU
 
 ### 3. Create the database and first admin
 
-<!-- TODO: document how the database is created from backend/schema.sql and how the first admin account is made.
+<!-- TODO: document how the database is created from backend/db/schema.sql and how the first admin account is made.
      The repo currently has no seed script and no documented bootstrap step. -->
 
 ```bash
@@ -139,7 +139,7 @@ Edit `.env`. At minimum, decide on `TUNNEL` and, if you use ngrok, set `NGROK_AU
 ### 4. Start the server
 
 ```bash
-npm start
+npm --prefix backend start
 ```
 
 You should see something like:
@@ -165,7 +165,7 @@ Sign in from the homepage as a student, faculty member or admin.
 
 ## Configuration
 
-All runtime settings are environment variables loaded from `.env` when you start the server with `npm start`.
+All runtime settings are environment variables loaded from `.env` when you start the server with `npm --prefix backend start`.
 [`.env.example`](.env.example) lists the available server, tunnel, face-enrollment and CCTV settings with their
 defaults and short descriptions. Copy it to `.env`, then uncomment only the settings you want to override.
 
@@ -181,17 +181,15 @@ QR and in-browser face attendance work without this. Skip it unless you want cam
 ```bash
 python -m venv venv
 venv\Scripts\activate   # macOS/Linux:  source venv/bin/activate
-pip install -r requirements.txt
+pip install -r backend/recognition/requirements.txt
 ```
-
-<!-- TODO: add requirements.txt (fastapi, uvicorn, pydantic, onnxruntime, opencv-python, numpy, insightface, openvino ...) -->
 
 - **Models.** The SCRFD detector and AdaFace recognizer are downloaded into `backend/models/` on first run. <!-- TODO: sizes, disk and RAM needed, and how to fetch them manually if Google Drive is blocked -->
 - **Speed.** On an Intel laptop, installing `openvino` is faster than plain onnxruntime. `CCTV_BACKEND=auto` falls back automatically.
-- **Memory.** The service is memory-hungry. Set `CCTV_SPAWN_SERVICE=false` when you do not need it, or run `python backend/server.py` yourself (even on another machine) and point `CCTV_SERVICE_URL` at it.
+- **Memory.** The service is memory-hungry. Set `CCTV_SPAWN_SERVICE=false` when you do not need it, or run `python backend/recognition/server.py` yourself (even on another machine) and point `CCTV_SERVICE_URL` at it.
 - **Source.** Use `CCTV_SOURCE=clip` with a test video while developing, and `live` for a real camera. <!-- TODO: how the camera URL is configured -->
 
-The browser-side face check uses separate, smaller models (SCRFD-500M detector, MiniFASNet liveness, w600k_mbf recognizer) shipped in `frontend/utils/models/`.
+The browser-side face check uses separate, smaller models (SCRFD-500M detector, MiniFASNet liveness, w600k_mbf recognizer) shipped in `frontend/public/vendor/models/`.
 
 ---
 
@@ -199,7 +197,7 @@ The browser-side face check uses separate, smaller models (SCRFD-500M detector, 
 
 ### Option A: LAN only
 
-Run `npm start` with `TUNNEL=none`. Everyone must be on the same network.
+Run `npm --prefix backend start` with `TUNNEL=none`. Everyone must be on the same network.
 
 ### Option B: tunnel
 
@@ -210,7 +208,7 @@ Set `TUNNEL` to `ngrok`, `cloudflared` or `zrok`. The tunnel address is printed 
 The build outputs an optimized `frontend-dist/` folder. A Cloudflare Worker serves it and forwards `/api/*`, `/results/*` and `/socket.io/*` to your tunnel.
 
 ```bash
-npm run build -- --proxy=https://<your-tunnel-address> --assets=https://cdn.jsdelivr.net/gh/<user>/<repo>@<tag>/frontend
+npm --prefix backend run build -- --proxy=https://<your-tunnel-address> --assets=https://cdn.jsdelivr.net/gh/<user>/<repo>@<tag>/frontend
 cd pages-worker
 npx wrangler@latest deploy
 ```
@@ -221,7 +219,7 @@ npx wrangler@latest deploy
 
 ```bash
 # Set SERVE_DIST=1 in .env, then run:
-npm start
+npm --prefix backend start
 ```
 
 ---

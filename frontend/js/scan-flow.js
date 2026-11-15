@@ -1,6 +1,6 @@
-import QrScanner from '../utils/qr-scanner.min.js';
-import { postJson } from '../utils/fetch.js';
-import { getCurrentUser } from '../utils/storage.js';
+import QrScanner from '../public/vendor/qr/qr-scanner.min.js';
+import { postJson } from './utils/fetch.js';
+import { getCurrentUser } from './utils/storage.js';
 import { engine } from './face/engine.js';
 import { openCamera } from './face/camera.js';
 import { session } from './state.js';
@@ -646,7 +646,7 @@ async function getCameraId(stream) {
 
 let workerChecked = null;
 function qrWorkerAvailable() {
-  workerChecked ||= fetch('/utils/qr-scanner-worker.min.js', { method: 'HEAD' })
+  workerChecked ||= fetch('/public/vendor/qr/qr-scanner-worker.min.js', { method: 'HEAD' })
     .then(
       r =>
         r.ok &&

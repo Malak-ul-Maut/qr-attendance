@@ -1,4 +1,4 @@
-import db from './db.js';
+import db from '../db/db.js';
 import { issueToken, readToken } from './auth-token.js';
 
 const TOKEN_LIFETIME_SECONDS = 8 * 60 * 60;
@@ -25,7 +25,10 @@ export function requireAdmin(req, res, next) {
         console.error(dbError);
         return res.status(500).json({ ok: false, error: 'database_error' });
       }
-      if (!admin) return res.status(403).json({ ok: false, error: 'admin_access_required' });
+      if (!admin)
+        return res
+          .status(403)
+          .json({ ok: false, error: 'admin_access_required' });
       req.adminUsername = claims.username;
       return next();
     },

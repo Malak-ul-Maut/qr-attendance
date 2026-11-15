@@ -3,7 +3,7 @@
 //   window.dispatchEvent(new CustomEvent('student:change-password', { detail: { first: true } }))
 // `first` adds the "still the default password" line and a Later button instead of Cancel.
 import { apiPost } from './api.js';
-import { getCurrentUser } from '../utils/storage.js';
+import { getCurrentUser } from './utils/storage.js';
 import { session } from './state.js';
 import { showToast } from './ui.js';
 

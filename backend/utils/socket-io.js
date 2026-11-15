@@ -1,9 +1,14 @@
 import { Server } from 'socket.io';
-import { dbAll, dbGet } from './db.js';
+import { dbAll, dbGet } from '../db/db.js';
 import { readToken } from './auth-token.js';
 import { facultyUsernameFromToken } from './faculty-auth.js';
-import { peekTicket } from './scan-tickets.js';
-import { closeFeed, currentFrame, startPushing, FRAME_LIFETIME_MS } from './qr-feed.js';
+import { peekTicket } from '../services/scan-tickets.js';
+import {
+  closeFeed,
+  currentFrame,
+  startPushing,
+  FRAME_LIFETIME_MS,
+} from '../services/qr-feed.js';
 
 let io;
 export function initializeSocket(server) {
@@ -23,10 +28,16 @@ export function initializeSocket(server) {
       try {
         const { claims } = readToken({ get: () => `Bearer ${token}` });
         if (claims?.role !== 'student') return;
-        const student = await dbGet(`SELECT id FROM students WHERE username = ? AND active = 1`, [claims.username]);
+        const student = await dbGet(
+          `SELECT id FROM students WHERE username = ? AND active = 1`,
+          [claims.username],
+        );
         if (!student) return;
         socket.join(`student:${student.id}`);
-        for (const row of await dbAll(`SELECT DISTINCT class_id FROM students_mapping WHERE student_id = ?`, [student.id]))
+        for (const row of await dbAll(
+          `SELECT DISTINCT class_id FROM students_mapping WHERE student_id = ?`,
+          [student.id],
+        ))
           socket.join(`class:${row.class_id}`);
         socket.emit('student_joined');
       } catch {
@@ -41,7 +52,8 @@ export function initializeSocket(server) {
       try {
         const { sessionCode, token } = request || {};
         const username = facultyUsernameFromToken(token);
-        if (!username) return reply({ ok: false, error: 'faculty_login_required' });
+        if (!username)
+          return reply({ ok: false, error: 'faculty_login_required' });
         const owned = await dbGet(
           `SELECT 1 AS found FROM sessions
            JOIN faculties ON faculties.id = sessions.faculty_id
@@ -52,13 +64,19 @@ export function initializeSocket(server) {
         if (!owned) return reply({ ok: false, error: 'session_ended' });
         socket.join(`qr:${sessionCode}`);
         startPushing(io, sessionCode);
-        reply({ ok: true, code: currentFrame(sessionCode), lifetimeMs: FRAME_LIFETIME_MS });
+        reply({
+          ok: true,
+          code: currentFrame(sessionCode),
+          lifetimeMs: FRAME_LIFETIME_MS,
+        });
       } catch {
         reply({ ok: false, error: 'database_error' });
       }
     });
 
-    socket.on('qr_unsubscribe', sessionCode => socket.leave(`qr:${sessionCode}`));
+    socket.on('qr_unsubscribe', sessionCode =>
+      socket.leave(`qr:${sessionCode}`),
+    );
 
     // A student who passed the QR step listens for "the teacher closed this class" with the ticket, not the session code.
     socket.on('watch_ticket', async (request, ack) => {
@@ -94,14 +112,16 @@ export function getIO() {
 // The page then asks for its schedule again. Never throws: a missed notice only means the page's slow check finds it.
 export function notifyClasses(classIds = []) {
   try {
-    for (const id of new Set(classIds.filter(Boolean))) io?.to(`class:${id}`).emit('schedule_changed');
+    for (const id of new Set(classIds.filter(Boolean)))
+      io?.to(`class:${id}`).emit('schedule_changed');
   } catch {
     // see above
   }
 }
 export function notifyStudents(studentIds = []) {
   try {
-    for (const id of new Set(studentIds.filter(Boolean))) io?.to(`student:${id}`).emit('schedule_changed');
+    for (const id of new Set(studentIds.filter(Boolean)))
+      io?.to(`student:${id}`).emit('schedule_changed');
   } catch {
     // see above
   }

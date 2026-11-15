@@ -12,7 +12,7 @@ import { createTurnGuide } from './face/turn-guide.js';
 import { cameraSize } from './face/perf.js';
 import { createLoopStats } from './face/loop-stats.js';
 import { createBoxSmoother } from './face/box-smoother.js';
-import { getCurrentUser } from '../utils/storage.js';
+import { getCurrentUser } from './utils/storage.js';
 
 const FACE_MODEL = 'w600k_mbf'; // must match the server
 // ?debug=1 on the page address shows live timings and gate counts, and keeps the technical "what the camera saw" line.

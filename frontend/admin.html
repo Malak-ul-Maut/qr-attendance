@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f4f5f7" />
     <title>Admin | Smart Attendance Marker</title>
-    <link rel="icon" href="icons/qr-code-favicon.png" type="image/png" />
+    <link rel="icon" href="public/icons/qr-code-favicon.png" type="image/png" />
     <link rel="stylesheet" href="css/tokens.css" />
     <link rel="stylesheet" href="css/components.css" />
     <link rel="stylesheet" href="css/brand.css" />
@@ -13,11 +13,11 @@
     <link rel="stylesheet" href="css/admin.css" />
 
     <!-- Theme + login check only. -->
-    <script src="/utils/runtime-config.js"></script>
-    <script src="utils/brand-config.js"></script>
+    <script src="/js/utils/runtime-config.js"></script>
+    <script src="js/utils/brand-config.js"></script>
     <script defer src="js/brand.js"></script>
     <script src="js/theme.js"></script>
-    <script src="utils/auth-guard.js" type="module"></script>
+    <script src="js/utils/auth-guard.js" type="module"></script>
   </head>
 
   <body>
@@ -28,14 +28,14 @@
     <header class="app-header">
       <a class="brand" href="admin.html" aria-label="Smart Attendance Marker, home">
         <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-          <use href="icons/brand-mark.svg#verified" />
+          <use href="public/icons/brand-mark.svg#verified" />
         </svg>
         <span class="brand-name" data-brand="product-name">Smart Attendance Marker</span>
       </a>
       <span class="header-fill"></span>
       <div class="header-right">
         <div class="institute">
-          <img class="institute-logo" data-brand-logo src="icons/mit-logo.webp" alt="" width="46" height="36" />
+          <img class="institute-logo" data-brand-logo src="public/icons/mit-logo.webp" alt="" width="46" height="36" />
           <span class="institute-name"><span class="inst-short" data-brand="institute-short">MIT Meerut</span></span>
         </div>
         <div id="accountMenu"></div>

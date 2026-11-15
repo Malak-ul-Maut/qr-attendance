@@ -5,21 +5,20 @@ import cors from 'cors';
 import compression from 'compression';
 import https from 'https';
 import os from 'os';
-// import selfsigned from 'selfsigned';
 import { fileURLToPath } from 'url';
-import { execFileSync } from 'child_process';
 
+import { createLocalHttpsOptions} from './utils/cert.js';
 import hostTunnel from './utils/host-tunnel.js';
 import { precompressed, staticHeaders } from './utils/static-fast.js';
 import { initializeSocket } from './utils/socket-io.js';
-import authRouter from './routes/auth.routes.js';
-import sessionRouter from './routes/session.routes.js';
-import attendanceRouter from './routes/attendance.routes.js';
-import studentRouter from './routes/students.routes.js';
-import studentSelfRouter from './routes/student.routes.js';
-import facultyRouter from './routes/faculty.routes.js';
-import adminRouter from './routes/admin.routes.js';
-import cctvRouter from './routes/cctv.routes.js';
+import authRouter from './routes/auth.js';
+import sessionRouter from './routes/session.js';
+import attendanceRouter from './routes/attendance.js';
+import studentRouter from './routes/admin/students.js';
+import studentSelfRouter from './routes/student.js';
+import facultyRouter from './routes/faculty.js';
+import adminRouter from './routes/admin.js';
+import cctvRouter from './routes/cctv.js';
 
 // ----------------- Server Config -----------------
 const app = express();
@@ -44,7 +43,7 @@ app.use(
   cors({
     origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    // The two extra headers are sent by pages hosted elsewhere (utils/runtime-config.js) to skip the free
+    // The two extra headers are sent by pages hosted elsewhere (js/utils/runtime-config.js) to skip the free
     // ngrok / zrok warning pages.
     allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning', 'skip_zrok_interstitial'],
     // Lets the browser remember the permission check for a day (browsers cap it, Chrome at 2 hours), so a page
@@ -68,36 +67,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const FRONTEND_DIR = path.join(__dirname, '../frontend');
 
-const certPath = path.join(__dirname, 'cert.pem');
-const keyPath = path.join(__dirname, 'key.pem');
-const mkcertPath = path.join(__dirname, 'mkcert.exe');
-
-// 1. Check if the local CA is already created; if not, install it on first run
-const caRoot = execFileSync(mkcertPath, ['-CAROOT'], { encoding: 'utf8' }).trim();
-if (!fs.existsSync(path.join(caRoot, 'rootCA.pem'))) {
-  console.log('First-time setup: Installing local mkcert Certificate Authority...');
-  execFileSync(mkcertPath, ['-install'], { stdio: 'inherit' });
-}
-
-// 2. Generate fresh leaf certificates for the current IP
 const serverIp = getServerIpAddress() || 'localhost';
 const PORT = process.env.PORT || 4000;
 
-const hosts = ['localhost', '127.0.0.1', '::1'];
-if (serverIp) hosts.push(serverIp);
 
-execFileSync(
-  mkcertPath,
-  ['-cert-file', certPath, '-key-file', keyPath, ...hosts],
-  { stdio: 'ignore' }, // Keeps your terminal output clean
-);
-
-const options = {
-  key: fs.readFileSync(keyPath),
-  cert: fs.readFileSync(certPath),
-};
-const server = https.createServer(options, app);
-
+const localHttpOptions = createLocalHttpsOptions(serverIp);
+const server = https.createServer(localHttpOptions, app);
 const io = initializeSocket(server); // Initialize Socket.io server
 
 
@@ -107,7 +82,9 @@ const SRC_DIR = FRONTEND_DIR;
 const DIST_DIR = path.join(__dirname, '../frontend-dist');
 const useDist = process.env.SERVE_DIST === '1' && fs.existsSync(path.join(DIST_DIR, 'student.html'));
 if (process.env.SERVE_DIST === '1' && !useDist)
-  console.warn('SERVE_DIST=1 but frontend-dist/ is missing. Run `npm run build`. Serving ../frontend instead.');
+  console.warn(
+    'SERVE_DIST=1 but frontend-dist/ is missing. Run `npm --prefix backend run build`. Serving ../frontend instead.',
+  );
 const WEB_DIR = useDist ? DIST_DIR : SRC_DIR;
 let sourceRuntimeConfig;
 // Source pages load the face-engine files from the manifest's CDN base URL.
@@ -118,7 +95,7 @@ if (!useDist) {
   const assetBase = manifest.frontendBaseUrl;
   if (typeof assetBase !== 'string' || !/^https:\/\/[^\s]+$/.test(assetBase))
     throw new Error('assets.manifest.json must define a valid HTTPS frontendBaseUrl');
-  const runtimeConfigPath = path.join(FRONTEND_DIR, 'utils/runtime-config.js');
+  const runtimeConfigPath = path.join(FRONTEND_DIR, 'js/utils/runtime-config.js');
   const runtimeConfig = fs.readFileSync(runtimeConfigPath, 'utf8');
   const assetBaseSetting = "window.ASSET_BASE = '';";
   if (!runtimeConfig.includes(assetBaseSetting))
@@ -131,7 +108,7 @@ if (!useDist) {
 console.log(`Serving the frontend from ${useDist ? 'frontend-dist (built)' : 'frontend (source)'}`);
 
 if (!useDist) {
-  app.get('/utils/runtime-config.js', (req, res) =>
+  app.get('/js/utils/runtime-config.js', (req, res) =>
     res
       .type('application/javascript')
       .set('Cache-Control', 'no-cache')
@@ -146,7 +123,7 @@ app.use(precompressed(WEB_DIR));
 // phones fetch the new file once. Cache rules for everything else live in utils/static-fast.js.
 app.use(express.static(WEB_DIR, { setHeaders: staticHeaders(WEB_DIR) }));
 
-app.use('/results', express.static(path.join(__dirname, 'results')));
+app.use('/results', express.static(path.join(__dirname, 'data/results')));
 
 // Anything that looks like a file (has an extension) and was not found above is a real 404. It used to get the
 // home page with status 200, so a missing model or script arrived as HTML and failed with a confusing error.

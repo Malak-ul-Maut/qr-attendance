@@ -27,9 +27,9 @@ export function cacheControlFor(urlPath) {
   const p = urlPath.toLowerCase();
   if (p.endsWith('.html') || p === '/' || p.endsWith('.webmanifest') || p === '/sw.js') return 'no-cache';
   if (/\/assets\/.+-[a-z0-9]{8}\.(js|css|wasm|woff2)$/.test(p)) return YEAR;
-  if (p.startsWith('/utils/ort/')) return YEAR;
+  if (p.startsWith('/public/vendor/ort/')) return YEAR;
   if (p.endsWith('.woff2')) return YEAR;
-  if (p.startsWith('/utils/models/')) return 'public, max-age=604800';
+  if (p.startsWith('/public/vendor/models/')) return 'public, max-age=604800';
   if (/\.(png|jpe?g|webp|svg|ico|gif|avif)$/.test(p)) return 'public, max-age=604800';
   if (/\.(m?js|css|json)$/.test(p)) return 'public, max-age=300';
   return 'public, max-age=0';
