@@ -404,4 +404,4 @@ This system stores biometric data about students. Read this section before deplo
 
 ## License
 
-Released under the [MIT License](LICENSE). Created by Ahad Ali.
+Released under the [MIT License](LICENSE). 
