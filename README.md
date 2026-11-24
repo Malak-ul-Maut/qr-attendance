@@ -418,14 +418,6 @@ Face detection and matching run in the student's browser and in the project's ow
 - **CORS allows any origin.** Authentication uses bearer tokens in a header, not cookies.
 - **HTTPS** uses a self-signed certificate generated on the local machine, or the tunnel provider's certificate when a tunnel is used.
 
-### Keeping data out of the repository
-
-`.env` and `backend/db/database.db` are listed in `.gitignore`, as are the downloaded team data and the face gallery. Real student data, face photos and CCTV clips are never committed. The team shares a database with the personal data removed (`backend/db/demo.db`) and keeps the real data in a private Google Drive folder. [Working as a team](docs/TEAM.md) describes both.
-
-### Reporting a security issue
-
-Open an issue on the [GitHub issue tracker](https://github.com/Malak-ul-Maut/qr-attendance/issues). Please describe where the problem is without posting working exploit steps, real student data or credentials.
-
 ---
 
 ## License
