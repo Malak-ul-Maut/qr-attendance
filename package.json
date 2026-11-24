@@ -1,22 +1,29 @@
 {
   "name": "qr-attendance",
   "version": "1.0.0",
-  "description": "Mark attendance securely using dynamic QR codes",
-  "main": "index.js",
+  "description": "Classroom attendance with live rotating QR codes, in-browser face verification and optional CCTV recognition",
+  "main": "backend/index.js",
   "scripts": {
     "start": "node --import ./backend/load-env.js ./backend/index.js",
-    "dev": "node --watch-path=. --watch-path=../.env --import ./backend/load-env.js index.js",
+    "dev": "node --watch-path=backend --watch-path=.env --import ./backend/load-env.js ./backend/index.js",
     "assets": "node scripts/fetch-assets.mjs",
+    "demo-db": "node scripts/demo-db.mjs install",
+    "demo-db:build": "node scripts/demo-db.mjs build",
     "host": "zrok2 share public https://localhost:4000 --backend-mode proxy -n public:smart-attendance --insecure",
     "build": "node scripts/build-frontend.mjs",
     "deploy": "cd pages-worker && npx wrangler deploy"
   },
   "keywords": [
-    "qr-attendance"
+    "attendance",
+    "qr-code",
+    "face-recognition",
+    "cctv",
+    "express",
+    "sqlite"
   ],
   "type": "module",
   "author": "Ahad Ali",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "engines": {
     "node": ">=20.12.0"
   },
@@ -25,13 +32,13 @@
     "compression": "^1.8.2",
     "cors": "^2.8.5",
     "express": "^4.17.1",
+    "node-forge": "^1.4.3",
     "qr-scanner": "^1.4.2",
     "socket.io": "^4.8.1",
     "sqlite3": "^5.1.7"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
-    "mkcert": "^3.2.0",
     "prettier": "3.7.4"
   },
   "prettier": {

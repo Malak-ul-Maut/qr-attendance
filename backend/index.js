@@ -83,7 +83,7 @@ const DIST_DIR = path.join(__dirname, '../frontend-dist');
 const useDist = process.env.SERVE_DIST === '1' && fs.existsSync(path.join(DIST_DIR, 'student.html'));
 if (process.env.SERVE_DIST === '1' && !useDist)
   console.warn(
-    'SERVE_DIST=1 but frontend-dist/ is missing. Run `npm --prefix backend run build`. Serving ../frontend instead.',
+    'SERVE_DIST=1 but frontend-dist/ is missing. Run `npm run build`. Serving ../frontend instead.',
   );
 const WEB_DIR = useDist ? DIST_DIR : SRC_DIR;
 let sourceRuntimeConfig;

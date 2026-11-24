@@ -4,8 +4,40 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
+// Where the local certificate authority (CA) is kept between runs. It has to be a folder that survives a
+// reboot, otherwise a new CA is made on every start and a browser that trusted the old one rejects the new one.
+//   Windows  %LOCALAPPDATA%                         (unchanged from earlier versions, so an already trusted CA keeps working)
+//   macOS    ~/Library/Application Support/qr-attendance
+//   Linux    $XDG_DATA_HOME/qr-attendance, else ~/.local/share/qr-attendance
+// QR_ATTENDANCE_CERT_DIR overrides all of these.
+export function certificateDirectory() {
+  if (process.env.QR_ATTENDANCE_CERT_DIR) return path.resolve(process.env.QR_ATTENDANCE_CERT_DIR);
+  if (process.platform === 'win32') return process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+  if (process.platform === 'darwin') return path.join(os.homedir(), 'Library', 'Application Support', 'qr-attendance');
+  return path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'), 'qr-attendance');
+}
+
+// Windows can add the CA to the current user's trusted roots by itself. macOS and Linux need administrator rights,
+// so we print the commands instead of running them. This is only needed to remove the browser warning on the
+// computer that runs the server. Phones on the network will still show a warning once.
+function trustAdvice(caCertPath) {
+  const q = JSON.stringify(caCertPath);
+  return [
+    '',
+    `A new local certificate authority was created: ${caCertPath}`,
+    'Your browser will warn about the connection until you trust it. This is optional and affects only this computer:',
+    process.platform === 'darwin'
+      ? `  sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ${q}`
+      : `  Debian/Ubuntu:  sudo cp ${q} /usr/local/share/ca-certificates/qr-attendance-ca.crt && sudo update-ca-certificates\n` +
+        `  Chrome/Chromium (per user):  certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n qr-attendance -i ${q}\n` +
+        '  Firefox: Settings > Privacy & Security > Certificates > View Certificates > Authorities > Import',
+    '',
+  ].join('\n');
+}
+
 export function createLocalHttpsOptions(serverIp) {
-  const baseDir = process.env.LOCALAPPDATA || os.tmpdir();
+  const baseDir = certificateDirectory();
+  fs.mkdirSync(baseDir, { recursive: true, mode: 0o700 });
   const caCertPath = path.join(baseDir, 'qr-attendance-ca.crt');
   const caKeyPath = path.join(baseDir, 'qr-attendance-ca.key');
 
@@ -34,14 +66,20 @@ export function createLocalHttpsOptions(serverIp) {
     caCert.sign(caKeys.privateKey, forge.md.sha256.create());
     caKey = caKeys.privateKey;
 
-    const caPem = forge.pki.certificateToPem(caCert);
-    fs.writeFileSync(caCertPath, caPem);
-    fs.writeFileSync(caKeyPath, forge.pki.privateKeyToPem(caKey));
+    // The CA key can sign certificates for any site, so only its owner may read it.
+    fs.writeFileSync(caCertPath, forge.pki.certificateToPem(caCert));
+    fs.writeFileSync(caKeyPath, forge.pki.privateKeyToPem(caKey), { mode: 0o600 });
 
     if (process.platform === 'win32') {
-      execFileSync('certutil', ['-user', '-addstore', 'Root', caCertPath], {
-        stdio: 'inherit',
-      });
+      try {
+        execFileSync('certutil', ['-user', '-addstore', 'Root', caCertPath], { stdio: 'inherit' });
+      } catch (err) {
+        // Declining the Windows prompt must not stop the server; the browser will just show its warning.
+        console.warn(`Could not add the certificate to Windows' trusted roots (${err.message}).`);
+        console.warn(`You can add it yourself later: certutil -user -addstore Root "${caCertPath}"`);
+      }
+    } else {
+      console.log(trustAdvice(caCertPath));
     }
   }
 
@@ -63,7 +101,7 @@ export function createLocalHttpsOptions(serverIp) {
     { type: 7, ip: '::1' },          // IPv6
   ];
   if (serverIp) {
-    altNames.push({ type: 7, ip: serverIp }); // Proper IP SAN for 10.77.169.200
+    altNames.push({ type: 7, ip: serverIp }); // the address phones on the network use, e.g. 192.168.1.20
   }
 
   cert.setExtensions([

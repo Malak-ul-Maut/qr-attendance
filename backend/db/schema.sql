@@ -1,11 +1,10 @@
 -- =====================================================================
 -- Smart attendance schema (SQLite)
+-- Used by backend/db/db.js to build database.db on the first start.
 -- NOTE: foreign keys are OFF by default in SQLite and the setting is per
--- connection. Run `PRAGMA foreign_keys = ON;` every time your app opens the DB
--- (better-sqlite3 already does this; the plain `sqlite3` package does not).
+-- connection. The server does not turn them on today, so the REFERENCES
+-- below document the relationships but are not enforced at run time.
 -- =====================================================================
-PRAGMA foreign_keys = ON;
-
 CREATE TABLE courses (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -68,7 +67,15 @@ CREATE TABLE students (
   college_email VARCHAR(255) UNIQUE,
   phone_number VARCHAR(20) UNIQUE,
   year_of_passing INTEGER NOT NULL,
-  face_embedding BLOB,
+  face_embedding BLOB,                           -- 512 floats, see services/embedding.js
+  face_embedding_model TEXT,                     -- which model made the embedding
+  face_enrolled_at DATETIME,
+  face_status TEXT,                              -- NULL / 'none' | 'pending' | 'approved' | 'rejected'
+  face_reviewed_at DATETIME,
+  face_reviewed_by TEXT,                         -- admin username
+  face_reject_reason TEXT,
+  face_qa TEXT,                                  -- enrolment quality report (JSON)
+  face_qa_at DATETIME,
   username TEXT NOT NULL COLLATE NOCASE UNIQUE,
   password_hash TEXT NOT NULL DEFAULT 'password',
   active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1))   -- 1 = active, 0 = inactive
@@ -318,4 +325,22 @@ CREATE TABLE IF NOT EXISTS session_discard_log (
   marked_count INTEGER NOT NULL DEFAULT 0,
   forced INTEGER NOT NULL DEFAULT 0,
   discarded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Admin review of enrolled face photos: one row per approve / reject.
+CREATE TABLE IF NOT EXISTS face_review_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  student_id INTEGER NOT NULL,
+  action TEXT NOT NULL,                          -- 'approved' | 'rejected'
+  reason TEXT,
+  admin TEXT,
+  reviewed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Written whenever an admin resets a student's face data, so the reason is on record.
+CREATE TABLE IF NOT EXISTS face_reset_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  student_id INTEGER NOT NULL,
+  reason TEXT NOT NULL,
+  reset_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

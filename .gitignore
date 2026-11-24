@@ -23,6 +23,10 @@ frontend/public/vendor/models/*.onnx
 # Build
 frontend-dist
 
+# Local database: created from backend/db/schema.sql on first start, holds student records
+backend/db/database.db
+backend/db/*.creating
+backend/db/*.building
 # Transient database files
 backend/db/database.db-shm
 backend/db/database.db-wal
