@@ -219,7 +219,7 @@ cd qr-attendance
 npm install
 ```
 
-Working in a team? After `npm install`, see [Working as a team](docs/TEAM.md) for the shared demo database and how to share secrets and face data without committing them.
+Part of a team? See [Working as a team](docs/TEAM.md) for the shared demo database and the private Google Drive folder for real data.
 
 ### 2. Download the face-engine files
 
@@ -254,7 +254,7 @@ See [Configuration](#configuration) for everything else.
 npm start
 ```
 
-On a team, run `npm run demo-db` first to get the shared demo database (see [Working as a team](docs/TEAM.md)). Otherwise, on the very first start there is no database yet, so the server builds `backend/db/database.db` from `backend/db/schema.sql` and creates one admin account. **Copy the password it prints; it is shown only once.**
+On a team, run `npm run team-data` or `npm run demo-db` first (see [Working as a team](docs/TEAM.md)). Otherwise, on the very first start there is no database yet, so the server builds `backend/db/database.db` from `backend/db/schema.sql` and creates one admin account. **Copy the password it prints; it is shown only once.**
 
 ```
 No database found, so a new one was created from backend/db/schema.sql.
@@ -381,7 +381,7 @@ backend/
   db/                 schema.sql, demo.db (anonymised sample data) and the SQLite database
   recognition/        Optional Python (FastAPI) CCTV recognition service
 frontend/             Plain HTML, CSS and JS pages (student, faculty, admin) and the face engine
-scripts/              Asset download, demo database, frontend build, recognition benchmarks
+scripts/              Asset download, demo database, team data sync, frontend build, recognition benchmarks
 pages-worker/         Cloudflare Worker for Option C
 docs/                 Team guide (TEAM.md), screenshots and diagrams used in this README
 LICENSE               MIT licence
@@ -391,17 +391,45 @@ LICENSE               MIT licence
 
 ## Privacy and security
 
-This system stores biometric data about students. Read this section before deploying it for real users.
+The system handles student identities, attendance records and face data. This section records what is stored, how access is controlled, and the gaps that exist today.
 
-- **Face data.** Enrolment photos are saved as image files in the gallery folder (`backend/data/gallery/` by default). Each student's face embedding is stored in the `students.face_embedding` column. A photo set is used for attendance only after an admin approves it. Admins can reset a student's face data, and the reset is logged with a reason. Get your institution's consent and retention policy in place before collecting photos.
-- **Passwords are stored in plain text.** Login compares the stored value directly, and student, faculty and imported accounts start with the default password `password`. Students on the default password are prompted to change it, but faculty are not, and the app has no screen for an admin to change their own password. The first admin gets a random password instead of the default. Hashing passwords is the most important improvement before any public deployment.
-- **Tokens.** Sign-in tokens are HMAC-signed and carry a role, so a student token cannot be used as an admin token. Admin tokens last 8 hours. Set `ADMIN_SESSION_SECRET`; otherwise a random secret is generated at start-up and everyone is signed out on every restart.
-- **Network.** The server uses a locally generated, self-signed certificate. CORS is open (`*`), so keep the server behind a tunnel or firewall you trust.
-- **Keep secrets and data out of git.** `.env` (it holds your tunnel token and session secret) and `backend/db/database.db` (it holds student records and attendance) are listed in `.gitignore`. The database also holds the addresses, with logins, of any CCTV cameras you configure. Teams share a database with all personal data removed (`backend/db/demo.db`) and keep face photos and videos in a private location. [Working as a team](docs/TEAM.md) explains how, and what to do if something private was committed earlier.
-- **Reporting a vulnerability.** Open an issue on the [GitHub issue tracker](https://github.com/Malak-ul-Maut/qr-attendance/issues). Describe the problem and where it is, but keep working exploit details, real student data and credentials out of the public issue.
+### What is stored
+
+| Data                                              | Where                                            |
+| ------------------------------------------------- | ------------------------------------------------ |
+| Names, roll numbers, college e-mail, phone numbers, login names and passwords | SQLite database (`backend/db/database.db`) |
+| Attendance records, with the method used and, for QR marks, a device fingerprint | SQLite database |
+| Face photos taken at enrolment                    | Gallery folder, one folder per student (`backend/data/gallery/` by default) |
+| Face embeddings (numeric vectors made from the photos) | `students.face_embedding` column            |
+| CCTV camera addresses, which can include a login  | `rooms.camera_url` column                        |
+
+A student's face data is used for attendance only after an admin approves it. Every approval and rejection is written to `face_review_log`, and every reset of a student's face data to `face_reset_log` together with a reason.
+
+Face detection and matching run in the student's browser and in the project's own Python service. No external recognition service is called. When a tunnel (ngrok, cloudflared, zrok) or Cloudflare is used, traffic passes through that provider.
+
+### Access control
+
+- Sign-in tokens are HMAC-signed and carry a role, so a student token is never accepted as a faculty or admin token. They last 12 hours for students and faculty and 8 hours for admins.
+- `ADMIN_SESSION_SECRET` is the signing key. If it is not set, a random one is created at every start and everyone is signed out on restart.
+- Marking attendance needs a valid QR session, a face check and an unused ticket. See [What stops proxy attendance](#what-stops-proxy-attendance).
+
+### Known limitations
+
+- **Passwords are stored and compared as plain text.** New student and faculty accounts start with the password `password`. Students on the default are asked to change it; faculty are not, and admins have no screen for changing their own password. The admin created on the first start gets a random password.
+- **Login attempts are not limited.**
+- **CORS allows any origin.** Authentication uses bearer tokens in a header, not cookies.
+- **HTTPS** uses a self-signed certificate generated on the local machine, or the tunnel provider's certificate when a tunnel is used.
+
+### Keeping data out of the repository
+
+`.env` and `backend/db/database.db` are listed in `.gitignore`, as are the downloaded team data and the face gallery. Real student data, face photos and CCTV clips are never committed. The team shares a database with the personal data removed (`backend/db/demo.db`) and keeps the real data in a private Google Drive folder. [Working as a team](docs/TEAM.md) describes both.
+
+### Reporting a security issue
+
+Open an issue on the [GitHub issue tracker](https://github.com/Malak-ul-Maut/qr-attendance/issues). Please describe where the problem is without posting working exploit steps, real student data or credentials.
 
 ---
 
 ## License
 
-Released under the [MIT License](LICENSE). Created by Ahad Ali.
+Released under the [MIT License](LICENSE).

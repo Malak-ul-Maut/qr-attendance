@@ -9,6 +9,7 @@
     "assets": "node scripts/fetch-assets.mjs",
     "demo-db": "node scripts/demo-db.mjs install",
     "demo-db:build": "node scripts/demo-db.mjs build",
+    "team-data": "node scripts/team-data.mjs",
     "host": "zrok2 share public https://localhost:4000 --backend-mode proxy -n public:smart-attendance --insecure",
     "build": "node scripts/build-frontend.mjs",
     "deploy": "cd pages-worker && npx wrangler deploy"

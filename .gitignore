@@ -26,6 +26,8 @@ frontend-dist
 # Local database: created from backend/db/schema.sql on first start, holds student records
 backend/db/database.db
 backend/db/*.creating
+# Private team data downloaded from Google Drive (database, face gallery, CCTV clips)
+team-data/
 backend/db/*.building
 # Transient database files
 backend/db/database.db-shm

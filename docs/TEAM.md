@@ -1,21 +1,20 @@
 # Working as a team
 
-Four people, one repo, and some things that must **not** be in it: real student data, face photos, CCTV footage and secrets. This page shows how to stay on the same page without committing them.
+Four people, one repo, and some data that must **not** be in it: real student records, face photos, CCTV footage and secrets. This page describes how the team keeps that data in sync without committing it.
 
-> The repository appears to be public (the face-engine files are served from it through jsDelivr, which only serves public repos). Treat everything committed as visible to everyone, and it stays in git history even after it is deleted.
+> The repository appears to be public (the face-engine files are served from it through jsDelivr, which only serves public repos). Anything committed is visible to everyone and stays in git history even after it is deleted.
 
 ## What is shared, and how
 
-| Thing                          | Shared through                         | Committed?        |
-| ------------------------------ | -------------------------------------- | ----------------- |
-| Code, `schema.sql`             | Git                                    | Yes               |
-| Settings (names, defaults)     | [`.env.example`](../.env.example)      | Yes               |
-| Your own secrets (`.env`)      | Not shared; everyone has their own     | **No**            |
-| Database for development       | `backend/db/demo.db` (anonymised)      | Yes, it is safe   |
-| The real database              | Stays on the machine that runs the college deployment | **No** |
-| Face gallery and CCTV clips    | A private team folder or private repo  | **No**            |
+| Thing                                  | Shared through                                         | In git? |
+| -------------------------------------- | ------------------------------------------------------ | ------- |
+| Code and `schema.sql`                  | Git                                                    | Yes     |
+| Default settings                       | [`.env.example`](../.env.example)                      | Yes     |
+| Personal settings and secrets (`.env`) | Not shared; everyone has their own                     | No      |
+| Demo database (placeholder people)     | `backend/db/demo.db`                                   | Yes     |
+| Real database, face gallery, CCTV clips | A private Google Drive folder, `npm run team-data`    | No      |
 
-## Day one for a teammate
+## First run for a new teammate
 
 ```bash
 git clone https://github.com/Malak-ul-Maut/qr-attendance.git
@@ -23,53 +22,92 @@ cd qr-attendance
 npm install
 npm run assets            # face-engine files (too big for git)
 cp .env.example .env      # then edit it, see below
-npm run demo-db           # same demo database as everyone else
+npm run team-data         # real database, gallery and clips from Drive (needs the one-time setup below)
 npm start
 ```
 
-Sign in as `admin` / `password`. Faculty are `faculty01`, `faculty02`, ... and students are numbered in **Setup → Students**. Every password in the demo database is `password`. It is for local development only; never expose it through a tunnel for real users.
+No access to the Drive folder yet, or just trying the app? Use `npm run demo-db` instead of `npm run team-data`. It installs the anonymised demo database; every account in it has the password `password`.
 
 ## `.env`
 
-`.env` is per person and stays out of git.
+`.env` is personal and stays out of git.
 
-- Put every setting that should be the same for everybody, with a sensible default, in `.env.example` and commit that.
+- Settings that should be the same for everyone, with a sensible default, go in `.env.example`.
 - `ADMIN_SESSION_SECRET`: everyone makes their own. Each person runs their own server, so it does not need to match.
-- `NGROK_AUTHTOKEN` / `NGROK_DOMAIN`: personal to each ngrok account. A free account gets one static domain, so teammates should not share one. Use `TUNNEL=none` when you only need the LAN.
-- A secret that really must be shared (for example the password of the classroom camera) goes in a password manager's shared vault such as Bitwarden or 1Password, not in git, chat or a screenshot. If you later want secrets next to the code, an encrypted env file (for example [dotenvx](https://dotenvx.com) or [SOPS](https://github.com/getsops/sops)) can be committed safely.
+- `NGROK_AUTHTOKEN` and `NGROK_DOMAIN`: personal to each ngrok account, and a free account gets one static domain. Use `TUNNEL=none` when the LAN is enough.
+- A secret the whole team needs (for example the password of the classroom cameras) lives in a shared vault in a password manager such as Bitwarden or 1Password, not in git, chat or a screenshot.
 
-## The database
+## Private data in Google Drive
 
-The real `database.db` holds students' names, phone numbers, attendance, face data and the login of the classroom cameras, so it never goes into git.
-
-- **Everyone develops against `backend/db/demo.db`.** `npm run demo-db` copies it into place. It has the same shape as the real one (classes, timetable, sessions, 3,700 attendance marks) but placeholder names, no face data and no camera addresses.
-- **Refresh it** from a real database with `npm run demo-db:build` (or `npm run demo-db:build -- path/to/other.db`). The source is only read. Open the result and look around before committing it.
-- **Changing the schema?** Edit `backend/db/schema.sql`, then rebuild `demo.db` from a database that has the change, in the same pull request. Teammates then run `npm run demo-db -- --force` to replace their local copy. There is no migration tool yet, so the real deployment needs the change applied by hand.
-- A brand-new empty database is still created automatically when none exists and you did not run `demo-db`.
-
-## Face gallery and CCTV test clips
-
-These contain real people's faces, so they must not go into a public repository, and you should have your institution's permission to keep them. Prefer a small set of your own team's faces plus a few volunteers over a whole class.
-
-The paths are already settings, so no code change is needed. Keep the files **outside** the project folder, and point `.env` at them:
+### What goes in the folder
 
 ```
-CCTV_TEST_CLIP=../qr-attendance-data/clips/f310.avi
-GALLERY_DIR=../qr-attendance-data/gallery
-CCTV_GALLERY_DIR=../qr-attendance-data/gallery
+qr-attendance-data/
+  database.db     one-file snapshot of the database
+  gallery/        face photos, one folder per student
+  clips/          CCTV test videos
 ```
 
-Where to keep that folder (pick one):
+The gallery folders are named after student ids (`<id>_<first name>_<roll number>`), so **a gallery only matches the database it came from**. The three parts are always bundled and installed together, and the demo database cannot be used with a real gallery.
 
-1. **A private GitHub repository** (for example `qr-attendance-data`) that only the four of you can read. Clone it next to the project. It works well for a gallery and a few short clips. GitHub refuses single files over 100 MB, so use [Git LFS](https://git-lfs.com) for long videos (the free quota is small).
-2. **A shared drive folder** (Google Drive, OneDrive) that everyone syncs. Simplest for large clips.
+The bundle holds real names, phone numbers, passwords (stored in plain text, see [Privacy and security](../README.md#privacy-and-security)) and face photos. Only the four team members should be able to open it.
 
-Either way, treat the shared copy as a read-only seed and **copy it to a local folder before you run the app**. The app writes to the gallery (face enrolment saves photos there, and the CCTV service adds confirmed crops unless `CCTV_GROW_GALLERY=off`), so four people running against one live folder will overwrite each other.
+### Owner: share the folder
+
+1. In Drive, create a folder `qr-attendance-data`.
+2. Share it with the teammates' Google accounts as **Viewer**. Set general access to **Restricted** and untick *Editors can change permissions and share*.
+3. Leave *Viewers and commenters can see the option to download, print, and copy* switched **on**. Turning it off also blocks the download that `npm run team-data` performs.
+
+### Owner: publish a snapshot
+
+On the machine that holds the real data:
+
+```bash
+npm run team-data -- bundle      # builds ./team-data from the local database, gallery and clips
+```
+
+Then either drag the contents of `team-data/` into the Drive folder, or upload with `npm run team-data -- push` (needs rclone, below). The bundle removes the CCTV camera addresses from the database copy because they contain a login; add `--keep-cameras` if a teammate needs live camera access.
+
+Publish a new snapshot after bigger changes such as a new timetable or new enrolments. Teammates replace their database with `npm run team-data -- --force`.
+
+### Teammates: one-time setup with rclone
+
+[rclone](https://rclone.org) signs in to Google Drive once and then downloads the folder with a single command.
+
+1. Install it: `winget install Rclone.Rclone` (Windows), `brew install rclone` (macOS) or `sudo apt install rclone` (Linux).
+2. Run `rclone config`, choose `n` (new remote), name it `gdrive`, pick the storage type `drive`, leave the client id and secret empty, choose the scope `drive.readonly` (the owner needs `drive`, to upload), and accept the browser sign-in with the Google account that was given access.
+3. Open the shared folder in Drive. The last part of its address (`.../folders/<this part>`) is the folder id. Put these in `.env`:
+
+   ```
+   TEAM_DATA_REMOTE=gdrive:
+   TEAM_DATA_FOLDER_ID=<folder id>
+   ```
+
+4. Run `npm run team-data`.
+
+### What `npm run team-data` does
+
+- **Download:** copies the Drive folder into `./team-data` (git-ignored). It never deletes anything, and files that have not changed are skipped.
+- **Install:** copies `database.db` to `backend/db/`, the gallery to your gallery folder and the clips next to the recognition service. The locations follow your `.env` (`GALLERY_DIR`, `CCTV_GALLERY_DIR`, `CCTV_TEST_CLIP`), so a custom setup keeps working.
+- **Your local changes are safe.** An existing `database.db` is kept, and gallery files or clips that already exist are not overwritten. `--force` replaces them. The app writes to the gallery (face enrolment saves photos there, and the CCTV service adds confirmed crops unless `CCTV_GROW_GALLERY=off`), so everyone works on a local copy and nobody runs against the shared folder.
+
+### Without rclone
+
+- **Drive for desktop:** if the shared folder is available as a local folder, run `npm run team-data -- install --from "<path to that folder>"`.
+- **Browser download:** download the folder from the Drive website, unzip it into `./team-data` so that `database.db`, `gallery/` and `clips/` sit directly inside, and run `npm run team-data -- install`.
+
+## The demo database
+
+`backend/db/demo.db` has the same structure as the real one (classes, timetable, sessions, attendance marks) with placeholder names, no face data and no camera addresses.
+
+- `npm run demo-db` installs it as `backend/db/database.db`; `npm run demo-db -- --force` replaces an existing one.
+- `npm run demo-db:build` rebuilds it from a real database (`npm run demo-db:build -- path/to/other.db` for another file). The source is only read.
+- **Changing the schema:** edit `backend/db/schema.sql`, rebuild `demo.db` from a database that has the change, and commit both in the same pull request. Teammates then reinstall their database. There is no migration tool yet, so the real deployment needs the change applied by hand.
 
 ## If something private was committed
 
 If `.env`, `database.db`, a gallery or a clip was ever pushed to the public repo:
 
-1. **Rotate first.** Change the ngrok token and the RTSP password of the classroom cameras. Deleting a file does not remove it from history.
-2. Stop tracking it: `git rm --cached <file>`; the `.gitignore` already lists the right paths.
+1. **Rotate first.** Change the ngrok token and the password of the classroom cameras. Deleting a file does not remove it from history.
+2. Stop tracking it with `git rm --cached <file>`; `.gitignore` already lists the right paths.
 3. Remove it from history with [`git filter-repo`](https://github.com/newren/git-filter-repo) (or BFG), force-push, and have all four of you re-clone. Take care with the tags the CDN uses in `assets.manifest.json`: after a rewrite they point at new commits and must be re-created before the face engine loads again.
