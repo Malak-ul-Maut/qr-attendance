@@ -432,4 +432,4 @@ Open an issue on the [GitHub issue tracker](https://github.com/Malak-ul-Maut/qr-
 
 ## License
 
-Released under the [MIT License](LICENSE).
+Released under the [MIT License](LICENSE). 
