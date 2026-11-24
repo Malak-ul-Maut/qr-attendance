@@ -340,8 +340,6 @@ pip install -r backend/recognition/requirements.txt
 - **Source.** Use `CCTV_SOURCE=clip` with a test video while developing, and `live` for a real camera. Each room has a camera address, which the server passes to the recognition service when the faculty runs a scan.
 - **Review before submit.** CCTV marks are provisional. The faculty sees the recognised list (below), adds or removes students, and only then submits.
 
-![CCTV result with recognised students](docs/screenshots/faculty-cctv.jpg)
-
 ---
 
 ## Deployment
