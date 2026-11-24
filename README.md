@@ -10,7 +10,6 @@ Timetable-driven classroom attendance: live rotating QR codes, in-browser face v
 
 ![Node](https://img.shields.io/badge/node-%E2%89%A5%2020.12-green)
 ![Database](https://img.shields.io/badge/database-SQLite-blue)
-![Python](https://img.shields.io/badge/python-optional%20(CCTV)-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 <img src="docs/screenshots/hero.jpg" alt="Faculty live session showing a rotating QR code, and a student's phone scanning it" width="800" />
